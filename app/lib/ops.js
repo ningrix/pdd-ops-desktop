@@ -670,7 +670,87 @@ function setSizes(sizes) {
   })()`;
 }
 
+/**
+ * 列出当前页面可选的「码制」（通用/中国码/欧码/英码/德码/美码/均码）
+ */
+function listSizeSystems() {
+  return `(() => {
+    const out = [];
+    for (const l of document.querySelectorAll('label')) {
+      const t = (l.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (!t || t.length > 6) continue;
+      if (!/^(通用|中国码|欧码|英码|德码|美码|均码)$/.test(t)) continue;
+      if (!l.className || String(l.className).indexOf('RD_outerWrapper') < 0) continue;
+      const r = l.getBoundingClientRect();
+      out.push({ name: t, w: Math.round(r.width) });
+    }
+    return out;
+  })()`;
+}
+
+/**
+ * 切换码制，返回切换后出现的尺码选项
+ */
+function switchSizeSystem(name) {
+  return `(async () => {
+    const NAME = ${JSON.stringify(name)};
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    let target = null;
+    for (const l of document.querySelectorAll('label')) {
+      const t = (l.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (t !== NAME) continue;
+      if (!l.className || String(l.className).indexOf('RD_outerWrapper') < 0) continue;
+      target = l; break;
+    }
+    if (!target) return { ok: false, error: '找不到码制 ' + NAME };
+    target.click();
+    await sleep(1500);
+    const sizes = [];
+    for (const el of document.querySelectorAll('[class*="CBX_outerWrapper"]')) {
+      const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (!t || t === '全选以下规格值' || t.length > 18) continue;
+      if (!el.querySelector('[class*="CBX_square"]')) continue;
+      sizes.push(t);
+    }
+    return { ok: true, system: NAME, sizes: [...new Set(sizes)] };
+  })()`;
+}
+
+/**
+ * 遍历所有码制，返回每个码制下的尺码选项
+ */
+function scanAllSizeSystems() {
+  return `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const NAMES = ['通用', '中国码', '欧码', '英码', '德码', '美码', '均码'];
+    const out = {};
+    for (const n of NAMES) {
+      let target = null;
+      for (const l of document.querySelectorAll('label')) {
+        const t = (l.innerText || '').replace(/\\s+/g, ' ').trim();
+        if (t !== n) continue;
+        if (!l.className || String(l.className).indexOf('RD_outerWrapper') < 0) continue;
+        target = l; break;
+      }
+      if (!target) continue;
+      target.click();
+      await sleep(1300);
+      const sizes = [];
+      for (const el of document.querySelectorAll('[class*="CBX_outerWrapper"]')) {
+        const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+        if (!t || t === '全选以下规格值' || t.length > 18) continue;
+        if (!el.querySelector('[class*="CBX_square"]')) continue;
+        sizes.push(t);
+      }
+      const uniq = [...new Set(sizes)];
+      if (uniq.length) out[n] = uniq;
+    }
+    return out;
+  })()`;
+}
+
 module.exports = { ping, listGoods, copyGoods, draftDetail, submitDraft,
                    applyEditBody, clickSaveDraft, resolveCommit, readPageCommit,
                    hasSaveButton, setBatchStock, readPageErrors, collectGoods,
-                   readSpecState, setColors, setSizes, scrollToSpec };
+                   readSpecState, setColors, setSizes, scrollToSpec,
+                   listSizeSystems, switchSizeSystem, scanAllSizeSystems };

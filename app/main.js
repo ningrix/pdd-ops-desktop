@@ -521,14 +521,46 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
     steps.push('源商品没有颜色规格，跳过');
   }
 
-  // ⑥ 用 DOM 勾尺码
+  // ⑥ 用 DOM 勾尺码（先扫遍所有码制，挑覆盖率最高的）
   if ((it.sizes || []).length) {
+    let systems = null;
+    try {
+      systems = await withPlatform('scanSizeSys',
+        () => wc.executeJavaScript(opsMod.scanAllSizeSystems(), true), 180000);
+    } catch (_) { /* ignore */ }
+
+    const norm = (x) => String(x || '').replace(/[（(].*?[）)]/g, '')
+      .replace(/[\u4e00-\u9fa5]/g, '').replace(/\s+/g, '').toUpperCase();
+    const wantSet = new Set((it.sizes || []).map(norm).filter(Boolean));
+
+    let bestSys = null, bestCover = -1, bestHave = [];
+    if (systems && typeof systems === 'object') {
+      for (const name of Object.keys(systems)) {
+        const have = systems[name].map(norm).filter(Boolean);
+        const cover = have.filter((x) => wantSet.has(x)).length;
+        steps.push('  码制「' + name + '」覆盖 ' + cover + '/' + wantSet.size);
+        if (cover > bestCover) { bestCover = cover; bestSys = name; bestHave = have; }
+      }
+    }
+
+    if (bestSys) {
+      const sw = await withPlatform('switchSize',
+        () => wc.executeJavaScript(opsMod.switchSizeSystem(bestSys), true), 60000);
+      steps.push('选用码制: ' + bestSys + '（覆盖 ' + bestCover + '/' + wantSet.size + '）');
+      if (!sw || !sw.ok) steps.push('⚠ 切换码制失败');
+    }
+
     const sr = await withPlatform('setSizes',
-      () => wc.executeJavaScript(opsMod.setSizes(it.sizes), true), 120000);
+      () => wc.executeJavaScript(opsMod.setSizes(it.sizes), true), 180000);
     if (sr && sr.ok) {
       steps.push('设尺码: 勾上 ' + sr.turnedOn + ' / 取消 ' + sr.turnedOff);
     } else {
-      steps.push('⚠ 尺码未完全匹配，缺: ' + JSON.stringify((sr && sr.missing) || []).slice(0, 120));
+      const missing = (sr && sr.missing) || [];
+      steps.push('⚠ 尺码缺 ' + missing.length + ' 个: ' + JSON.stringify(missing).slice(0, 120));
+      if (bestHave.length) {
+        const extra = bestHave.filter((x) => !wantSet.has(x));
+        steps.push('   该码制可用码: ' + bestHave.slice(0, 30).join(','));
+      }
     }
   }
 
