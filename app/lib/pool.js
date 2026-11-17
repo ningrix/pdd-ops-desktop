@@ -13,11 +13,38 @@ function init(userDataDir) {
   try { fs.mkdirSync(userDataDir, { recursive: true }); } catch (_) {}
 }
 
+/**
+ * 图集去重（保持顺序）。
+ *
+ * 为什么在读取侧也做：拼多多的图集接口本身会返回重复 URL
+ * （实测一条 21 项的图集只有 11 个唯一 URL）。ops.collectGoods 已在采集时去重，
+ * 但修复之前采集进池的旧条目仍带重复 —— 读取时再兜一层，避免：
+ *   ① 加水印时重复处理同一张图（浪费一半时间）
+ *   ② 上架后主图有重复图位
+ */
+function dedupGallery(g) {
+  if (!Array.isArray(g)) return [];
+  const seen = Object.create(null);
+  const out = [];
+  for (const u of g) {
+    if (!u || seen[u]) continue;
+    seen[u] = 1;
+    out.push(u);
+  }
+  return out;
+}
+
+function normalize(it) {
+  if (!it || typeof it !== 'object') return it;
+  if (Array.isArray(it.gallery)) it.gallery = dedupGallery(it.gallery);
+  return it;
+}
+
 function load() {
   try {
     if (!FILE || !fs.existsSync(FILE)) return [];
     const a = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    return Array.isArray(a) ? a : [];
+    return Array.isArray(a) ? a.map(normalize) : [];
   } catch (_) {
     return [];
   }

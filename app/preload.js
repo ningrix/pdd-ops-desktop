@@ -42,6 +42,14 @@ contextBridge.exposeInMainWorld('pdd', {
     return () => ipcRenderer.removeListener('batch', h);
   },
 
+  // 商品检测
+  inspectItem: (args) => ipcRenderer.invoke('inspect:item', args),
+  inspectPool: () => ipcRenderer.invoke('inspect:pool'),
+
+  // 主图水印
+  watermarkItem: (args) => ipcRenderer.invoke('img:watermark', args),
+  openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
+
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),
   debugInfo: () => ipcRenderer.invoke('debug:info'),

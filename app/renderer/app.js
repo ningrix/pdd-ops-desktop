@@ -342,7 +342,9 @@ async function refreshPool() {
       '<td>' + (it.skus == null ? '-' : it.skus) + '</td>' +
       '<td>' + (it.images == null ? '-' : it.images) + '</td>' +
       '<td>' +
-        '<button class="btn mini primary" data-act="pub">上架到当前店</button> ' +
+        '<button class="btn mini" data-act="chk" title="检测标题/价格/主图/规格">检测</button> ' +
+        '<button class="btn mini" data-act="wm" title="给主图加水印，输出到本地">水印</button> ' +
+        '<button class="btn mini primary" data-act="pub">上架</button> ' +
         '<button class="btn mini" data-act="del">移除</button>' +
       '</td>';
     const cb = tr.querySelector('[data-sel]');
@@ -350,6 +352,8 @@ async function refreshPool() {
       if (cb.checked) state.poolSel.add(it.id); else state.poolSel.delete(it.id);
       updateSelCount();
     });
+    tr.querySelector('[data-act="chk"]').addEventListener('click', () => openInspect(it));
+    tr.querySelector('[data-act="wm"]').addEventListener('click', () => openWatermark(it));
     tr.querySelector('[data-act="pub"]').addEventListener('click', () => publishFromPool(it));
     tr.querySelector('[data-act="del"]').addEventListener('click', async () => {
       await window.pdd.poolRemove(it.id);
@@ -360,6 +364,184 @@ async function refreshPool() {
     tb.appendChild(tr);
   }
   updateSelCount();
+}
+
+// ---------------------------------------------------------------- 商品检测
+const LEVEL_TXT = { error: '必修', warn: '建议改', info: '参考' };
+
+function renderInsp(res, deepNote) {
+  const box = $('#inspBody');
+  const cls = res.level === 'ok' ? 'ok' : (res.level === 'error' ? 'error' : 'warn');
+  const grade = res.level === 'ok' ? '通过' : (res.level === 'error' ? '有问题' : '基本可用');
+
+  let html = '<div class="insp-score">' +
+    '<div class="insp-num ' + cls + '">' + res.score + '</div>' +
+    '<div><b>' + grade + '</b><div class="insp-meta">' +
+    '必修 ' + res.summary.error + ' 项 ｜ 建议 ' + res.summary.warn + ' 项 ｜ 参考 ' + res.summary.info + ' 项<br>' +
+    '标题 ' + res.summary.titleLen + ' 字 ｜ SKU ' + res.summary.skuCount +
+    ' 个 ｜ 主图 ' + res.summary.galleryCount + ' 张</div></div></div>';
+
+  if (deepNote) {
+    html += '<div class="insp-item info"><div class="t">' + esc(deepNote) + '</div></div>';
+  }
+
+  if (!res.issues.length) {
+    html += '<div class="insp-item info"><div class="t">没发现问题</div></div>';
+  }
+  for (const s of res.issues) {
+    html += '<div class="insp-item ' + esc(s.level) + '">' +
+      '<div class="t"><span class="insp-tag ' + esc(s.level) + '">' + LEVEL_TXT[s.level] + '</span>' +
+      esc(s.msg) +
+      (s.unconfirmed ? '<span class="insp-unc" title="这条阈值没有官方依据，只是经验值">未确认</span>' : '') +
+      '</div>' +
+      (s.fix ? '<div class="f">→ ' + esc(s.fix) + '</div>' : '') +
+      '</div>';
+  }
+
+  if (res.images && res.images.length) {
+    html += '<div class="insp-meta" style="margin-top:12px">主图逐张测量</div><div class="insp-imgs">';
+    for (const im of res.images) {
+      const bad = im.level === 'warn' || im.level === 'error' || im.error;
+      const cap = im.error ? '下载失败'
+        : (im.w + '×' + im.h + '<br>' + (im.bytes ? (im.bytes / 1024).toFixed(0) + 'KB' : ''));
+      html += '<div class="insp-img ' + (bad ? 'bad' : '') + '" title="' +
+        esc((im.issues || []).map((x) => x.msg).join('\n') || '正常') + '">' +
+        '<img src="' + esc(im.url) + '" />' + cap + '</div>';
+    }
+    html += '</div>';
+  }
+  if (res.imageErrors && res.imageErrors.length) {
+    html += '<div class="hint" style="color:#f5a623">' + esc(res.imageErrors.join('；')) + '</div>';
+  }
+
+  box.innerHTML = html;
+}
+
+async function openInspect(it) {
+  await withViewHidden(async () => {
+    const mask = $('#inspMask');
+    $('#inspTitle').textContent = String(it.title || '').slice(0, 22);
+    $('#inspBody').innerHTML = '<div class="insp-meta">检测中…</div>';
+    $('#inspErr').textContent = '';
+    mask.classList.add('on');
+    $('#inspDeep').disabled = true;
+    $('#inspClose').onclick = () => { mask.classList.remove('on'); };
+
+    // 先跑规则层（快）
+    const r = await window.pdd.inspectItem({ id: it.id, withImages: false });
+    $('#inspDeep').disabled = false;
+    if (!r || !r.ok) {
+      $('#inspErr').textContent = (r && r.error) || '检测失败';
+      $('#inspBody').innerHTML = '';
+      return;
+    }
+    state.lastInsp = it;
+    renderInsp(r);
+
+    // 图像层：按需触发
+    $('#inspDeep').textContent = '连主图一起查';
+    $('#inspDeep').onclick = async () => {
+      $('#inspDeep').disabled = true;
+      $('#inspDeep').textContent = '正在下载主图…';
+      const r2 = await window.pdd.inspectItem({ id: it.id, withImages: true });
+      $('#inspDeep').disabled = false;
+      $('#inspDeep').textContent = '重新查主图';
+      if (r2 && r2.ok) {
+        renderInsp(r2, '已合并主图检测（' + ((r2.images || []).length) + ' 张）');
+        logOk('主图检测完成：' + (r2.images || []).length + ' 张');
+      } else {
+        $('#inspErr').textContent = (r2 && r2.error) || '主图检测失败';
+      }
+    };
+  });
+}
+
+// ---------------------------------------------------------------- 主图水印
+const WM_DEFAULT_TEXT = {
+  mall: '',
+};
+
+async function openWatermark(it) {
+  await withViewHidden(async () => {
+    const mask = $('#wmMask');
+    $('#wmTitle').textContent = String(it.title || '').slice(0, 20) + ' · ' + (it.images || 0) + ' 张';
+    $('#wmErr').textContent = '';
+    $('#wmSteps').innerHTML = '';
+    $('#wmProgress').style.display = 'none';
+    if (!$('#wmText').value) {
+      $('#wmText').value = (it.sourceMallName || '') + ' 严选';
+    }
+    const syncPos = () => {
+      $('#wmPosWrap').style.display = ($('#wmMode').value === 'corner') ? 'block' : 'none';
+    };
+    const syncOpacity = () => {
+      $('#wmOpacityVal').textContent = Math.round(Number($('#wmOpacity').value) * 100) + '%';
+    };
+    syncPos(); syncOpacity();
+    $('#wmMode').onchange = () => {
+      syncPos();
+      // 平铺默认更淡
+      if ($('#wmMode').value === 'tile') {
+        $('#wmOpacity').value = '0.20';
+      } else if ($('#wmMode').value === 'band') {
+        $('#wmOpacity').value = '0.50';
+      } else {
+        $('#wmOpacity').value = '0.55';
+      }
+      syncOpacity();
+    };
+    $('#wmOpacity').oninput = syncOpacity;
+
+    mask.classList.add('on');
+    $('#wmCancel').onclick = () => mask.classList.remove('on');
+    $('#wmOk').disabled = false;
+    $('#wmOk').textContent = '生成水印图';
+    $('#wmOk').onclick = async () => {
+      const text = $('#wmText').value.trim();
+      if (!text) { $('#wmErr').textContent = '请填水印文字'; return; }
+      $('#wmOk').disabled = true;
+      $('#wmOk').textContent = '处理中…';
+      $('#wmErr').textContent = '';
+      $('#wmProgress').style.display = 'block';
+      $('#wmSteps').innerHTML = '<div>正在下载主图并加水印（' + (it.images || 0) + ' 张）…</div>';
+
+      const r = await window.pdd.watermarkItem({
+        id: it.id,
+        text,
+        mode: $('#wmMode').value,
+        pos: $('#wmPos').value,
+        opacity: Number($('#wmOpacity').value),
+      });
+
+      $('#wmOk').disabled = false;
+      $('#wmOk').textContent = '重新生成';
+      if (r && r.ok) {
+        logOk('水印完成 ' + r.count + '/' + r.total + ' 张');
+        $('#wmSteps').innerHTML =
+          '<div class="s-ok">已生成 ' + r.count + ' 张</div>' +
+          '<div style="color:#8fa3c0;font-size:11px;word-break:break-all">' + esc(r.outDir) + '</div>';
+        $('#wmHint').innerHTML = '生成好了。<b>不会动平台上的图</b>——需要你自己上传替换。';
+        // 加一个打开目录按钮
+        if (!$('#wmOpen')) {
+          const b = document.createElement('button');
+          b.className = 'btn mini primary';
+          b.id = 'wmOpen';
+          b.textContent = '打开文件夹';
+          b.style.marginTop = '8px';
+          b.onclick = () => window.pdd.openPath(r.outDir);
+          $('#wmSteps').appendChild(b);
+        } else {
+          $('#wmOpen').onclick = () => window.pdd.openPath(r.outDir);
+        }
+        if (r.errors && r.errors.length) {
+          $('#wmSteps').innerHTML += '<div style="color:#f5a623">' + esc(r.errors.join('；')) + '</div>';
+        }
+      } else {
+        $('#wmErr').textContent = (r && r.error) || '生成失败';
+        logErr('水印失败：' + ((r && r.error) || '未知'));
+      }
+    };
+  });
 }
 
 // ---------------------------------------------------------------- 批量队列
@@ -445,12 +627,13 @@ async function startBatch() {
   const ids = [...state.poolSel];
   if (!ids.length) { logWarn('先在左边勾选要上架的商品'); return; }
   const stock = Number($('#batchStock').value) || 50;
+  const factor = Number($('#batchFactor').value) || 1;
   const gmin = Number($('#batchGapMin').value) || 15;
   const gmax = Number($('#batchGapMax').value) || 25;
   logInfo('批量上架 ' + ids.length + ' 个商品，库存 ' + stock +
-          '，间隔 ' + gmin + '~' + gmax + ' 秒 ...');
+          '，加价 ×' + factor + '，间隔 ' + gmin + '~' + gmax + ' 秒 ...');
   const r = await window.pdd.batchStart(ids, {
-    stock, intervalMin: gmin, intervalMax: gmax, maxAttempts: 2,
+    stock, factor, intervalMin: gmin, intervalMax: gmax, maxAttempts: 2,
   });
   if (!r || !r.ok) { logErr('批量启动失败：' + ((r && r.error) || '未知')); return; }
   setTab('pool');

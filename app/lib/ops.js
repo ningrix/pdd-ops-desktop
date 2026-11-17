@@ -442,7 +442,19 @@ function collectGoods({ index = 0, goodsId = null } = {}) {
         sourceCommitId: commit,
         title: gd.goods_name || g.goods_name,
         thumb: gd.thumb_url || g.thumb_url,
-        gallery: (gd.galleries || []).map(x => x.url).filter(Boolean),
+        // 平台返回的 galleries 本身会带重复（实测：21 项里只有 11 个唯一 URL）。
+        // 不去重会导致上架后主图有大量重复图位，浪费曝光。
+        gallery: (function () {
+          const seen = {};
+          const out = [];
+          for (const x of (gd.galleries || [])) {
+            const u = x && x.url ? x.url : null;
+            if (!u || seen[u]) continue;
+            seen[u] = 1;
+            out.push(u);
+          }
+          return out;
+        })(),
         price: gd.min_group_price,
         marketPrice: gd.market_price,
         catId: gd.cat_id,
@@ -675,9 +687,23 @@ function setSizes(sizes) {
       if (lb) { lb.click(); on++; await sleep(160); }
     }
 
-    await sleep(800);
-    const after = readActive();
-    const missing = [...wantSet].filter(n => !after.has(n));
+    await sleep(2200);
+    let after = readActive();
+    let missing = [...wantSet].filter(n => !after.has(n));
+
+    // 第二遍：对没勾上的逐个重点一次（页面重渲染后第一批点击可能丢）
+    if (missing.length) {
+      for (let round = 0; round < 2 && missing.length; round++) {
+        for (const n of missing) {
+          const lb = byNorm.get(n);
+          if (lb) { lb.click(); await sleep(220); }
+        }
+        await sleep(1800);
+        after = readActive();
+        missing = [...wantSet].filter(n => !after.has(n));
+      }
+    }
+
     return { ok: missing.length === 0, turnedOn: on, turnedOff: off,
              want: WANT, before: [...cur], after: [...after], missing };
   })()`;

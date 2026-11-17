@@ -104,6 +104,7 @@
           <span class="batch-count" id="poolSelCount">已选 0 个</span>
           <span class="spacer"></span>
           <label class="mini-field">库存 <input type="number" id="batchStock" value="50" min="1" style="width:66px" /></label>
+          <label class="mini-field" title="在源商品每个 SKU 的价格上乘这个倍数">加价 <input type="number" id="batchFactor" value="1" min="0.5" step="0.01" style="width:60px" /> 倍</label>
           <label class="mini-field">间隔 <input type="number" id="batchGapMin" value="15" min="5" style="width:52px" /> ~
             <input type="number" id="batchGapMax" value="25" min="5" style="width:52px" /> 秒</label>
           <button class="btn primary" id="btnBatchStart">批量上架到当前店</button>
@@ -231,6 +232,67 @@
     <div class="modal-actions">
       <button class="btn ghost" id="modalCancel">取消</button>
       <button class="btn primary" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 商品检测 -->
+<div class="modal-mask" id="inspMask">
+  <div class="modal wide">
+    <h4>商品检测 <span class="insp-sub" id="inspTitle"></span></h4>
+    <div class="insp-body" id="inspBody"></div>
+    <p class="modal-err" id="inspErr"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="inspDeep" title="下载主图逐张量尺寸/白底/居中，约 3~10 秒">连主图一起查</button>
+      <button class="btn" id="inspClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 主图水印 -->
+<div class="modal-mask" id="wmMask">
+  <div class="modal">
+    <h4>主图水印 <span class="insp-sub" id="wmTitle"></span></h4>
+
+    <label class="fld">水印文字
+      <input type="text" id="wmText" placeholder="例如：山野户外旗舰店" />
+    </label>
+
+    <label class="fld">模式
+      <select id="wmMode">
+        <option value="corner">角标 · 品牌标（右下角一行字）</option>
+        <option value="tile">平铺 · 防盗图（斜向重复）</option>
+        <option value="band">卖点条 · 促点击（底部色带）</option>
+      </select>
+    </label>
+
+    <label class="fld" id="wmPosWrap">位置
+      <select id="wmPos">
+        <option value="br">右下</option>
+        <option value="bl">左下</option>
+        <option value="tr">右上</option>
+        <option value="tl">左上</option>
+      </select>
+    </label>
+
+    <label class="fld">浓度
+      <input type="range" id="wmOpacity" min="0.05" max="0.9" step="0.01" value="0.55" />
+      <span class="hint" id="wmOpacityVal">55%</span>
+    </label>
+
+    <p class="hint" id="wmHint">
+      白底主图会自动切成深色字，深色底自动切白色。
+      输出到本地目录，不会动平台上的图。
+    </p>
+    <p class="modal-err" id="wmErr"></p>
+
+    <div class="progress" id="wmProgress" style="display:none">
+      <div class="psteps" id="wmSteps"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="wmCancel">取消</button>
+      <button class="btn primary" id="wmOk">生成水印图</button>
     </div>
   </div>
 </div>

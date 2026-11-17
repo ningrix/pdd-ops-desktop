@@ -305,3 +305,37 @@ tbody .warn { color: var(--err); }
 .batch-table td.st-failed_unknown { color: #ef5b5b; }
 .batch-table td.st-running { color: #5a82ff; }
 .batch-table td.st-queued { color: #7d8aa3; }
+
+/* ---------------- 商品检测 ---------------- */
+.insp-sub { font-size: 12px; color: #7d8aa3; font-weight: 400; margin-left: 6px; }
+.insp-body { max-height: 52vh; overflow-y: auto; margin: 10px 0; }
+.insp-score { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.insp-num { font-size: 30px; font-weight: 700; line-height: 1; }
+.insp-num.ok { color: #3ddc84; }
+.insp-num.warn { color: #f5a623; }
+.insp-num.error { color: #ff5c5c; }
+.insp-meta { font-size: 12px; color: #7d8aa3; line-height: 1.7; }
+.insp-item { border-left: 3px solid #2b3a56; padding: 8px 10px; margin-bottom: 7px;
+  background: #141a26; border-radius: 0 6px 6px 0; }
+.insp-item.error { border-left-color: #ff5c5c; }
+.insp-item.warn { border-left-color: #f5a623; }
+.insp-item.info { border-left-color: #4a90d9; }
+.insp-item .t { font-size: 13px; color: #dfe6f2; }
+.insp-item .f { font-size: 12px; color: #8fa3c0; margin-top: 4px; }
+.insp-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  margin-right: 6px; vertical-align: 1px; }
+.insp-tag.error { background: #4a1418; color: #ff8080; }
+.insp-tag.warn { background: #4a3410; color: #f5b942; }
+.insp-tag.info { background: #14283f; color: #6fb0f0; }
+.insp-unc { font-size: 10px; color: #6b7a90; margin-left: 4px; }
+.insp-imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.insp-img { width: 92px; font-size: 10px; color: #7d8aa3; text-align: center; }
+.insp-img img { width: 92px; height: 92px; object-fit: contain; background: #0b0f18;
+  border-radius: 4px; border: 1px solid #223047; }
+.insp-img.bad img { border-color: #ff5c5c; }
+
+/* ---------------- 水印弹窗 ---------------- */
+.fld { display: block; font-size: 12px; color: #9fb0c8; margin-bottom: 11px; }
+.fld input[type=text], .fld select { width: 100%; margin-top: 5px; }
+.fld input[type=range] { width: 190px; vertical-align: middle; margin-top: 6px; }
+.hint { font-size: 11px; color: #6b7a90; line-height: 1.6; margin: 6px 0; }

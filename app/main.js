@@ -391,7 +391,7 @@ ipcMain.handle('pool:detail', (_e, id) => pool.get(id));
 /**
  * 从采集箱上架到指定店铺（跨店）—— 业务实现，IPC 与批量队列共用
  */
-async function poolPublishImpl({ id, mallId, stock }) {
+async function poolPublishImpl({ id, mallId, stock, factor }) {
   const it = pool.get(id);
   if (!it) return { ok: false, error: '采集箱里没有这一条' };
 
@@ -629,17 +629,43 @@ async function poolPublishImpl({ id, mallId, stock }) {
       body.goods_name = String(it.title || '').slice(0, 60);
       const gal = (it.gallery || []).filter(Boolean);
       if (gal.length) body.galleries = gal.map((u) => ({ url: u, width: 800, height: 800, type: 2 }));
-      if (it.price) {
-        for (const s of (body.skus || [])) {
-          s.multi_price = Number(it.price);
-          s.price = Math.max(Number(it.price) + 100, Number(s.price) || 0);
-          s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
-          s.price_in_yuan = (s.price / 100).toFixed(2);
+      // 逐 SKU 价格映射：按「规格组合」把源 SKU 的价格搬到目标 SKU
+      // 键 = parent_name:spec_name 的拼接（父规格组名 + 规格值名）
+      const skuKey = (spec) => (spec || [])
+        .map((x) => String(x.parent_name || '') + ':' + String(x.spec_name || ''))
+        .join('|');
+      const srcMap = new Map();
+      for (const s of (it.skus || [])) srcMap.set(skuKey(s.spec), s);
+
+      const priceFactor = Number(factor) > 0 ? Number(factor) : 1;
+      let mapped = 0, fallback = 0;
+      for (const s of (body.skus || [])) {
+        const src = srcMap.get(skuKey(s.spec));
+        if (src && Number(src.group) > 0) {
+          const g = Math.round(Number(src.group) * priceFactor);
+          const single = Math.round(Math.max(Number(src.single) || 0, g + 100) * priceFactor);
+          s.multi_price = g;
+          s.price = Math.max(single, g + 100);
+          mapped++;
+        } else if (it.price) {
+          s.multi_price = Math.round(Number(it.price) * priceFactor);
+          s.price = Math.max(Math.round((Number(it.price) + 100) * priceFactor), s.multi_price + 100);
+          fallback++;
+        } else {
+          continue;
         }
-        // 参考价必须【严格大于】所有 SKU 的单买价，否则报 1000161
-        const maxSingle = Math.max.apply(null, (body.skus || []).map((s) => Number(s.price) || 0));
-        body.market_price = Math.max(maxSingle + 100, Number(it.price) + 200,
-                                     Number(body.market_price) || 0);
+        s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
+        s.price_in_yuan = (s.price / 100).toFixed(2);
+      }
+      if (mapped || fallback) {
+        steps.push('价格映射: 逐 SKU ' + mapped + ' 个' +
+                   (fallback ? '，兜底 ' + fallback + ' 个' : '') +
+                   (priceFactor !== 1 ? '（×' + priceFactor + '）' : ''));
+      }
+      // 参考价必须【严格大于】所有 SKU 的单买价，否则报 1000161
+      const maxSingle = Math.max.apply(null, (body.skus || []).map((s) => Number(s.price) || 0));
+      if (maxSingle > 0) {
+        body.market_price = Math.max(maxSingle + 100, Number(body.market_price) || 0);
         body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
       }
       if (stock) for (const s of (body.skus || [])) s.quantity_delta = Number(stock);
@@ -719,6 +745,97 @@ async function poolPublishImpl({ id, mallId, stock }) {
 
 ipcMain.handle('pool:publish', (_e, args) => poolPublishImpl(args || {}));
 
+// ---------------------------------------------------------------- 商品检测 + 主图水印
+const inspect = require('./lib/inspect');
+const imgtool = require('./lib/imgtool');
+
+/** 检测单个采集箱条目。withImages=true 时额外下载主图做图像层检测（慢，几十秒）。 */
+ipcMain.handle('inspect:item', async (_e, { id, withImages, ocr }) => {
+  const it = pool.get(id);
+  if (!it) return { ok: false, error: '采集箱里没有这一条' };
+
+  let imageReport = null;
+  let imageErrors = [];
+  if (withImages) {
+    const urls = (it.gallery || []).slice(0, 10);
+    if (urls.length) {
+      const tmp = path.join(DATA_DIR, 'imgtmp', id);
+      const r = await imgtool.inspectUrls(urls, tmp, { ocr: !!ocr });
+      if (r && r.ok) {
+        imageReport = r;
+        imageErrors = r.errors || [];
+      } else {
+        imageErrors.push((r && r.error) || '图像检测失败');
+      }
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+    }
+  }
+
+  const res = inspect.inspectItem(it, { imageReport });
+  return {
+    ok: true,
+    id, title: it.title,
+    score: res.score, level: res.level,
+    issues: res.issues,
+    summary: res.summary,
+    images: imageReport ? imageReport.images : null,
+    imageErrors,
+  };
+});
+
+/** 批量检测（不含图像层，纯规则，秒级） */
+ipcMain.handle('inspect:pool', (_e) => {
+  const items = pool.list().map((x) => pool.get(x.id)).filter(Boolean);
+  const r = inspect.inspectMany(items);
+  return { ok: true, ...r };
+});
+
+/** 对采集箱条目的主图加水印，输出到本地目录 */
+ipcMain.handle('img:watermark', async (_e, args) => {
+  const a = args || {};
+  const it = pool.get(a.id);
+  if (!it) return { ok: false, error: '采集箱里没有这一条' };
+  const urls = (it.gallery || []).filter(Boolean);
+  if (!urls.length) return { ok: false, error: '这条没有主图' };
+
+  const useAll = a.all !== false;          // 默认全部主图
+  const picked = useAll ? urls : urls.slice(0, Number(a.limit) || 5);
+  const outDir = path.join(DATA_DIR, 'watermarked', a.id + '_' + Date.now());
+
+  const r = await imgtool.watermarkUrls(picked, {
+    text: a.text,
+    mode: a.mode || 'corner',
+    pos: a.pos || 'br',
+    where: a.where || 'bottom',
+    opacity: a.opacity,
+    sizeRatio: a.sizeRatio,
+    outDir,
+    namePrefix: 'wm',
+    timeoutMs: 90000,
+  });
+  if (!r || !r.ok) {
+    return {
+      ok: false,
+      failed: (r && r.failed) || 'failed_known',
+      error: (r && r.error) || '水印失败',
+      errors: (r && r.errors) || [],
+    };
+  }
+  log('ok', '水印完成 ' + r.count + '/' + r.total + ' 张 → ' + outDir);
+  return { ok: true, count: r.count, total: r.total, outDir, files: r.files, errors: r.errors };
+});
+
+/** 用系统文件管理器打开目录（让用户直接看到成品） */
+ipcMain.handle('shell:openPath', (_e, p) => {
+  try {
+    if (!p || !fs.existsSync(p)) return { ok: false, error: '路径不存在' };
+    shell.openPath(p);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // 初始化采集箱存储
 try { pool.init(DATA_DIR); } catch (e) { trace('pool init fail: ' + e.message); }
 
@@ -759,7 +876,7 @@ function classifyBatchResult(r) {
 }
 
 async function runBatchLoop(opts) {
-  const o = Object.assign({ stock: 50, intervalMin: 15, intervalMax: 25, maxAttempts: 2 }, opts || {});
+  const o = Object.assign({ stock: 50, factor: 1, intervalMin: 15, intervalMax: 25, maxAttempts: 2 }, opts || {});
   batchRunning = true;
   batchStopRequested = false;
   batch.setRunning(true);
@@ -782,7 +899,7 @@ async function runBatchLoop(opts) {
 
     let r;
     try {
-      r = await poolPublishImpl({ id: item.poolId, mallId: item.mallId, stock: o.stock });
+      r = await poolPublishImpl({ id: item.poolId, mallId: item.mallId, stock: o.stock, factor: o.factor });
     } catch (e) {
       // 异常 = 状态未知，绝不重试
       r = { ok: false, failed: 'failed_unknown', error: String((e && e.message) || e) };
