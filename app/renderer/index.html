@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>拼多多上货中台</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <span>拼多多上货中台</span>
+    <span class="ver">v0.2</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="btnPing" class="btn ghost">检测登录</button>
+    <button id="btnReload" class="btn ghost">刷新页面</button>
+    <label class="switch">
+      <input type="checkbox" id="chkView" checked />
+      <span>显示浏览器</span>
+    </label>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 左侧 -->
+  <aside class="side">
+    <section class="sec">
+      <div class="sec-head">
+        <h3>① 店铺</h3>
+        <button id="btnAddMall" class="btn mini">＋ 添加店铺</button>
+      </div>
+      <ul id="mallList" class="mall-list">
+        <li class="empty">还没有店铺，点右上「＋ 添加店铺」</li>
+      </ul>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><h3>② 选商品</h3></div>
+      <button id="btnList" class="btn primary block">读取本店在售商品</button>
+      <p class="hint">
+        读出来以后，在右边「商品列表」里<br />
+        点某一行的 <b>复制</b> 按钮就能开始。
+      </p>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><h3>③ 最近一次的结果</h3></div>
+      <div id="lastCard" class="card empty">
+        <div class="card-empty">还没有操作记录</div>
+      </div>
+    </section>
+
+    <section class="sec grow">
+      <div class="sec-head">
+        <h3>日志</h3>
+        <button id="btnClearLog" class="btn mini ghost">清空</button>
+      </div>
+      <div id="log" class="log"></div>
+    </section>
+  </aside>
+
+  <!-- 右侧 -->
+  <main class="main">
+    <div class="tabs">
+      <button class="tab active" data-tab="goods">商品列表</button>
+      <button class="tab" data-tab="pool">采集箱</button>
+      <button class="tab" data-tab="browser">浏览器</button>
+      <button class="tab" data-tab="result">原始结果</button>
+    </div>
+
+    <div class="panes">
+      <div class="pane active" id="pane-goods">
+        <div class="table-wrap">
+          <div id="goodsEmpty" class="big-empty">
+            <div class="be-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+            </div>
+            <p>还没有读取商品</p>
+            <p class="be-sub">先点左边「读取本店在售商品」</p>
+          </div>
+          <table id="goodsTable" style="display:none">
+            <thead>
+              <tr>
+                <th style="width:52px">图</th>
+                <th>标题</th>
+                <th style="width:92px">拼单价</th>
+                <th style="width:92px">单买价</th>
+                <th style="width:66px">SKU</th>
+                <th style="width:66px">库存</th>
+                <th style="width:116px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="goodsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-pool">
+        <div class="table-wrap">
+          <div id="poolEmpty" class="big-empty">
+            <div class="be-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+            </div>
+            <p>采集箱是空的</p>
+            <p class="be-sub">在「商品列表」里点某一行的「采集」，商品会存到这里</p>
+          </div>
+          <table id="poolTable" style="display:none">
+            <thead>
+              <tr>
+                <th style="width:52px">图</th>
+                <th>标题</th>
+                <th style="width:110px">来源店铺</th>
+                <th style="width:86px">拼单价</th>
+                <th style="width:60px">SKU</th>
+                <th style="width:70px">图数</th>
+                <th style="width:170px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="poolBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-browser">
+        <div class="placeholder" id="browserPlaceholder">
+          <div class="ph-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <p>内置浏览器</p>
+          <p class="ph-sub">添加店铺后，拼多多商家后台会显示在这里</p>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-result">
+        <pre id="resultBox" class="result">还没有执行结果</pre>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 复制配置弹窗 -->
+<div class="modal-mask" id="copyMask">
+  <div class="modal wide">
+    <h4>复制这个商品</h4>
+
+    <div class="src-row">
+      <img id="copyThumb" alt="" />
+      <div class="src-info">
+        <div id="copySrcTitle" class="src-title"></div>
+        <div id="copySrcMeta" class="src-meta"></div>
+      </div>
+    </div>
+
+    <label>新商品标题</label>
+    <input type="text" id="copyTitle" />
+    <p class="mini-hint" id="titleHint">改一下标题，能降低和原链接的重复度</p>
+
+    <label>改价倍数</label>
+    <input type="text" id="copyFactor" value="1.05" />
+    <div class="preview" id="copyPreview"></div>
+
+    <label class="chk-line">
+      <input type="checkbox" id="copyDoPrice" checked />
+      <span>复制后顺便改价（会多花约 15 秒）</span>
+    </label>
+
+    <label class="chk-line">
+      <input type="checkbox" id="copyPublish" />
+      <span>复制后直接提交上架（不勾 = 只进草稿箱）</span>
+    </label>
+    <p class="mini-hint">
+      不勾的话，商品只会出现在商家后台的「商品管理 → 草稿箱」，
+      <b>不会</b>立刻出现在店铺在售列表里。
+    </p>
+
+    <div class="size-box" id="copySizeBox">
+      <div class="size-head">尺码表</div>
+      <div class="size-body" id="copySizeBody">检测中 ...</div>
+    </div>
+
+    <p class="modal-err" id="copyErr"></p>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="copyCancel">取消</button>
+      <button class="btn primary" id="copyOk">开始复制</button>
+    </div>
+
+    <div class="progress" id="copyProgress" style="display:none">
+      <div class="bar"><i id="copyBar"></i></div>
+      <div class="psteps" id="copySteps"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 单行输入弹窗（给店铺起名） -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <h4 id="modalTitle">输入</h4>
+    <input type="text" id="modalInput" />
+    <p class="modal-err" id="modalErr"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modalCancel">取消</button>
+      <button class="btn primary" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

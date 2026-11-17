@@ -1,0 +1,28 @@
+# 登录态与运行时数据 —— 绝不入库（应用运行时会锁文件，误加入会让 git 卡死）
+app/userdata/
+app/.bak-v0/
+
+# 依赖
+node_modules/
+app/node_modules/
+
+# 实验产物（可随时丢弃）
+work/
+*.pyc
+__pycache__/
+
+# 日志
+*.log
+app/launch.log
+
+# 素材与已交付成品（体积大，另行备份）
+交付/
+交付样张/
+assets/
+putian-ref/
+putian-shoe/
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
