@@ -414,9 +414,24 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   if (!ls || !ls.ok || !ls.items || !ls.items.length) {
     return { ok: false, error: '目标店铺没有在售商品，无法作为骨架', steps };
   }
-  // ② 依次尝试骨架（同品类的优先），某个撞 600102 就换下一个
-  const cands = ls.items.slice().sort((a, b) =>
-    (b.cat_id === it.catId ? 1 : 0) - (a.cat_id === it.catId ? 1 : 0));
+  // ② 骨架必须【同类目】—— 跨类目骨架的尺码表是另一套体系（鞋码 39-45 vs 服装 150/72A），
+  //    硬套只会得到一条规格错乱的商品。宁可拒绝，不产废品。
+  const srcCat = Number(it.catId) || null;
+  let cands = ls.items.slice();
+  if (srcCat) {
+    cands = cands.filter((x) => Number(x.cat_id) === srcCat);
+    if (!cands.length) {
+      return {
+        ok: false,
+        error: '目标店铺没有同品类商品可作骨架',
+        advice: '目标店需要一个和源商品同类的商品（源类目 ' + srcCat + '）。' +
+                '跨类目的规格体系完全不同（鞋码 vs 服装码），套不过去。' +
+                '办法：先在目标店手动上架一个同类商品当骨架，再回来跑。',
+        steps,
+      };
+    }
+  }
+  steps.push('同品类骨架候选: ' + cands.length + ' 个');
 
   let draft = null;
   let base = null;
@@ -452,151 +467,137 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   steps.push('骨架草稿: commit=' + draft.commit_id + ' goods=' + draft.goods_id +
              '（' + draft.images + ' 图 / ' + draft.skus + ' SKU）');
 
-  // ③ 抓草稿保存载荷
-  let raw = null;
-  try {
-    raw = await captureEditBody(target.view.webContents, draft.commit_id, draft.goods_id);
-  } catch (e) {
-    steps.push('抓载荷异常: ' + e.message);
-  }
-  if (!raw) {
-    return {
-      ok: false,
-      error: '没抓到骨架载荷：' + (lastCaptureError || '未知原因'),
-      advice: '草稿已建好（commit=' + draft.commit_id + '），只是没抓到它的保存载荷。' +
-              '再点一次「上架」通常会成功；连续失败就去目标店草稿箱删掉它再重来。',
-      failed: 'failed_unknown',
-      steps, draft,
-    };
-  }
-  steps.push('载荷 ' + raw.length + ' 字节');
-
-  // ④ 覆盖字段
-  let body;
-  try { body = JSON.parse(raw); } catch (e) {
-    return { ok: false, error: '载荷解析失败', steps };
-  }
-  body.goods_name = String(it.title || '').slice(0, 60);
-  const gal = (it.gallery || []).filter(Boolean);
-  if (gal.length) {
-    body.galleries = gal.map((u) => ({ url: u, width: 800, height: 800, type: 2 }));
-  }
-
-  /**
-   * SKU 规格整树替换。
-   * 载荷里的规格树完全在 skus[].spec[]（parent_id / parent_name / spec_id / spec_name），
-   * groups 是「团购设置」不是规格，别动它。
-   *
-   * 只在源与骨架【同类目】时才替换 —— parent_id 是类目绑定的规格组
-   * （鞋码是 26908，服装尺码是 1226），跨类目硬塞会被类目校验拒。
-   *
-   * 平台记录 id（id / sku_id）属于源店，不能带过来：
-   * 规格完全一致的复用骨架的 id，其余置空表示新建。
-   */
-  const sameCat = it.catId && body.cat_id && Number(it.catId) === Number(body.cat_id);
-  const srcSkus = Array.isArray(it.skus) ? it.skus : [];
-  const keyOf = (spec) => (spec || []).map((s) => s.parent_id + ':' + s.spec_id).join('|');
-
-  if (sameCat && srcSkus.length) {
-    const oldSkus = Array.isArray(body.skus) ? body.skus : [];
-    const byKey = new Map();
-    for (const o of oldSkus) byKey.set(keyOf(o.spec), o);
-
-    let reused = 0;
-    const built = [];
-    for (const src of srcSkus) {
-      const k = keyOf(src.spec);
-      const old = byKey.get(k);
-      if (old) reused++;
-      const rec = {
-        limit_quantity: 999999,
-        out_sku_sn: '',
-        is_onsale: 1,
-        pre_sale_time: 0,
-        is_sku_group_pre_sale: 0,
-        shipment_limit_second_list: [],
-        sim_direct_ext_params: null,
-        weight: 0,
-        length: null,
-        oversea_sku: {},
-        sku_srv_templates: '',
-        sku69_code: '',
-      };
-      if (old) { rec.id = old.id; rec.sku_id = old.sku_id; }
-      rec.thumb_url = (old && old.thumb_url) || gal[0] || it.thumb || '';
-      rec.multi_price = Number(src.group) || 0;
-      rec.price = Math.max(Number(src.single) || 0, rec.multi_price + 100);
-      rec.multi_price_in_yuan = (rec.multi_price / 100).toFixed(2);
-      rec.price_in_yuan = (rec.price / 100).toFixed(2);
-      rec.quantity_delta = Number(stock) || 50;
-      rec.spec = (src.spec || []).map((sp) => ({
-        parent_id: sp.parent_id,
-        parent_name: sp.parent_name,
-        spec_id: sp.spec_id,
-        spec_name: sp.spec_name,
-        is_custom: 0,
-      }));
-      built.push(rec);
+  // ③ 打开编辑页，等「保存草稿」按钮就绪（后续要点它，不是回放载荷）
+  const wc = target.view.webContents;
+  const editUrl = 'https://mms.pinduoduo.com/goods/goods_add/index?id=' + draft.commit_id +
+                  '&goods_id=' + draft.goods_id + '&type=edit';
+  const opsMod = require('./lib/ops');
+  const ready = await withPlatform('openEdit', async () => {
+    const nav = await gotoUrl(wc, editUrl, 2000);
+    if (!nav.ok && !nav.aborted) return { ok: false, error: nav.error };
+    for (let i = 0; i < 70; i++) {
+      try {
+        if (await wc.executeJavaScript(opsMod.hasSaveButton(), true)) return { ok: true };
+      } catch (_) { /* ignore */ }
+      await sleep(500);
     }
-    body.skus = built;
-    steps.push('SKU 整树替换: ' + oldSkus.length + ' → ' + built.length +
-               '（复用平台 id ' + reused + '，新建 ' + (built.length - reused) + '）');
-  } else if (srcSkus.length) {
-    steps.push('SKU 未替换：源类目 ' + it.catId + ' ≠ 骨架类目 ' + body.cat_id +
-               '，规格组不兼容，保留骨架规格');
+    return { ok: false, error: '编辑页未就绪' };
+  }, 90000);
+  steps.push('编辑页: ' + (ready.ok ? '就绪' : '失败 ' + (ready.error || '')));
+  if (!ready.ok) {
+    return { ok: false, error: '打不开草稿编辑页：' + (ready.error || ''), steps, draft };
   }
 
-  // 价格兜底：没有逐 SKU 价格时用源最低拼单价
-  if (!(sameCat && srcSkus.length) && it.price) {
-    for (const s of (body.skus || [])) {
-      const single = Math.max(Number(it.price) + 100, Number(s.price) || 0);
-      s.multi_price = Number(it.price);
-      s.price = single;
-      s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
-      s.price_in_yuan = (single / 100).toFixed(2);
+  // ④ 滚到规格区并等渲染，然后读改前状态
+  const sc = await withPlatform('scrollSpec',
+    () => wc.executeJavaScript(opsMod.scrollToSpec(), true), 60000);
+  steps.push('规格区: ' + (sc && sc.ok
+    ? '已渲染（颜色框 ' + sc.colors + ' 个）'
+    : '未渲染（滚动 ' + (sc && sc.scrolled ? '成功' : '失败') + '）'));
+
+  const before = await withPlatform('readSpec',
+    () => wc.executeJavaScript(opsMod.readSpecState(), true), 30000);
+  steps.push('改前: 颜色 ' + ((before && before.colors) || []).length +
+             ' 个 / 尺码选项 ' + ((before && before.sizeOptions) || []).length +
+             ' 个 / SKU 行 ' + ((before && before.skuRows) || 0));
+
+  // ⑤ 用 DOM 改颜色（页面会自己生成合法 spec_id）
+  const srcColors = [];
+  {
+    const seen = {};
+    for (const s of (it.skus || [])) {
+      for (const sp of (s.spec || [])) {
+        if (!/颜色|color/i.test(sp.parent_name || '')) continue;
+        if (!seen[sp.spec_name]) { seen[sp.spec_name] = 1; srcColors.push(sp.spec_name); }
+      }
     }
   }
-  if (it.price) {
-    body.market_price = Math.max(Number(body.market_price) || 0, Number(it.price) + 100);
-    body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
-  }
-  if (stock) {
-    for (const s of (body.skus || [])) s.quantity_delta = Number(stock);
-  }
-  steps.push('覆盖: 标题 + 图 ' + gal.length + ' 张 + 价格 ' + ((it.price || 0) / 100).toFixed(2));
-
-  // ⑤ 回放保存 —— 保存失败绝不能往下提交，否则会提交一条"内容不对"的商品
-  let sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), draft.commit_id));
-  let saveOk = !!(sv && sv.save && sv.save.ok);
-  steps.push('保存: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save)));
-
-  // 频控（2000000）是可重试的：等一会儿再存一次
-  if (!saveOk && /操作过于频繁|2000000/.test(JSON.stringify(sv && sv.save && sv.save.err))) {
-    steps.push('触发频控，等 9 秒后重试保存 ...');
-    await sleep(9000);
-    sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), draft.commit_id));
-    saveOk = !!(sv && sv.save && sv.save.ok);
-    steps.push('重试保存: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save)));
+  if (srcColors.length) {
+    const cr = await withPlatform('setColors',
+      () => wc.executeJavaScript(opsMod.setColors(srcColors), true), 120000);
+    steps.push('设颜色: ' + JSON.stringify((cr && cr.got) || cr).slice(0, 160));
+    if (!cr || !cr.ok) steps.push('⚠ 颜色设置不完整');
+  } else {
+    steps.push('源商品没有颜色规格，跳过');
   }
 
-  if (!saveOk) {
-    return {
-      ok: false,
-      error: '草稿保存失败，已停止（未提交）',
-      advice: '覆盖内容没有落库，直接提交会得到一条「标题对、规格错」的商品。' +
-              '草稿仍留在目标店草稿箱：commit=' + draft.commit_id +
-              ' goods=' + draft.goods_id + '。稍后重试或手动删除。',
-      failed: 'failed_unknown',
-      steps,
-      draft,
-    };
+  // ⑥ 用 DOM 勾尺码
+  if ((it.sizes || []).length) {
+    const sr = await withPlatform('setSizes',
+      () => wc.executeJavaScript(opsMod.setSizes(it.sizes), true), 120000);
+    if (sr && sr.ok) {
+      steps.push('设尺码: 勾上 ' + sr.turnedOn + ' / 取消 ' + sr.turnedOff);
+    } else {
+      steps.push('⚠ 尺码未完全匹配，缺: ' + JSON.stringify((sr && sr.missing) || []).slice(0, 120));
+    }
   }
 
-  // ⑥ 读页面 commit 后提交
-  await sleep(2000);
+  // ⑦ 读改后规格状态
+  const after = await withPlatform('readSpec2',
+    () => wc.executeJavaScript(opsMod.readSpecState(), true), 30000);
+  steps.push('改后: 颜色 ' + ((after && after.colors) || []).length +
+             ' 个 / SKU 行 ' + ((after && after.skuRows) || 0));
+
+  // ⑧ 点页面「保存草稿」—— 这一步让页面把规格落库并生成 spec_id
+  const saveClicked = await withPlatform('clickSave', async () => {
+    const r = await wc.executeJavaScript(opsMod.clickSaveDraft(), true);
+    await sleep(6000);
+    return r;
+  }, 60000);
+  steps.push('点保存: ' + JSON.stringify(saveClicked).slice(0, 80));
+
+  // 页面自己报错就停
+  let pageErrs = [];
+  try { pageErrs = await wc.executeJavaScript(opsMod.readPageErrors(), true) || []; } catch (_) {}
+  if (pageErrs.length) steps.push('页面提示: ' + JSON.stringify(pageErrs.slice(0, 3)));
+
+  // ⑨ 读新 commit，再抓一份「含新规格」的载荷来改标题/图/价格
   const pg = await runInMall((o) => o.readPageCommit());
-  const useCommit = (pg && pg.commitId) || draft.commit_id;
+  let useCommit = (pg && pg.commitId) || draft.commit_id;
   if (useCommit !== draft.commit_id) steps.push('commit 变化: ' + draft.commit_id + ' → ' + useCommit);
+
+  let raw2 = null;
+  try { raw2 = await captureEditBody(wc, useCommit, draft.goods_id); } catch (_) {}
+  if (raw2) {
+    let body;
+    try { body = JSON.parse(raw2); } catch (e) { body = null; }
+    if (body) {
+      body.goods_name = String(it.title || '').slice(0, 60);
+      const gal = (it.gallery || []).filter(Boolean);
+      if (gal.length) body.galleries = gal.map((u) => ({ url: u, width: 800, height: 800, type: 2 }));
+      if (it.price) {
+        for (const s of (body.skus || [])) {
+          s.multi_price = Number(it.price);
+          s.price = Math.max(Number(it.price) + 100, Number(s.price) || 0);
+          s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
+          s.price_in_yuan = (s.price / 100).toFixed(2);
+        }
+        body.market_price = Math.max(Number(body.market_price) || 0, Number(it.price) + 100);
+        body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
+      }
+      if (stock) for (const s of (body.skus || [])) s.quantity_delta = Number(stock);
+
+      const sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), useCommit));
+      const saveOk = !!(sv && sv.save && sv.save.ok);
+      steps.push('覆盖标题/图/价格: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save).slice(0, 120)));
+      if (!saveOk) {
+        return {
+          ok: false,
+          error: '最终保存失败，已停止（未提交）',
+          failed: 'failed_unknown',
+          advice: '草稿在目标店草稿箱：commit=' + useCommit + ' goods=' + draft.goods_id,
+          steps, draft,
+        };
+      }
+      steps.push('最终 SKU 数: ' + (body.skus || []).length);
+    } else {
+      steps.push('⚠ 没解析到最终载荷，标题/价格未覆盖（规格已保存）');
+    }
+  } else {
+    steps.push('⚠ 没抓到最终载荷（' + (lastCaptureError || '') + '），标题/价格未覆盖');
+  }
+
+  await sleep(1500);
 
   const sub = await runInMall((o) => o.submitDraft(draft.goods_id, useCommit));
   steps.push('提交: ' + ((sub && sub.ok) ? 'ok' : JSON.stringify(sub && sub.detail)));
@@ -999,6 +1000,64 @@ ipcMain.handle('ops:publish', async (_e, args) => {
 });
 
 // ---------------------------------------------------------------- 诊断 & 店铺在线状态
+// ---------------------------------------------------------------- 网络抓包（调试用）
+/**
+ * 主进程侧网络抓包。外部 CDP 在 WebContentsView 上抓不到 Network 事件，
+ * 但主进程的 webContents.debugger 可以（captureEditBody 用的就是它）。
+ * 用法：netStart → 在渲染层点按钮 → netStop 取记录。
+ */
+let netSession = null;
+
+ipcMain.handle('debug:netStart', async () => {
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  if (netSession) { try { netSession.dbg.removeListener('message', netSession.onMsg); } catch (_) {} }
+
+  const dbg = m.view.webContents.debugger;
+  let attached = false;
+  try {
+    if (!dbg.isAttached()) { dbg.attach('1.3'); attached = true; }
+  } catch (e) {
+    return { ok: false, error: '调试器附加失败: ' + e.message };
+  }
+
+  const records = [];
+  const onMsg = (_evt, method, params) => {
+    if (method !== 'Network.requestWillBeSent') return;
+    const req = (params && params.request) || {};
+    const url = req.url || '';
+    if (url.indexOf('pinduoduo.com') < 0) return;
+    records.push({
+      url: url.split('?')[0].replace('https://mms.pinduoduo.com', ''),
+      query: url.indexOf('?') >= 0 ? url.split('?')[1].slice(0, 200) : '',
+      method: req.method,
+      body: req.postData || null,
+      ts: Date.now(),
+    });
+  };
+  dbg.on('message', onMsg);
+
+  try {
+    await dbg.sendCommand('Network.enable', { maxTotalBufferSize: 300 * 1024 * 1024 });
+  } catch (e) {
+    try { dbg.removeListener('message', onMsg); } catch (_) {}
+    return { ok: false, error: 'Network.enable 失败: ' + e.message };
+  }
+
+  netSession = { dbg, onMsg, records, attached };
+  return { ok: true, started: true };
+});
+
+ipcMain.handle('debug:netStop', async () => {
+  if (!netSession) return { ok: true, records: [] };
+  const { dbg, onMsg, records, attached } = netSession;
+  netSession = null;
+  try { dbg.removeListener('message', onMsg); } catch (_) {}
+  try { await dbg.sendCommand('Network.disable'); } catch (_) {}
+  if (attached) { try { dbg.detach(); } catch (_) {} }
+  return { ok: true, count: records.length, records };
+});
+
 ipcMain.handle('debug:info', () => {  const p = STORE_FILE();
   let exists = false, size = 0, raw = null;
   try {

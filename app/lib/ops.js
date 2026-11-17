@@ -449,6 +449,228 @@ function collectGoods({ index = 0 } = {}) {
   `);
 }
 
+/**
+ * 把「规格与库存」区域滚动到视口内并等待其渲染完成。
+ * 这个表单是懒渲染的：不滚到可视区，颜色输入框根本不存在。
+ */
+function scrollToSpec() {
+  return `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const findTitle = () => {
+      for (const el of document.querySelectorAll('div,span')) {
+        const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+        if (t === '规格与库存' || t === '2规格与库存') return el;
+      }
+      return null;
+    };
+    let title = findTitle();
+    if (!title) {
+      // 兜底：按文本包含找
+      for (const el of document.querySelectorAll('div')) {
+        const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+        if (t.length < 40 && t.indexOf('规格与库存') >= 0) { title = el; break; }
+      }
+    }
+    if (title) {
+      title.scrollIntoView({ block: 'start' });
+      await sleep(1200);
+      window.scrollBy(0, 120);
+      await sleep(800);
+    }
+    // 等颜色输入框出现
+    for (let i = 0; i < 40; i++) {
+      const ins = [...document.querySelectorAll('[class*="new-spec-single-color"] input')]
+        .filter(x => (x.placeholder || '').indexOf('备注') < 0);
+      if (ins.length) return { ok: true, colors: ins.length, scrolled: !!title };
+      await sleep(400);
+    }
+    return { ok: false, colors: 0, scrolled: !!title };
+  })()`;
+}
+
+/**
+ * 读当前编辑页的规格状态（颜色 / 尺码 / SKU 行数）
+ * 用于 DOM 改规格前后做对照。
+ */
+function readSpecState() {
+  return `(() => {
+    const colorInputs = [...document.querySelectorAll('[class*="new-spec-single-color"] input')]
+      .filter(i => (i.placeholder || '').indexOf('备注') < 0);
+    const colors = colorInputs.map(i => i.value.trim()).filter(Boolean);
+
+    const sizeLabels = [...document.querySelectorAll('[class*="CBX_outerWrapper"]')]
+      .map(l => (l.innerText || '').replace(/\\s+/g, ' ').trim())
+      .filter(t => t && t !== '全选以下规格值' && t.length < 20);
+
+    let skuRows = 0;
+    for (const tr of document.querySelectorAll('tr')) {
+      if (tr.querySelectorAll('input').length >= 3) skuRows++;
+    }
+    return { ok: true, colors, sizeOptions: sizeLabels.slice(0, 80), skuRows };
+  })()`;
+}
+
+/**
+ * 设置颜色规格（DOM 操作，让页面自己生成合法 spec_id）
+ * colors: ["黑色","骨白色",...]
+ *
+ * 核心：必须用原生 value setter + input/change 事件，React 才认。
+ * 填满最后一个空框时页面会自动追加新行，所以先「长到目标数量」再统一写值。
+ */
+function setColors(colors) {
+  const want = Array.isArray(colors) ? colors.map((x) => String(x).trim()).filter(Boolean) : [];
+  return `(async () => {
+    const WANT = ${JSON.stringify(want)};
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const getIns = () => [...document.querySelectorAll('[class*="new-spec-single-color"] input')]
+      .filter(i => (i.placeholder || '').indexOf('备注') < 0);
+    const setVal = (inp, v) => {
+      const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      d.set.call(inp, v);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      inp.dispatchEvent(new Event('blur', { bubbles: true }));
+    };
+
+    if (!WANT.length) return { ok: false, error: '没有目标颜色' };
+
+    // ① 先删多余行（从尾部删）
+    let guard = 0;
+    while (guard++ < 40) {
+      const rows = [...document.querySelectorAll('[class*="new-spec-single-color"]')].filter(r => {
+        const inp = [...r.querySelectorAll('input')].find(i => (i.placeholder || '').indexOf('备注') < 0);
+        return inp && inp.value.trim();
+      });
+      if (rows.length <= WANT.length) break;
+      const last = rows[rows.length - 1];
+      const del = [...last.querySelectorAll('a')].find(e => (e.innerText || '').trim() === '删除');
+      if (!del) break;
+      del.click();
+      await sleep(420);
+    }
+
+    // ② 长到目标数量：反复填第一个空框
+    guard = 0;
+    while (guard++ < 60) {
+      const ins = getIns();
+      if (ins.length >= WANT.length && ins.slice(0, WANT.length).every(i => i.value.trim())) break;
+      const empty = ins.find(i => !i.value.trim());
+      if (!empty) break;
+      // 这个空框最终要填什么？按它前面已有值的数量决定
+      const idx = ins.indexOf(empty);
+      const v = WANT[Math.min(idx, WANT.length - 1)];
+      setVal(empty, v);
+      await sleep(480);
+    }
+
+    // ③ 统一校准每个位置的值
+    for (let round = 0; round < 3; round++) {
+      const ins = getIns();
+      let changed = 0;
+      for (let i = 0; i < WANT.length && i < ins.length; i++) {
+        if (ins[i].value.trim() !== WANT[i]) {
+          setVal(ins[i], WANT[i]);
+          changed++;
+          await sleep(220);
+        }
+      }
+      if (!changed) break;
+    }
+
+    // ④ 删掉数量之外还留着的行
+    guard = 0;
+    while (guard++ < 20) {
+      const rows = [...document.querySelectorAll('[class*="new-spec-single-color"]')].filter(r => {
+        const inp = [...r.querySelectorAll('input')].find(i => (i.placeholder || '').indexOf('备注') < 0);
+        return inp && inp.value.trim();
+      });
+      if (rows.length <= WANT.length) break;
+      const last = rows[rows.length - 1];
+      const del = [...last.querySelectorAll('a')].find(e => (e.innerText || '').trim() === '删除');
+      if (!del) break;
+      del.click();
+      await sleep(380);
+    }
+
+    const final = getIns().map(i => i.value.trim()).filter(Boolean);
+    return { ok: final.length >= WANT.length, want: WANT, got: final };
+  })()`;
+}
+
+/**
+ * 勾选尺码（按页面上标准码表的复选框文本匹配源尺码标签）
+ *
+ * 关键：不靠「猜 checkbox 有没有选中」（类名带版本号、不可靠）。
+ * 改为从 SKU 表格反推当前生效的尺码集合，再用差集决定点哪些标签。
+ * 表格是唯一可信事实来源 —— 它列出来的就是真正生效的组合。
+ */
+function setSizes(sizes) {
+  const want = Array.isArray(sizes) ? sizes.map((x) => String(x).trim()).filter(Boolean) : [];
+  return `(async () => {
+    const WANT = ${JSON.stringify(want)};
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const norm = (x) => String(x || '')
+      .replace(/[（(].*?[）)]/g, '')
+      .replace(/[\\u4e00-\\u9fa5]/g, '')
+      .replace(/\\s+/g, '')
+      .toUpperCase();
+    const wantSet = new Set(WANT.map(norm).filter(Boolean));
+
+    const getLabels = () => [...document.querySelectorAll('[class*="CBX_outerWrapper"]')]
+      .filter(l => {
+        const t = (l.innerText || '').replace(/\\s+/g, ' ').trim();
+        return t && t !== '全选以下规格值' && t.length < 20;
+      });
+
+    // 从 SKU 表格读出「当前生效的尺码」
+    const readActive = () => {
+      const labels = getLabels();
+      const active = new Set();
+      const rows = [...document.querySelectorAll('tr')]
+        .filter(tr => tr.querySelectorAll('input').length >= 3);
+      for (const tr of rows) {
+        const txt = (tr.innerText || '').replace(/\\s+/g, ' ');
+        for (const lb of labels) {
+          const t = (lb.innerText || '').replace(/\\s+/g, ' ').trim();
+          if (t && txt.indexOf(t) >= 0) active.add(norm(t));
+        }
+      }
+      return active;
+    };
+
+    let cur = readActive();
+    if (!cur.size && !wantSet.size) return { ok: true, turnedOn: 0, turnedOff: 0, note: '空集' };
+
+    const toOff = [...cur].filter(n => !wantSet.has(n));
+    const toOn = [...wantSet].filter(n => !cur.has(n));
+
+    let on = 0, off = 0;
+    const labels = getLabels();
+    const byNorm = new Map();
+    for (const lb of labels) {
+      const t = (lb.innerText || '').replace(/\\s+/g, ' ').trim();
+      const n = norm(t);
+      if (n && !byNorm.has(n)) byNorm.set(n, lb);
+    }
+
+    for (const n of toOff) {
+      const lb = byNorm.get(n);
+      if (lb) { lb.click(); off++; await sleep(160); }
+    }
+    for (const n of toOn) {
+      const lb = byNorm.get(n);
+      if (lb) { lb.click(); on++; await sleep(160); }
+    }
+
+    await sleep(800);
+    const after = readActive();
+    const missing = [...wantSet].filter(n => !after.has(n));
+    return { ok: missing.length === 0, turnedOn: on, turnedOff: off,
+             want: WANT, before: [...cur], after: [...after], missing };
+  })()`;
+}
+
 module.exports = { ping, listGoods, copyGoods, draftDetail, submitDraft,
                    applyEditBody, clickSaveDraft, resolveCommit, readPageCommit,
-                   hasSaveButton, setBatchStock, readPageErrors, collectGoods };
+                   hasSaveButton, setBatchStock, readPageErrors, collectGoods,
+                   readSpecState, setColors, setSizes, scrollToSpec };

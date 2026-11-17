@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('pdd', {
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),
   debugInfo: () => ipcRenderer.invoke('debug:info'),
+  netStart: () => ipcRenderer.invoke('debug:netStart'),
+  netStop: () => ipcRenderer.invoke('debug:netStop'),
 
   // 尺码表模板
   sizeList: () => ipcRenderer.invoke('size:list'),
