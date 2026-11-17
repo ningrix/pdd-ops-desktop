@@ -201,12 +201,15 @@ BillEntry {
   // ad_spend 的 traceable 恒为 false
 }
 
-// 任务（批量队列，未实现）
-Task {
-  id, mallId, kind: copy | price | submit | appeal,
-  state, attempts, commitId, goodsId,
-  errorCode, errorMsg, startedAt, endedAt
+// 批量任务（lib/batch.js，落盘 app/userdata/batch.json）—— 已实现
+BatchTask {
+  poolId, title, mallId,
+  state: queued | running | done | failed_known | failed_unknown,
+  attempts, errorCode, errorMsg,
+  goodsId, commitId, startedAt, endedAt
 }
+// 重试规则：queued 与 failed_known 可重跑（默认最多 2 次）；
+//           failed_unknown 与 done 一律跳过 —— 前者必须人工核对
 ```
 
 三条铁律：
@@ -233,26 +236,26 @@ Task {
 
 ## 8. 现存缺陷（截至本次核实）
 
-已修：`openCopyDialog()` 现在会重置 `#copyPublish`；`#copyOk` 完成后 `onclick` 改为 `close`，不再可能重复复制。
+**已修**：
+- `openCopyDialog()` 会重置 `#copyPublish`；`#copyOk` 完成后 `onclick` 改为 `close`
+- `#copyFactor` 加了 `input/change/keyup` 监听，改倍数时价格预览实时更新
+- `copyGoods` / `collectGoods` 改为**按 `goods_id` 精确认商品**（`goodsId` 参数），不再依赖列表下标；找不到就明确报错
+- 两个批量前置缺陷已清除，批量队列已启用
 
-仍在：
+**仍在**：
 
 | 缺陷 | 位置 | 后果 |
 | --- | --- | --- |
-| `#copyFactor` **没有任何 input 监听**，`updatePreview()` 只在开窗时调一次 | `app.js` 的 `updatePreview` / `openCopyDialog` | 改倍数时下方价格预览**永不更新**，用户看不见自己设了什么价 |
-| 复制按 `item.idx` 取商品，`ops.copyGoods` 内部又重拉一次列表且不校验 `goods_id` | `app.js` 的 `runCopy` / `renderGoods` | 两次读取之间列表若移位 → **复制错商品** |
 | 复制完成后「再复制一条」按钮实际执行 `close` | `app.js` 的 `openCopyDialog` 内 `#copyOk.onclick` 尾段 | 文案与行为不符，点了只会关闭 |
 | `withViewHidden()` 用局部布尔挂起视图，且 `finally` 无条件恢复 | `app.js` 与 `syncBounds` | 弹窗开着时拖窗口 / 切页签 → 原生视图压回弹窗上；快速双击「添加店铺」可使视图永久隐藏 |
 | `refreshStatus()` 串行 `await`，单店无 try/catch | `app.js` | 改价期间 `loadURL` 会让健康店铺显示为离线；IPC reject 会中断整轮 |
 | 删除店铺用 `window.confirm()` | `app.js` 的 `refreshMalls` 内点击处理 | 原生模态冻结界面，无法做输入店铺名确认 |
 | `listGoods` 硬编码取 30 条，`total` 未显示 | `main.js` `ops:list` / `app.js` | 用户以为看到全部，实际只有前 30 条 |
-| 日志时间戳源不一致 | `main.js` 用 `toISOString()`（UTC），`app.js` 用 `toTimeString()`（本地） | 同一日志框内时间跳 8 小时 |
-| 上架库存硬编码 `stock: 50` | `app.js` 调 `publish` / `poolPublish` | 库存策略无法配置 |
-| 跨店尺码只能选骨架模板里已有的码 | `main.js` 的 `pool:publish` 调 `ops.scanAllSizeSystems` → `switchSizeSystem` → `setSizes` | **已解决**：默认码制可能覆盖不全（如中国码只到 44，源有 44.5/45）。现在会遍历 7 种码制（通用/中国码/欧码/英码/德码/美码/均码），选覆盖源尺码最多的那个再勾选。实测欧码 11/11 → 44 SKU 完整 |
+| 日志时间戳源不一致 | `main.js` 的 `log()` 已改本地时间；`trace()` 仍是 UTC | 日志框正常，trace 文件里是 UTC |
+| 上架库存默认 50 | `app.js` 调 `publish` / 批量参数 | 单件上架仍用 50；批量可在界面配置 |
 | 跨店价格统一用源最低拼单价 | `main.js` 的 `pool:publish` 价格覆盖段 | 源的逐 SKU 差价没搬过来 |
 | 跨店详情图未覆盖 | 同上 | 只换了主图（`galleries`），`decorationDetail` 仍是骨架的 |
-
-> **在修掉前两条（改价预览、索引校验）之前，不得启用任何批量能力。**
+| 采集箱里 6 条旧条目的 `sourceMallId` 指向已删除的旧店铺 | `app/userdata/pool.json` | 跨店判断时同店比较会失效；可手动移除这些条目 |
 
 ---
 
