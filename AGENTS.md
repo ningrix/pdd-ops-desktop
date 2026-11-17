@@ -97,7 +97,7 @@
 
 **硬限制**：
 - 目标店必须**已有同品类在售商品**才能当骨架。空店、或没有同品类商品，都无法跨店上架。
-- 尺码只能从骨架模板里已有的码中勾选；源有而模板没有的码会丢（会告警）。
+- 尺码要先扫遍 7 种码制（`ops.scanAllSizeSystems`）选覆盖最全的那个。默认码制常常不全（中国码鞋码只到 44，欧码才有 44.5/45）。
 
 ### 渲染层三条关键机制
 
@@ -248,7 +248,7 @@ Task {
 | `listGoods` 硬编码取 30 条，`total` 未显示 | `main.js` `ops:list` / `app.js` | 用户以为看到全部，实际只有前 30 条 |
 | 日志时间戳源不一致 | `main.js` 用 `toISOString()`（UTC），`app.js` 用 `toTimeString()`（本地） | 同一日志框内时间跳 8 小时 |
 | 上架库存硬编码 `stock: 50` | `app.js` 调 `publish` / `poolPublish` | 库存策略无法配置 |
-| 跨店尺码只能选骨架模板里已有的码 | `main.js` 的 `pool:publish` 调 `ops.setSizes` | 骨架鞋码表只到 44 时，源的 44.5/45 会丢。目前只告警不阻断 |
+| 跨店尺码只能选骨架模板里已有的码 | `main.js` 的 `pool:publish` 调 `ops.scanAllSizeSystems` → `switchSizeSystem` → `setSizes` | **已解决**：默认码制可能覆盖不全（如中国码只到 44，源有 44.5/45）。现在会遍历 7 种码制（通用/中国码/欧码/英码/德码/美码/均码），选覆盖源尺码最多的那个再勾选。实测欧码 11/11 → 44 SKU 完整 |
 | 跨店价格统一用源最低拼单价 | `main.js` 的 `pool:publish` 价格覆盖段 | 源的逐 SKU 差价没搬过来 |
 | 跨店详情图未覆盖 | 同上 | 只换了主图（`galleries`），`decorationDetail` 仍是骨架的 |
 
