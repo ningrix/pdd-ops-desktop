@@ -73,7 +73,11 @@
 | `app/main.js` | 窗口、店铺视图池、全部 IPC、改价抓包（CDP）、跨店上架编排、session flush | 需用户明示，**只做增量**，不动既有 IPC 签名 |
 | `app/preload.js` | `contextBridge` 暴露 `window.pdd` | 需用户明示，新增只加不改 |
 | `app/lib/ops.js` | 注入拼多多页面执行的业务 JS（**已实测跑通**） | **禁止重构** |
-| `app/lib/pool.js` | 采集箱本地存储（增删查） | 可改 |
+| `app/lib/pool.js` | 采集箱本地存储（增删查）；**读取时对 gallery 去重** | 可改 |
+| `app/lib/batch.js` | 批量队列（串行 + 间隔 + 失败分类 + 断点续跑） | 可改 |
+| `app/lib/inspect.js` | 商品检测·规则层（纯 Node 零依赖，不读图） | 可改 |
+| `app/lib/imgtool.js` | imgtool 的 Node 封装：spawn Python、下载图、失败分类 | 可改 |
+| `tools/imgtool/` | Python 图像工具包（超分/水印/图像检测），见下 | 可改 |
 | `app/renderer/index.html` | 界面结构（4 个页签：商品列表 / 采集箱 / 浏览器 / 原始结果） | 可改，守 §1.1 |
 | `app/renderer/style.css` | 样式（无框架、无预处理器） | 可改，守 §1.1 |
 | `app/renderer/app.js` | 界面逻辑（单文件，全局 `$` / `state`） | 可改，守 §1.1 |
@@ -127,6 +131,10 @@
 | 尺码匹配 | `main.js` `size:match` + `app/data/size-templates.json` | 支持「按商品尺码标签」优先，类目关键词兜底；返回 `bySizes` 标明命中方式 |
 | 登录态持久 | `main.js` `before-quit` → `flushStorageData()` | 必须走正常关窗，强杀丢登录态。**启动/重启一律用 `tools/restart-app.ps1`**：它先请窗口自己关闭、等 `flushStorageData()` 完成，超时才降级强杀并警告。已实测：`taskkill /F` 会让两个店铺同时掉登录、Cookies 文件退化成 80 字节空壳 |
 | 图像管线 | `交付/` 70+ 张成品 | 去标 / 去水印 / 4x 超分 / 白底；Real-ESRGAN + LaMa + RapidOCR，CPU 15–25s/张 |
+| 图像工具包 | `tools/imgtool/`（Python）+ `app/lib/imgtool.js`（Node 封装） | **已跑通**：`upscale`（手写 RRDBNet，加载 RealESRGAN 权重 missing=0/unexpected=0）、`watermark`（corner/tile/band 三模式 + 自适应深浅色）、`inspect`（尺寸/比例/白底/居中/文字覆盖）。CLI 只往 stdout 写一行 JSON |
+| 商品检测 | `app/lib/inspect.js` | **已跑通**：规则层纯 Node 零依赖。检查标题长度/堆砌/重复、SKU 价格逻辑、`market_price` 严格大于最高单买价（实测规则 1000161）、主图数量/重复、尺码表、类目。分 error/warn/info 三级，无官方依据的项标 `unconfirmed:true` |
+| 图集去重 | `ops.collectGoods` + `lib/pool.js` | **平台返回的 `galleries` 本身带重复**（实测 21 项只有 11 个唯一 URL）。采集侧去重，读取侧再兜一层（旧数据也生效）。不去重会导致加水印重复处理、上架后主图重复图位 |
+| Python 环境 | 本机 | Pillow **必须 ≥ 11**：9.5.0 在这个环境下 `draw.text()` 直接崩 `0xC0000005`（ACCESS_VIOLATION）。`simple-lama-inpainting` 已卸载（它要求 pillow<10，会把版本拖回去；LaMa 预处理我们手写） |
 | 三档定价 | `research/验证A_加价上限结论_2026-11.md` | 拼单价钳 1.08、单买价放开、市场价 > 单买价。多家厂商官方文档交叉印证 |
 | 基础技术服务费 | 拼多多 2024 公告（媒体转述） | (实付 + 平台优惠) × 0.6%；先用后付同为 0.6%；2024-09-24 后退款订单自动退回 |
 | 黑标技术服务费 | 同上 | 仅黑标商品，类目差异化费率（服饰 2.2%）；同单取最高费率不重复扣 |
