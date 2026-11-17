@@ -87,7 +87,12 @@ function saveMalls() {
 }
 
 function log(level, msg) {
-  const line = { t: new Date().toISOString().slice(11, 19), level, msg: String(msg) };
+  // 用本地时间，和渲染层 toTimeString() 保持一致。
+  // 之前这里用 toISOString()（UTC），同一条日志框里会跳 8 小时。
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const t = p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+  const line = { t, level, msg: String(msg) };
   if (mainWindow && !mainWindow.isDestroyed()) {
     try { mainWindow.webContents.send('log', line); } catch (_) { /* ignore */ }
   }
@@ -455,8 +460,14 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
     steps.push('抓载荷异常: ' + e.message);
   }
   if (!raw) {
-    return { ok: false, error: '没抓到骨架载荷', advice: '稍后重试，或改用同店流程', steps,
-             draft };
+    return {
+      ok: false,
+      error: '没抓到骨架载荷：' + (lastCaptureError || '未知原因'),
+      advice: '草稿已建好（commit=' + draft.commit_id + '），只是没抓到它的保存载荷。' +
+              '再点一次「上架」通常会成功；连续失败就去目标店草稿箱删掉它再重来。',
+      failed: 'failed_unknown',
+      steps, draft,
+    };
   }
   steps.push('载荷 ' + raw.length + ' 字节');
 
@@ -749,7 +760,9 @@ async function prepareDraft(mall, commit, goods, opts) {
   } catch (e) {
     return { ok: false, error: e.message, steps };
   }
-  if (!raw) return { ok: false, error: '没抓到草稿保存载荷', steps };
+  if (!raw) {
+    return { ok: false, error: '没抓到草稿保存载荷：' + (lastCaptureError || '未知原因'), steps };
+  }
 
   let body;
   try { body = JSON.parse(raw); } catch (e) { return { ok: false, error: '载荷解析失败', steps }; }
@@ -800,11 +813,46 @@ function saveDraftAndResolve(wc, commit, goods, stock) {
 }
 
 /**
+ * 导航到 url，容忍 ERR_ABORTED。
+ * 同一个 webContents 连续 loadURL 时，前一次会被打断并抛 ERR_ABORTED (-3)，
+ * 但页面往往已经落到目标地址 —— 这种情况不应该让整个流程失败。
+ */
+async function gotoUrl(wc, url, settleMs) {
+  try {
+    await wc.loadURL(url);
+    return { ok: true, aborted: false };
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (/ERR_ABORTED|ERR_FAILED\s*\(-3\)|-3\)\s*loading/i.test(msg)) {
+      await sleep(settleMs || 1500);
+      let cur = '';
+      try { cur = wc.getURL() || ''; } catch (_) { /* ignore */ }
+      if (cur.indexOf('goods_add') >= 0) {
+        return { ok: true, aborted: true, url: cur };
+      }
+      return { ok: false, aborted: true, url: cur, error: msg.slice(0, 160) };
+    }
+    return { ok: false, aborted: false, error: msg.slice(0, 160) };
+  }
+}
+
+/**
  * 抓编辑页「保存草稿」的 action/edit 请求体（用主进程 webContents.debugger）。
  * 走平台锁：debugger 不能两处同时 attach。
+ *
+ * ⚠️ 返回值必须是 string | null。withPlatform 在异常时返回 {ok:false,error,...}，
+ * 如果直接透传，调用方会把错误对象当载荷字符串用（raw.length → undefined，
+ * JSON.parse(对象) → 「载荷解析失败」），真实原因被吞掉。
  */
-function captureEditBody(wc, commit, goods) {
-  return withPlatform('captureEditBody', () => captureEditBodyInner(wc, commit, goods), 120000);
+let lastCaptureError = null;
+async function captureEditBody(wc, commit, goods) {
+  lastCaptureError = null;
+  const r = await withPlatform('captureEditBody',
+                               () => captureEditBodyInner(wc, commit, goods), 120000);
+  if (typeof r === 'string' && r.length) return r;
+  if (r && r.error) lastCaptureError = String(r.error);
+  else if (r === null || r === undefined) lastCaptureError = '没有收到 action/edit 请求';
+  return null;
 }
 
 async function saveDraftAndResolveInner(wc, commit, goods, stock) {
@@ -812,11 +860,11 @@ async function saveDraftAndResolveInner(wc, commit, goods, stock) {
   const steps = [];
   const url = 'https://mms.pinduoduo.com/goods/goods_add/index?id=' + commit +
               '&goods_id=' + goods + '&type=edit';
-  try {
-    await wc.loadURL(url);
-  } catch (e) {
-    const msg = String((e && e.message) || e);
-    steps.push('loadURL 异常(可忽略): ' + msg.slice(0, 60));
+  const nav = await gotoUrl(wc, url, 1800);
+  if (!nav.ok && !nav.aborted) {
+    steps.push('导航失败: ' + (nav.error || ''));
+  } else if (nav.aborted) {
+    steps.push('导航被打断但页面已在编辑页，继续');
   }
 
   // 等「保存草稿」按钮出现
@@ -1028,7 +1076,12 @@ async function captureEditBodyInner(wc, commit, goods) {
     const url = 'https://mms.pinduoduo.com/goods/goods_add/index?id=' + commit +
                 '&goods_id=' + goods + '&type=edit';
     log('info', '打开发货编辑页抓取保存载荷 ...');
-    await wc.loadURL(url);
+    const nav = await gotoUrl(wc, url, 2000);
+    if (!nav.ok) {
+      log('err', '编辑页导航失败: ' + (nav.error || ''));
+      return null;
+    }
+    if (nav.aborted) log('warn', '导航被打断但页面已在编辑页，继续');
     await sleep(7000);
 
     const ops = require('./lib/ops');
