@@ -470,8 +470,73 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   if (gal.length) {
     body.galleries = gal.map((u) => ({ url: u, width: 800, height: 800, type: 2 }));
   }
-  // 价格：把源商品的最低拼单价套到所有 SKU 上（后续按 SKU 映射细化）
-  if (it.price) {
+
+  /**
+   * SKU 规格整树替换。
+   * 载荷里的规格树完全在 skus[].spec[]（parent_id / parent_name / spec_id / spec_name），
+   * groups 是「团购设置」不是规格，别动它。
+   *
+   * 只在源与骨架【同类目】时才替换 —— parent_id 是类目绑定的规格组
+   * （鞋码是 26908，服装尺码是 1226），跨类目硬塞会被类目校验拒。
+   *
+   * 平台记录 id（id / sku_id）属于源店，不能带过来：
+   * 规格完全一致的复用骨架的 id，其余置空表示新建。
+   */
+  const sameCat = it.catId && body.cat_id && Number(it.catId) === Number(body.cat_id);
+  const srcSkus = Array.isArray(it.skus) ? it.skus : [];
+  const keyOf = (spec) => (spec || []).map((s) => s.parent_id + ':' + s.spec_id).join('|');
+
+  if (sameCat && srcSkus.length) {
+    const oldSkus = Array.isArray(body.skus) ? body.skus : [];
+    const byKey = new Map();
+    for (const o of oldSkus) byKey.set(keyOf(o.spec), o);
+
+    let reused = 0;
+    const built = [];
+    for (const src of srcSkus) {
+      const k = keyOf(src.spec);
+      const old = byKey.get(k);
+      if (old) reused++;
+      const rec = {
+        limit_quantity: 999999,
+        out_sku_sn: '',
+        is_onsale: 1,
+        pre_sale_time: 0,
+        is_sku_group_pre_sale: 0,
+        shipment_limit_second_list: [],
+        sim_direct_ext_params: null,
+        weight: 0,
+        length: null,
+        oversea_sku: {},
+        sku_srv_templates: '',
+        sku69_code: '',
+      };
+      if (old) { rec.id = old.id; rec.sku_id = old.sku_id; }
+      rec.thumb_url = (old && old.thumb_url) || gal[0] || it.thumb || '';
+      rec.multi_price = Number(src.group) || 0;
+      rec.price = Math.max(Number(src.single) || 0, rec.multi_price + 100);
+      rec.multi_price_in_yuan = (rec.multi_price / 100).toFixed(2);
+      rec.price_in_yuan = (rec.price / 100).toFixed(2);
+      rec.quantity_delta = Number(stock) || 50;
+      rec.spec = (src.spec || []).map((sp) => ({
+        parent_id: sp.parent_id,
+        parent_name: sp.parent_name,
+        spec_id: sp.spec_id,
+        spec_name: sp.spec_name,
+        is_custom: 0,
+      }));
+      built.push(rec);
+    }
+    body.skus = built;
+    steps.push('SKU 整树替换: ' + oldSkus.length + ' → ' + built.length +
+               '（复用平台 id ' + reused + '，新建 ' + (built.length - reused) + '）');
+  } else if (srcSkus.length) {
+    steps.push('SKU 未替换：源类目 ' + it.catId + ' ≠ 骨架类目 ' + body.cat_id +
+               '，规格组不兼容，保留骨架规格');
+  }
+
+  // 价格兜底：没有逐 SKU 价格时用源最低拼单价
+  if (!(sameCat && srcSkus.length) && it.price) {
     for (const s of (body.skus || [])) {
       const single = Math.max(Number(it.price) + 100, Number(s.price) || 0);
       s.multi_price = Number(it.price);
@@ -479,6 +544,8 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
       s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
       s.price_in_yuan = (single / 100).toFixed(2);
     }
+  }
+  if (it.price) {
     body.market_price = Math.max(Number(body.market_price) || 0, Number(it.price) + 100);
     body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
   }
@@ -487,9 +554,32 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   }
   steps.push('覆盖: 标题 + 图 ' + gal.length + ' 张 + 价格 ' + ((it.price || 0) / 100).toFixed(2));
 
-  // ⑤ 回放保存
-  const sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), draft.commit_id));
-  steps.push('保存: ' + ((sv && sv.save && sv.save.ok) ? 'ok' : JSON.stringify(sv && sv.save)));
+  // ⑤ 回放保存 —— 保存失败绝不能往下提交，否则会提交一条"内容不对"的商品
+  let sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), draft.commit_id));
+  let saveOk = !!(sv && sv.save && sv.save.ok);
+  steps.push('保存: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save)));
+
+  // 频控（2000000）是可重试的：等一会儿再存一次
+  if (!saveOk && /操作过于频繁|2000000/.test(JSON.stringify(sv && sv.save && sv.save.err))) {
+    steps.push('触发频控，等 9 秒后重试保存 ...');
+    await sleep(9000);
+    sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), draft.commit_id));
+    saveOk = !!(sv && sv.save && sv.save.ok);
+    steps.push('重试保存: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save)));
+  }
+
+  if (!saveOk) {
+    return {
+      ok: false,
+      error: '草稿保存失败，已停止（未提交）',
+      advice: '覆盖内容没有落库，直接提交会得到一条「标题对、规格错」的商品。' +
+              '草稿仍留在目标店草稿箱：commit=' + draft.commit_id +
+              ' goods=' + draft.goods_id + '。稍后重试或手动删除。',
+      failed: 'failed_unknown',
+      steps,
+      draft,
+    };
+  }
 
   // ⑥ 读页面 commit 后提交
   await sleep(2000);
