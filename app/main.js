@@ -145,6 +145,20 @@ function currentMall() {
   return malls.values().next().value || null;
 }
 
+/**
+ * 把键盘焦点还给主窗口（HTML 那一层）。
+ * 为什么必须显式做：WebContentsView 是原生子视图，一旦被点过就会持有原生焦点。
+ * 之后即使把它 removeChildView 摘掉，主窗口的 webContents 也不会自动重新获得
+ * 键盘焦点 —— 表现是：弹窗里 input 是 document.activeElement，但
+ * document.hasFocus() === false，于是鼠标能点、键盘打不进字、也删不掉字。
+ */
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try { mainWindow.focus(); } catch (_) { /* ignore */ }
+  try { mainWindow.webContents.focus(); } catch (_) { /* ignore */ }
+  return true;
+}
+
 function detachView() {
   if (!mainWindow || !attachedId) return;
   const m = malls.get(attachedId);
@@ -152,6 +166,8 @@ function detachView() {
     try { mainWindow.contentView.removeChildView(m.view); } catch (_) { /* ignore */ }
   }
   attachedId = null;
+  // 视图摘掉后必须把键盘焦点交还 HTML 层，否则弹窗输入框打不进字
+  focusMainWindow();
 }
 
 function attachView() {
@@ -286,8 +302,12 @@ ipcMain.handle('malls:activate', (_e, id) => {
 ipcMain.handle('view:toggle', (_e, visible) => {
   viewVisible = !!visible;
   attachView();
+  if (!viewVisible) focusMainWindow();   // 摘视图后把键盘焦点还给 HTML 层
   return viewVisible;
 });
+
+/** 渲染层弹窗打开前调用：确保窗口拿回键盘焦点 */
+ipcMain.handle('window:focus', () => focusMainWindow());
 
 ipcMain.handle('view:bounds', (_e, b) => {
   if (b && typeof b.x === 'number') {

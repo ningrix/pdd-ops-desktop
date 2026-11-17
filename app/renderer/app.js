@@ -38,11 +38,15 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ------------------------------------------------------------------ 原生视图遮挡
+// 原生 WebContentsView 一旦被点过就会持有原生键盘焦点。摘掉它之后主窗口
+// 不会自动拿回焦点，表现是弹窗里 input 是 activeElement 但打不进字。
+// 所以每次摘视图后都要显式 focusWindow()。
 async function withViewHidden(fn) {
   let suspended = false;
   if (state.visible && state.malls.length) {
     try { await window.pdd.toggleView(false); suspended = true; } catch (_) { /* ignore */ }
   }
+  try { await window.pdd.focusWindow(); } catch (_) { /* ignore */ }
   try {
     return await fn();
   } finally {
@@ -51,6 +55,24 @@ async function withViewHidden(fn) {
       scheduleSync();
     }
   }
+}
+
+/** 把焦点稳稳地打到某个输入框上：等两帧 + 重试，避免撑开后才布局完 */
+function focusInput(el, selectAll) {
+  if (!el) return;
+  let tries = 0;
+  const tick = () => {
+    tries++;
+    try {
+      window.pdd.focusWindow();
+      el.focus({ preventScroll: false });
+      if (selectAll) el.select();
+    } catch (_) { /* ignore */ }
+    if (document.activeElement !== el && tries < 8) {
+      requestAnimationFrame(() => setTimeout(tick, 40));
+    }
+  };
+  requestAnimationFrame(() => setTimeout(tick, 30));
 }
 
 let rafPending = false;
@@ -99,7 +121,7 @@ function askText({ title = '输入', placeholder = '', value = '' } = {}) {
     input.value = value;
     err.textContent = '';
     mask.classList.add('on');
-    setTimeout(() => { input.focus(); input.select(); }, 30);
+    focusInput(input, true);
 
     const done = (v) => {
       mask.classList.remove('on');
@@ -380,6 +402,7 @@ function openCopyDialog(item) {
   withViewHidden(() => new Promise((resolve) => {
     const mask = $('#copyMask');
     mask.classList.add('on');
+    focusInput($('#copyTitle'), true);   // 标题框自动获得焦点并全选，方便直接改
     $('#copyCancel').textContent = '取消';
     $('#copyOk').textContent = '开始复制';
 

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('pdd', {
 
   // 内置浏览器
   toggleView: (visible) => ipcRenderer.invoke('view:toggle', visible),
+  focusWindow: () => ipcRenderer.invoke('window:focus'),
   setBounds: (b) => ipcRenderer.invoke('view:bounds', b),
   navigate: (url) => ipcRenderer.invoke('view:navigate', url),
   reload: () => ipcRenderer.invoke('view:reload'),
