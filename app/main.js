@@ -629,6 +629,24 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
       body.goods_name = String(it.title || '').slice(0, 60);
       const gal = (it.gallery || []).filter(Boolean);
       if (gal.length) body.galleries = gal.map((u) => ({ url: u, width: 800, height: 800, type: 2 }));
+
+      // 详情页装修楼层整体替换（源商品的详情图在里面）。
+      // floor_id 是平台给每层分配的，整段搬过来即可；只把内嵌的商品引用清掉，避免指向源商品。
+      const dd = Array.isArray(it.decorationDetail) ? it.decorationDetail : [];
+      if (dd.length) {
+        const clone = JSON.parse(JSON.stringify(dd));
+        let imgCount = 0;
+        for (const fl of clone) {
+          for (const c of (fl.content_list || [])) {
+            if (c.goods_id) c.goods_id = null;
+            if (c.img_url) imgCount++;
+          }
+        }
+        body.decorationDetail = clone;
+        steps.push('详情装修: ' + clone.length + ' 层 / ' + imgCount + ' 张图');
+      } else {
+        steps.push('详情装修: 源无 → 保留骨架的');
+      }
       // 逐 SKU 价格映射：按「规格组合」把源 SKU 的价格搬到目标 SKU
       // 键 = parent_name:spec_name 的拼接（父规格组名 + 规格值名）
       const skuKey = (spec) => (spec || [])

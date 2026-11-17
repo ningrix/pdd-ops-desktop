@@ -475,6 +475,8 @@ function collectGoods({ index = 0, goodsId = null } = {}) {
         costTemplateId: gd.cost_template_id,
         shipmentLimitSecond: gd.shipment_limit_second,
         twoPiecesDiscount: gd.two_pieces_discount,
+        // 详情页装修楼层（详情图在里面：content_list[].img_url）
+        decorationDetail: Array.isArray(gd.decorationDetail) ? gd.decorationDetail : [],
       }
     };
   `);
