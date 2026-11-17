@@ -299,7 +299,7 @@ $('#btnList').addEventListener('click', async () => {
 async function collectOne(g) {
   logInfo('正在采集「' + String(g.title || '').slice(0, 18) + '」到采集箱 ...');
   try {
-    const r = await window.pdd.poolCollect(g.idx);
+    const r = await window.pdd.poolCollect(g.idx, g.goods_id);
     if (r && r.ok) {
       logOk('已采集：' + r.pack.skus + ' 个 SKU / ' + r.pack.images + ' 张图 → 采集箱');
       await refreshPool();
@@ -381,6 +381,17 @@ function updatePreview() {
                   ((ng - g) / 100).toFixed(2) + ' 元）<br>单买价 <b>' + money(s) +
                   '</b> → <b>' + money(ns) + '</b>';
 }
+
+// 改倍数时实时更新价格预览。
+// 之前 updatePreview() 只在开窗时算一次，用户改完看不见自己设了什么价 —— 批量下会放大成 50 条错价。
+(function bindFactorPreview() {
+  const el = document.getElementById('copyFactor');
+  if (!el) return;
+  const onEdit = () => updatePreview();
+  el.addEventListener('input', onEdit);
+  el.addEventListener('change', onEdit);
+  el.addEventListener('keyup', onEdit);
+})();
 
 function openCopyDialog(item) {
   currentItem = item;
@@ -474,7 +485,7 @@ async function runCopy(item, title, factor, doPrice, doPublish, progress) {
   progress(8, '正在复制商品 ...');
   let r;
   try {
-    r = await window.pdd.copyGoods({ index: item.idx, title, submit: false, allowSameStore: true });
+    r = await window.pdd.copyGoods({ index: item.idx, goodsId: item.goods_id, title, submit: false, allowSameStore: true });
   } catch (e) {
     progress(100, '出错：' + (e && e.message ? e.message : e), 's-err');
     logErr('复制异常：' + (e && e.message ? e.message : e));

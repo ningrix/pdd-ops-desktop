@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('pdd', {
 
   // 采集箱
   poolList: () => ipcRenderer.invoke('pool:list'),
-  poolCollect: (index) => ipcRenderer.invoke('pool:collect', { index }),
+  poolCollect: (index, goodsId) => ipcRenderer.invoke('pool:collect', { index, goodsId }),
   poolRemove: (id) => ipcRenderer.invoke('pool:remove', id),
   poolPublish: (args) => ipcRenderer.invoke('pool:publish', args),
 

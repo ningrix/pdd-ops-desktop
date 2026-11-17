@@ -361,10 +361,10 @@ const pool = require('./lib/pool');
 
 ipcMain.handle('pool:list', () => pool.list());
 
-ipcMain.handle('pool:collect', async (_e, { index }) => {
+ipcMain.handle('pool:collect', async (_e, { index, goodsId }) => {
   const m = currentMall();
   if (!m) return { ok: false, error: '还没有店铺' };
-  const r = await runInMall((o) => o.collectGoods({ index }));
+  const r = await runInMall((o) => o.collectGoods({ index, goodsId }));
   if (!r || !r.ok) return r || { ok: false, error: '采集失败' };
 
   const p = r.pack;
@@ -439,6 +439,7 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   for (const cand of cands) {
     const cp = await runInMall((o) => o.copyGoods({
       index: cand.idx,
+      goodsId: cand.goods_id,          // 按 goods_id 精确认商品，不用下标
       title: String(it.title || '').slice(0, 60),
       submit: false,
       allowSameStore: true,

@@ -97,20 +97,32 @@ function listGoods(size = 30) {
 }
 
 /** 复制成草稿：create_by_sn → copyGoodsCommit → 改名 → 回读 */
-function copyGoods({ index = 0, title = '', submit = false } = {}) {
+function copyGoods({ index = 0, goodsId = null, title = '', submit = false } = {}) {
   return wrap(`
     const INDEX = ${Number(index) || 0};
+    const GOODS_ID = ${goodsId ? Number(goodsId) : 'null'};
     const TITLE = ${JSON.stringify(title || '')};
     const DO_SUBMIT = ${submit ? 'true' : 'false'};
     const R = { steps: [] };
 
     const ls = call('/vodka/v2/mms/query/display/mall/goodsList',
-      { page: 1, size: Math.max(INDEX + 1, 20), is_onsale: 1,
+      { page: 1, size: 100, is_onsale: 1,
         pre_sale_type: 4, shipment_time_type: 3, sold_out: 0 });
     if (!ls.ok) return { ok: false, error: '拉取商品失败', detail: ls.err };
     const arr = (ls.data && ls.data.goods_list) || [];
-    const g = arr[INDEX];
-    if (!g) return { ok: false, error: '没有第 ' + INDEX + ' 个商品（当前只有 ' + arr.length + ' 个）' };
+
+    // 优先按 goods_id 精确查找 —— 列表下标在两次读取之间可能移位，绝不能用下标认商品
+    let g = null;
+    if (GOODS_ID) {
+      g = arr.find(function (x) { return Number(x.id) === GOODS_ID; });
+      if (!g) {
+        return { ok: false, error: '列表里找不到 goods_id=' + GOODS_ID +
+                 '（可能已下架，或不在前 100 个在售商品里）' };
+      }
+    } else {
+      g = arr[INDEX];
+      if (!g) return { ok: false, error: '没有第 ' + INDEX + ' 个商品（当前只有 ' + arr.length + ' 个）' };
+    }
     R.source = { goods_id: g.id, title: g.goods_name, sku_count: g.sku_count };
     R.steps.push('源商品 goods_id=' + g.id);
 
@@ -384,16 +396,23 @@ function readPageErrors() {
  * 采集：把某个在售商品读成完整数据包（不创建草稿、不改动任何东西）
  * 返回标题/价格/图/SKU/尺码标签/类目，供"采集箱"保存
  */
-function collectGoods({ index = 0 } = {}) {
+function collectGoods({ index = 0, goodsId = null } = {}) {
   return wrap(`
     const INDEX = ${Number(index) || 0};
+    const GOODS_ID = ${goodsId ? Number(goodsId) : 'null'};
     const ls = call('/vodka/v2/mms/query/display/mall/goodsList',
-      { page: 1, size: Math.max(INDEX + 1, 20), is_onsale: 1,
+      { page: 1, size: 100, is_onsale: 1,
         pre_sale_type: 4, shipment_time_type: 3, sold_out: 0 });
     if (!ls.ok) return { ok: false, error: '拉取商品失败', detail: ls.err };
     const arr = (ls.data && ls.data.goods_list) || [];
-    const g = arr[INDEX];
-    if (!g) return { ok: false, error: '没有第 ' + INDEX + ' 个商品' };
+    let g = null;
+    if (GOODS_ID) {
+      g = arr.find(function (x) { return Number(x.id) === GOODS_ID; });
+      if (!g) return { ok: false, error: '列表里找不到 goods_id=' + GOODS_ID };
+    } else {
+      g = arr[INDEX];
+      if (!g) return { ok: false, error: '没有第 ' + INDEX + ' 个商品' };
+    }
 
     const cbs = call('/glide/v2/mms/edit/commit/create_by_sn', { goods_id: g.id });
     const commit = cbs.ok ? pick(cbs.data, 'goods_commit_id') : undefined;
