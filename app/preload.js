@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('pdd', {
   poolList: () => ipcRenderer.invoke('pool:list'),
   poolCollect: (index, goodsId) => ipcRenderer.invoke('pool:collect', { index, goodsId }),
   poolRemove: (id) => ipcRenderer.invoke('pool:remove', id),
+  poolDetail: (id) => ipcRenderer.invoke('pool:detail', id),
   poolPublish: (args) => ipcRenderer.invoke('pool:publish', args),
   // 批量队列
   batchStart: (ids, options) => ipcRenderer.invoke('batch:start', { ids, options }),
@@ -55,6 +56,11 @@ contextBridge.exposeInMainWorld('pdd', {
   debugInfo: () => ipcRenderer.invoke('debug:info'),
   netStart: () => ipcRenderer.invoke('debug:netStart'),
   netStop: () => ipcRenderer.invoke('debug:netStop'),
+  debugEval: (code, timeoutMs) => ipcRenderer.invoke('debug:eval', { code, timeoutMs }),
+
+  // 图片上传（空白新建用）
+  fetchImagesToLocal: (args) => ipcRenderer.invoke('img:fetchToLocal', args),
+  setFileInput: (args) => ipcRenderer.invoke('img:setFileInput', args),
   mmsCall: (path, body) => ipcRenderer.invoke('debug:mmsCall', { path, body }),
   captureEdit: (commit, goods) => ipcRenderer.invoke('debug:captureEdit', { commit, goods }),
 

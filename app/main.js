@@ -889,6 +889,109 @@ ipcMain.handle('shell:openPath', (_e, p) => {
   }
 });
 
+/**
+ * 把本地文件塞进页面的 <input type="file">。
+ *
+ * 为什么必须用调试器：出于安全，页面的 JS **不能**给 file input 赋值
+ * （`el.files = ...` 会被忽略，也没有其它 API）。只有 CDP 的
+ * `DOM.setFileInputFiles` 能设置真实文件路径，浏览器随后按正常流程上传。
+ *
+ * 这是「空白新建商品」能自动化的关键一步：先把源商品的图下载到本地，
+ * 再用这个接口喂给发布页的上传控件。
+ */
+async function setFileInputFiles(wc, selector, filePaths) {
+  const files = (Array.isArray(filePaths) ? filePaths : []).filter((p) => p && fs.existsSync(p));
+  if (!files.length) return { ok: false, error: '没有可用的本地文件' };
+
+  const dbg = wc.debugger;
+  let attached = false;
+  try {
+    if (!dbg.isAttached()) { dbg.attach('1.3'); attached = true; }
+  } catch (e) {
+    return { ok: false, error: '调试器附加失败: ' + e.message };
+  }
+
+  try {
+    await dbg.sendCommand('DOM.enable');
+    const doc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
+    const rootId = doc && doc.root && doc.root.nodeId;
+    if (!rootId) return { ok: false, error: '拿不到 document 根节点' };
+
+    let nodeId = null;
+    if (selector) {
+      const q = await dbg.sendCommand('DOM.querySelector', { nodeId: rootId, selector });
+      nodeId = q && q.nodeId;
+    }
+    if (!nodeId) {
+      // 退回：按 type=file 找第一个
+      const q2 = await dbg.sendCommand('DOM.querySelector', { nodeId: rootId, selector: 'input[type=file]' });
+      nodeId = q2 && q2.nodeId;
+    }
+    if (!nodeId) return { ok: false, error: '页面上找不到 file input' };
+
+    await dbg.sendCommand('DOM.setFileInputFiles', { nodeId, files });
+    return { ok: true, count: files.length, files: files.map((p) => path.basename(p)) };
+  } catch (e) {
+    return { ok: false, error: 'setFileInputFiles 失败: ' + ((e && e.message) || e) };
+  } finally {
+    if (attached) { try { dbg.detach(); } catch (_) { /* ignore */ } }
+  }
+}
+
+/** 调试用：在当前店铺视图的主 frame 里执行任意 JS。
+ *
+ * 为什么需要：外部 CDP 的 Runtime.evaluate 有时会落到和 executeJavaScript 不同的
+ * 执行上下文（拼多多页面里有 iframe），导致"看到的内容"和"生产代码看到的内容"
+ * 不一致 —— 排查时会得出完全错误的结论。这个接口走的是与 runInMall 完全相同的
+ * executeJavaScript 通道，保证上下文一致。
+ *
+ * 只在调试时用，不参与业务逻辑。
+ */
+ipcMain.handle('debug:eval', async (_e, { code, timeoutMs }) => {
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  if (typeof code !== 'string' || !code.trim()) return { ok: false, error: 'code 为空' };
+  const wc = m.view.webContents;
+  return withPlatform('debugEval', async () => {
+    const v = await wc.executeJavaScript(code, true);
+    return { ok: true, value: v };
+  }, timeoutMs || 60000);
+});
+
+// ---------------------------------------------------------------- 图片上传（空白新建用）
+/**
+ * 下载一组图片 URL 到本地目录。返回本地路径列表。
+ * 用途：空白新建商品时，源图是 PDD CDN 上的 URL，得先落地成本地文件才能上传。
+ */
+async function fetchImagesToDir(urls, dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const ok = [];
+  const errors = [];
+  const list = (Array.isArray(urls) ? urls : []).filter(Boolean);
+  for (let i = 0; i < list.length; i++) {
+    const ext = /\.png(\?|$)/i.test(list[i]) ? '.png' : '.jpg';
+    const dest = path.join(dir, 'src_' + String(i + 1).padStart(2, '0') + ext);
+    const r = await imgtool.download(list[i], dest);
+    if (r && r.ok) ok.push(dest);
+    else errors.push('第 ' + (i + 1) + ' 张：' + ((r && r.error) || '失败'));
+  }
+  return { ok: ok.length > 0, files: ok, errors };
+}
+
+ipcMain.handle('img:fetchToLocal', async (_e, { urls, tag }) => {
+  const dir = path.join(DATA_DIR, 'uploads', (tag || 'tmp') + '_' + Date.now());
+  const r = await fetchImagesToDir(urls, dir);
+  return Object.assign({ dir }, r);
+});
+
+/** 把本地文件喂给页面 file input（CDP） */
+ipcMain.handle('img:setFileInput', async (_e, { files, selector }) => {
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  return withPlatform('setFileInput',
+    () => setFileInputFiles(m.view.webContents, selector || 'input[type=file]', files), 60000);
+});
+
 // 初始化采集箱存储
 try { pool.init(DATA_DIR); } catch (e) { trace('pool init fail: ' + e.message); }
 
