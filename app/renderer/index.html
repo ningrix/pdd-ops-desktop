@@ -99,6 +99,19 @@
       </div>
 
       <div class="pane" id="pane-pool">
+        <div class="batch-bar" id="batchBar">
+          <label class="chk"><input type="checkbox" id="poolAll" /> 全选</label>
+          <span class="batch-count" id="poolSelCount">已选 0 个</span>
+          <span class="spacer"></span>
+          <label class="mini-field">库存 <input type="number" id="batchStock" value="50" min="1" style="width:66px" /></label>
+          <label class="mini-field">间隔 <input type="number" id="batchGapMin" value="15" min="5" style="width:52px" /> ~
+            <input type="number" id="batchGapMax" value="25" min="5" style="width:52px" /> 秒</label>
+          <button class="btn primary" id="btnBatchStart">批量上架到当前店</button>
+          <button class="btn ghost" id="btnBatchStop" style="display:none">停止</button>
+          <button class="btn ghost" id="btnBatchRetry" title="只重试「确定失败」的，不碰「状态未知」">重试失败项</button>
+          <button class="btn ghost" id="btnBatchClear">清空记录</button>
+        </div>
+        <div class="batch-stat" id="batchStat" style="display:none"></div>
         <div class="table-wrap">
           <div id="poolEmpty" class="big-empty">
             <div class="be-icon">
@@ -110,6 +123,7 @@
           <table id="poolTable" style="display:none">
             <thead>
               <tr>
+                <th style="width:36px"><input type="checkbox" id="poolAll2" /></th>
                 <th style="width:52px">图</th>
                 <th>标题</th>
                 <th style="width:110px">来源店铺</th>
@@ -120,6 +134,19 @@
               </tr>
             </thead>
             <tbody id="poolBody"></tbody>
+          </table>
+        </div>
+        <div class="batch-panel" id="batchPanel" style="display:none">
+          <div class="bp-head">批量结果 <span id="batchSummary"></span></div>
+          <table class="batch-table">
+            <thead><tr>
+              <th style="width:34px">#</th>
+              <th>商品</th>
+              <th style="width:96px">状态</th>
+              <th style="width:70px">尝试</th>
+              <th>说明</th>
+            </tr></thead>
+            <tbody id="batchBody"></tbody>
           </table>
         </div>
       </div>

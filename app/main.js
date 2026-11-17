@@ -388,7 +388,10 @@ ipcMain.handle('pool:detail', (_e, id) => pool.get(id));
  *  做法：目标店里克隆一条它自己的商品当骨架 → 抓骨架草稿的保存载荷 →
  *        用采集箱数据覆盖标题/主图/价格 → 回放保存 → 提交
  */
-ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
+/**
+ * 从采集箱上架到指定店铺（跨店）—— 业务实现，IPC 与批量队列共用
+ */
+async function poolPublishImpl({ id, mallId, stock }) {
   const it = pool.get(id);
   if (!it) return { ok: false, error: '采集箱里没有这一条' };
 
@@ -515,9 +518,19 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   }
   if (srcColors.length) {
     const cr = await withPlatform('setColors',
-      () => wc.executeJavaScript(opsMod.setColors(srcColors), true), 120000);
+      () => wc.executeJavaScript(opsMod.setColors(srcColors), true), 180000);
     steps.push('设颜色: ' + JSON.stringify((cr && cr.got) || cr).slice(0, 160));
-    if (!cr || !cr.ok) steps.push('⚠ 颜色设置不完整');
+    if (!cr || !cr.ok) {
+      // 颜色没设对就绝不往下走 —— 否则会产出一条「颜色错」的商品
+      return {
+        ok: false,
+        error: '颜色规格没设置成功，已停止（未提交）',
+        failed: 'failed_known',
+        advice: (cr && cr.error) || '页面颜色与源不一致。草稿在目标店草稿箱：commit=' +
+                draft.commit_id + ' goods=' + draft.goods_id,
+        steps, draft,
+      };
+    }
   } else {
     steps.push('源商品没有颜色规格，跳过');
   }
@@ -552,16 +565,24 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
     }
 
     const sr = await withPlatform('setSizes',
-      () => wc.executeJavaScript(opsMod.setSizes(it.sizes), true), 180000);
+      () => wc.executeJavaScript(opsMod.setSizes(it.sizes), true), 240000);
     if (sr && sr.ok) {
       steps.push('设尺码: 勾上 ' + sr.turnedOn + ' / 取消 ' + sr.turnedOff);
     } else {
       const missing = (sr && sr.missing) || [];
       steps.push('⚠ 尺码缺 ' + missing.length + ' 个: ' + JSON.stringify(missing).slice(0, 120));
       if (bestHave.length) {
-        const extra = bestHave.filter((x) => !wantSet.has(x));
         steps.push('   该码制可用码: ' + bestHave.slice(0, 30).join(','));
       }
+      // 尺码缺了就是残品，绝不提交
+      return {
+        ok: false,
+        error: '尺码没配齐（缺 ' + missing.length + ' 个），已停止（未提交）',
+        failed: 'failed_known',
+        advice: '缺的码: ' + missing.join(',') + '。草稿在目标店草稿箱：commit=' +
+                draft.commit_id + ' goods=' + draft.goods_id,
+        steps, draft,
+      };
     }
   }
 
@@ -584,10 +605,20 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
   try { pageErrs = await wc.executeJavaScript(opsMod.readPageErrors(), true) || []; } catch (_) {}
   if (pageErrs.length) steps.push('页面提示: ' + JSON.stringify(pageErrs.slice(0, 3)));
 
-  // ⑨ 读新 commit，再抓一份「含新规格」的载荷来改标题/图/价格
+  // ⑨ 读新 commit。页面保存通常原地更新同一个草稿，URL 里的 id 可能没变、
+  //    也可能变成别的草稿（实测遇到过跳到一个已失效的旧 id → 提交报 600001）。
+  //    所以：默认沿用克隆得到的 commit，只有 URL 里的 id 能通过存在性校验时才采用。
   const pg = await runInMall((o) => o.readPageCommit());
-  let useCommit = (pg && pg.commitId) || draft.commit_id;
-  if (useCommit !== draft.commit_id) steps.push('commit 变化: ' + draft.commit_id + ' → ' + useCommit);
+  let useCommit = draft.commit_id;
+  if (pg && pg.commitId && Number(pg.commitId) !== Number(draft.commit_id)) {
+    const chk = await runInMall((o) => o.draftDetail(pg.commitId));
+    if (chk && chk.ok) {
+      useCommit = pg.commitId;
+      steps.push('commit 变化: ' + draft.commit_id + ' → ' + useCommit + '（已校验存在）');
+    } else {
+      steps.push('页面 commit ' + pg.commitId + ' 无效，沿用 ' + draft.commit_id);
+    }
+  }
 
   let raw2 = null;
   try { raw2 = await captureEditBody(wc, useCommit, draft.goods_id); } catch (_) {}
@@ -612,6 +643,17 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
         body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
       }
       if (stock) for (const s of (body.skus || [])) s.quantity_delta = Number(stock);
+
+      // 页面新生成的 SKU 没有缩略图，平台会报「请上传规格缩略图」。
+      // 统一用主图第一张兜底（源商品本来也是这么用的）。
+      const fallbackThumb = (it.gallery || []).filter(Boolean)[0] || it.thumb || '';
+      let thumbFilled = 0;
+      if (fallbackThumb) {
+        for (const s of (body.skus || [])) {
+          if (!s.thumb_url) { s.thumb_url = fallbackThumb; thumbFilled++; }
+        }
+      }
+      if (thumbFilled) steps.push('补 SKU 缩略图: ' + thumbFilled + ' 个');
 
       /**
        * 尺码表处理。
@@ -673,10 +715,159 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
       to: target.name,
     },
   };
-});
+}
+
+ipcMain.handle('pool:publish', (_e, args) => poolPublishImpl(args || {}));
 
 // 初始化采集箱存储
 try { pool.init(DATA_DIR); } catch (e) { trace('pool init fail: ' + e.message); }
+
+// ---------------------------------------------------------------- 批量队列
+const batch = require('./lib/batch');
+try { batch.init(DATA_DIR); } catch (e) { trace('batch init fail: ' + e.message); }
+
+let batchStopRequested = false;
+let batchRunning = false;
+
+function emitBatch(extra) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('batch', Object.assign({
+      running: batchRunning,
+      stats: batch.stats(),
+      items: batch.getItems(),
+    }, extra || {}));
+  } catch (_) { /* ignore */ }
+}
+
+function randBetween(a, b) {
+  const lo = Math.max(0, Number(a) || 0);
+  const hi = Math.max(lo, Number(b) || lo);
+  return Math.round(lo + Math.random() * (hi - lo));
+}
+
+/** 失败分类（AGENTS.md §5） */
+function classifyBatchResult(r) {
+  if (r && r.ok) return { state: 'done' };
+  if (r && r.failed === 'failed_unknown') {
+    return { state: 'failed_unknown', errorMsg: String(r.error || '状态未知') };
+  }
+  const det = (r && r.detail) || {};
+  const code = det.error_code || det.errorCode || null;
+  const msg = det.error_msg || det.errorMsg || (r && r.error) || (r && r.blocked) || '未知';
+  return { state: 'failed_known', errorCode: code, errorMsg: String(msg).slice(0, 160) };
+}
+
+async function runBatchLoop(opts) {
+  const o = Object.assign({ stock: 50, intervalMin: 15, intervalMax: 25, maxAttempts: 2 }, opts || {});
+  batchRunning = true;
+  batchStopRequested = false;
+  batch.setRunning(true);
+  emitBatch({ phase: 'start' });
+  log('info', '批量开始：' + JSON.stringify(batch.stats()));
+
+  const todo = batch.getRunnable(o.maxAttempts);
+  for (let k = 0; k < todo.length; k++) {
+    if (batchStopRequested) {
+      log('warn', '批量被手动停止');
+      break;
+    }
+    const { index, item } = todo[k];
+    batch.update(index, {
+      state: 'running', attempts: (item.attempts || 0) + 1,
+      startedAt: new Date().toISOString(), errorCode: null, errorMsg: null,
+    });
+    log('info', '[' + (k + 1) + '/' + todo.length + '] ' + String(item.title || '').slice(0, 20) + ' ...');
+    emitBatch({ phase: 'item-start', index });
+
+    let r;
+    try {
+      r = await poolPublishImpl({ id: item.poolId, mallId: item.mallId, stock: o.stock });
+    } catch (e) {
+      // 异常 = 状态未知，绝不重试
+      r = { ok: false, failed: 'failed_unknown', error: String((e && e.message) || e) };
+    }
+
+    const cls = classifyBatchResult(r);
+    batch.update(index, Object.assign({
+      state: cls.state,
+      errorCode: cls.errorCode || null,
+      errorMsg: cls.errorMsg || null,
+      goodsId: (r && r.result && r.result.goods_id) || null,
+      commitId: (r && r.result && r.result.commit_id) || null,
+      endedAt: new Date().toISOString(),
+    }, {}));
+
+    log(cls.state === 'done' ? 'ok' : 'err',
+        '[' + (k + 1) + '/' + todo.length + '] ' + cls.state +
+        (cls.errorMsg ? '：' + cls.errorMsg : ''));
+    emitBatch({ phase: 'item-end', index });
+
+    if (k < todo.length - 1 && !batchStopRequested) {
+      const gap = randBetween(o.intervalMin * 1000, o.intervalMax * 1000);
+      log('info', '等 ' + Math.round(gap / 1000) + ' 秒再跑下一个 ...');
+      const step = 1000;
+      let waited = 0;
+      while (waited < gap && !batchStopRequested) {
+        await sleep(Math.min(step, gap - waited));
+        waited += step;
+      }
+    }
+  }
+
+  batchRunning = false;
+  batch.setRunning(false);
+  emitBatch({ phase: 'end' });
+  log('info', '批量结束：' + JSON.stringify(batch.stats()));
+}
+
+ipcMain.handle('batch:start', async (_e, { ids, options }) => {
+  if (batchRunning) return { ok: false, error: '已有批量任务在跑' };
+  if (!Array.isArray(ids) || !ids.length) return { ok: false, error: '没有选中商品' };
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+
+  const items = [];
+  for (const id of ids) {
+    const it = pool.get(id);
+    if (it) items.push({ poolId: it.id, title: it.title, mallId: m.id });
+  }
+  if (!items.length) return { ok: false, error: '采集箱里找不到这些商品' };
+
+  batch.create(items);
+  // 不 await —— 立刻返回，让界面能收进度
+  runBatchLoop(options).catch((e) => {
+    log('err', '批量异常终止: ' + ((e && e.message) || e));
+    batchRunning = false;
+    batch.setRunning(false);
+    emitBatch({ phase: 'error', error: String((e && e.message) || e) });
+  });
+  return { ok: true, count: items.length };
+});
+
+ipcMain.handle('batch:stop', () => {
+  batchStopRequested = true;
+  return { ok: true, stopping: true };
+});
+
+ipcMain.handle('batch:list', () => ({
+  running: batchRunning,
+  stats: batch.stats(),
+  items: batch.getItems(),
+  createdAt: batch.list().createdAt,
+}));
+
+ipcMain.handle('batch:clear', () => {
+  if (batchRunning) return { ok: false, error: '正在跑，不能清空' };
+  batch.clear();
+  return { ok: true };
+});
+
+ipcMain.handle('batch:retryKnown', () => {
+  if (batchRunning) return { ok: false, error: '正在跑，不能重试' };
+  batch.resetFailedKnown();
+  return { ok: true };
+});
 
 // ---------------------------------------------------------------- 尺码表模板
 const SIZE_TPL_FILE = path.join(__dirname, 'data', 'size-templates.json');

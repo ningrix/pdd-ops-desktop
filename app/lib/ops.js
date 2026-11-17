@@ -568,35 +568,25 @@ function setColors(colors) {
       await sleep(420);
     }
 
-    // ② 长到目标数量：反复填第一个空框
-    guard = 0;
-    while (guard++ < 60) {
-      const ins = getIns();
-      if (ins.length >= WANT.length && ins.slice(0, WANT.length).every(i => i.value.trim())) break;
-      const empty = ins.find(i => !i.value.trim());
-      if (!empty) break;
-      // 这个空框最终要填什么？按它前面已有值的数量决定
-      const idx = ins.indexOf(empty);
-      const v = WANT[Math.min(idx, WANT.length - 1)];
-      setVal(empty, v);
-      await sleep(480);
-    }
-
-    // ③ 统一校准每个位置的值
-    for (let round = 0; round < 3; round++) {
-      const ins = getIns();
-      let changed = 0;
-      for (let i = 0; i < WANT.length && i < ins.length; i++) {
-        if (ins[i].value.trim() !== WANT[i]) {
-          setVal(ins[i], WANT[i]);
-          changed++;
-          await sleep(220);
+    // ② 逐槽位写值 + 校验。每改一个都重新查询，避免元素被 React 重渲染后引用失效。
+    for (let i = 0; i < WANT.length; i++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        let ins = getIns();
+        if (i >= ins.length) {
+          // 需要新增：填第一个空框，页面会自动追加新行
+          const empty = ins.find(x => !x.value.trim());
+          if (!empty) { await sleep(400); continue; }
+          setVal(empty, WANT[i]);
+          await sleep(450);
+          continue;
         }
+        if (ins[i].value.trim() === WANT[i]) break;
+        setVal(ins[i], WANT[i]);
+        await sleep(380);
       }
-      if (!changed) break;
     }
 
-    // ④ 删掉数量之外还留着的行
+    // ③ 删掉数量之外还留着的行
     guard = 0;
     while (guard++ < 20) {
       const rows = [...document.querySelectorAll('[class*="new-spec-single-color"]')].filter(r => {
@@ -611,8 +601,12 @@ function setColors(colors) {
       await sleep(380);
     }
 
+    // ④ 最终校验：必须和 WANT 逐项一致
+    await sleep(400);
     const final = getIns().map(i => i.value.trim()).filter(Boolean);
-    return { ok: final.length >= WANT.length, want: WANT, got: final };
+    const same = final.length === WANT.length && WANT.every((v, i) => final[i] === v);
+    return { ok: same, want: WANT, got: final,
+             error: same ? null : '颜色与目标不一致（需要 ' + WANT.length + ' 个，实际 ' + final.length + ' 个）' };
   })()`;
 }
 

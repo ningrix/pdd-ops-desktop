@@ -30,6 +30,17 @@ contextBridge.exposeInMainWorld('pdd', {
   poolCollect: (index, goodsId) => ipcRenderer.invoke('pool:collect', { index, goodsId }),
   poolRemove: (id) => ipcRenderer.invoke('pool:remove', id),
   poolPublish: (args) => ipcRenderer.invoke('pool:publish', args),
+  // 批量队列
+  batchStart: (ids, options) => ipcRenderer.invoke('batch:start', { ids, options }),
+  batchStop: () => ipcRenderer.invoke('batch:stop'),
+  batchList: () => ipcRenderer.invoke('batch:list'),
+  batchClear: () => ipcRenderer.invoke('batch:clear'),
+  batchRetryKnown: () => ipcRenderer.invoke('batch:retryKnown'),
+  onBatch: (cb) => {
+    const h = (_e, payload) => cb(payload);
+    ipcRenderer.on('batch', h);
+    return () => ipcRenderer.removeListener('batch', h);
+  },
 
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),

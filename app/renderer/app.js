@@ -9,6 +9,8 @@ const state = {
   visible: true,
   tab: 'goods',
   goods: [],
+  pool: [],
+  poolSel: new Set(),
   last: null,
   sizeTpl: null,
 };
@@ -318,9 +320,11 @@ async function refreshPool() {
   const tb = $('#poolBody');
   const tbl = $('#poolTable');
   const empty = $('#poolEmpty');
+  state.pool = items || [];
   if (!items || !items.length) {
     tbl.style.display = 'none';
     empty.style.display = 'flex';
+    updateSelCount();
     return;
   }
   empty.style.display = 'none';
@@ -329,6 +333,8 @@ async function refreshPool() {
   for (const it of items) {
     const tr = document.createElement('tr');
     tr.innerHTML =
+      '<td><input type="checkbox" data-sel="' + esc(it.id) + '"' +
+        (state.poolSel.has(it.id) ? ' checked' : '') + ' /></td>' +
       '<td>' + (it.thumb ? '<img src="' + esc(it.thumb) + '" />' : '') + '</td>' +
       '<td class="ttl" title="' + esc(it.title) + '">' + esc(it.title) + '</td>' +
       '<td>' + esc(it.sourceMallName || '-') + '</td>' +
@@ -339,15 +345,143 @@ async function refreshPool() {
         '<button class="btn mini primary" data-act="pub">上架到当前店</button> ' +
         '<button class="btn mini" data-act="del">移除</button>' +
       '</td>';
+    const cb = tr.querySelector('[data-sel]');
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.poolSel.add(it.id); else state.poolSel.delete(it.id);
+      updateSelCount();
+    });
     tr.querySelector('[data-act="pub"]').addEventListener('click', () => publishFromPool(it));
     tr.querySelector('[data-act="del"]').addEventListener('click', async () => {
       await window.pdd.poolRemove(it.id);
+      state.poolSel.delete(it.id);
       await refreshPool();
       logInfo('已从采集箱移除');
     });
     tb.appendChild(tr);
   }
+  updateSelCount();
 }
+
+// ---------------------------------------------------------------- 批量队列
+function updateSelCount() {
+  const n = state.poolSel.size;
+  const el = $('#poolSelCount');
+  if (el) el.textContent = '已选 ' + n + ' 个';
+  const all = $('#poolAll');
+  const all2 = $('#poolAll2');
+  const total = (state.pool || []).length;
+  const on = n > 0 && n === total;
+  if (all) all.checked = on;
+  if (all2) all2.checked = on;
+}
+
+function toggleSelectAll(checked) {
+  state.poolSel.clear();
+  if (checked) for (const it of (state.pool || [])) state.poolSel.add(it.id);
+  document.querySelectorAll('#poolBody [data-sel]').forEach((cb) => {
+    cb.checked = !!checked;
+  });
+  updateSelCount();
+}
+
+const BATCH_STATE_TEXT = {
+  queued: '排队中', running: '执行中', done: '成功',
+  failed_known: '失败', failed_unknown: '状态未知',
+};
+
+function renderBatch(payload) {
+  if (!payload) return;
+  const s = payload.stats || {};
+  const running = !!payload.running;
+
+  const stat = $('#batchStat');
+  if (stat) {
+    if (s.total) {
+      stat.style.display = 'block';
+      stat.textContent = '共 ' + s.total + ' 项 ｜ 成功 ' + (s.done || 0) +
+        ' ｜ 失败 ' + (s.failed_known || 0) +
+        ' ｜ 状态未知 ' + (s.failed_unknown || 0) +
+        ' ｜ 排队 ' + (s.queued || 0) + (running ? ' ｜ 运行中…' : '');
+    } else {
+      stat.style.display = 'none';
+    }
+  }
+
+  const btnStart = $('#btnBatchStart');
+  const btnStop = $('#btnBatchStop');
+  if (btnStart) btnStart.style.display = running ? 'none' : '';
+  if (btnStop) btnStop.style.display = running ? '' : 'none';
+
+  const items = payload.items || [];
+  const panel = $('#batchPanel');
+  const tb = $('#batchBody');
+  if (!items.length) {
+    if (panel) panel.style.display = 'none';
+    return;
+  }
+  if (panel) panel.style.display = 'block';
+  if (tb) {
+    tb.innerHTML = '';
+    items.forEach((it, i) => {
+      const tr = document.createElement('tr');
+      const cls = 'st-' + it.state;
+      tr.innerHTML =
+        '<td>' + (i + 1) + '</td>' +
+        '<td>' + esc(String(it.title || '').slice(0, 26)) + '</td>' +
+        '<td class="' + cls + '">' + (BATCH_STATE_TEXT[it.state] || it.state) + '</td>' +
+        '<td>' + (it.attempts || 0) + '</td>' +
+        '<td>' + esc(it.errorMsg || '') +
+          (it.state === 'failed_unknown'
+            ? '<br><span style="color:#ef5b5b">⚠ 状态未知，请去后台核对，不要直接重试</span>'
+            : '') + '</td>';
+      tb.appendChild(tr);
+    });
+  }
+  const sum = $('#batchSummary');
+  if (sum) sum.textContent = '成功 ' + (s.done || 0) + ' / 共 ' + (s.total || 0);
+}
+
+async function startBatch() {
+  const ids = [...state.poolSel];
+  if (!ids.length) { logWarn('先在左边勾选要上架的商品'); return; }
+  const stock = Number($('#batchStock').value) || 50;
+  const gmin = Number($('#batchGapMin').value) || 15;
+  const gmax = Number($('#batchGapMax').value) || 25;
+  logInfo('批量上架 ' + ids.length + ' 个商品，库存 ' + stock +
+          '，间隔 ' + gmin + '~' + gmax + ' 秒 ...');
+  const r = await window.pdd.batchStart(ids, {
+    stock, intervalMin: gmin, intervalMax: gmax, maxAttempts: 2,
+  });
+  if (!r || !r.ok) { logErr('批量启动失败：' + ((r && r.error) || '未知')); return; }
+  setTab('pool');
+}
+
+$('#poolAll') && $('#poolAll').addEventListener('change', (e) => toggleSelectAll(e.target.checked));
+$('#poolAll2') && $('#poolAll2').addEventListener('change', (e) => toggleSelectAll(e.target.checked));
+$('#btnBatchStart') && $('#btnBatchStart').addEventListener('click', startBatch);
+$('#btnBatchStop') && $('#btnBatchStop').addEventListener('click', async () => {
+  await window.pdd.batchStop();
+  logWarn('已请求停止，当前这一件跑完就停');
+});
+$('#btnBatchRetry') && $('#btnBatchRetry').addEventListener('click', async () => {
+  const r = await window.pdd.batchRetryKnown();
+  if (r && r.ok) { logInfo('已把「失败」项重置为排队，点「批量上架」继续'); await refreshBatch(); }
+});
+$('#btnBatchClear') && $('#btnBatchClear').addEventListener('click', async () => {
+  const r = await window.pdd.batchClear();
+  if (r && r.ok) { logInfo('批量记录已清空'); await refreshBatch(); }
+  else logWarn((r && r.error) || '清空失败');
+});
+
+async function refreshBatch() {
+  try {
+    const p = await window.pdd.batchList();
+    renderBatch(p);
+  } catch (_) { /* ignore */ }
+}
+
+window.pdd.onBatch((p) => renderBatch(p));
+
 
 async function publishFromPool(it) {
   logInfo('从采集箱上架：' + String(it.title || '').slice(0, 18) + ' → 当前店铺 ...');
@@ -608,6 +742,7 @@ function renderLastCard() {
   logInfo('界面已就绪');
   await refreshMalls();
   await refreshPool();
+  await refreshBatch();
   setTab('goods');
   if (!state.malls.length) logInfo('第一步：点左上「＋ 添加店铺」，在右侧浏览器里扫码登录');
 })();

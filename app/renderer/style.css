@@ -275,3 +275,33 @@ tbody .warn { color: var(--err); }
 .size-body .no { color: var(--warn); }
 .size-body .chips { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
 .size-body .chip { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #23304a; color: #9db4dd; }
+
+/* ---------------- 批量队列 ---------------- */
+.batch-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; background: var(--bg2);
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.batch-bar .spacer { flex: 1; }
+.batch-bar .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); cursor: pointer; }
+.batch-bar .mini-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg2); }
+.batch-bar input[type=number] {
+  background: var(--bg3); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 5px; padding: 3px 5px; font-size: 12px;
+}
+.batch-count { font-size: 12px; color: #7d8aa3; }
+.batch-stat {
+  padding: 7px 12px; font-size: 12px; color: var(--fg2);
+  border-bottom: 1px solid var(--line); background: rgba(90,130,255,.06);
+}
+.batch-panel { border-top: 1px solid var(--line); background: var(--bg2); max-height: 42vh; overflow: auto; }
+.bp-head { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--fg); position: sticky; top: 0; background: var(--bg2); border-bottom: 1px solid var(--line); }
+.bp-head span { font-weight: 400; color: #7d8aa3; margin-left: 8px; }
+.batch-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.batch-table th { text-align: left; padding: 6px 10px; color: #7d8aa3; font-weight: 500; border-bottom: 1px solid var(--line); }
+.batch-table td { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--fg2); vertical-align: top; }
+.batch-table td.st-done { color: #3ecf8e; }
+.batch-table td.st-failed_known { color: #f5a623; }
+.batch-table td.st-failed_unknown { color: #ef5b5b; }
+.batch-table td.st-running { color: #5a82ff; }
+.batch-table td.st-queued { color: #7d8aa3; }
