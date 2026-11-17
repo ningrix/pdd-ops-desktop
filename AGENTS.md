@@ -3,9 +3,11 @@
 > 本工作区的工程约定。**任何 agent 在动代码前必须读完。**
 > 与用户当次明示冲突时，以用户为准，事后回写本文档。
 >
-> 最后更新：2026-11-17 ｜ 对应应用版本：v0.2（采集箱已接入）
+> 最后更新：2026-11-17 ｜ 对应应用版本：v0.3（采集箱 + 跨店上架 + 平台锁）
 
-**关于定位方式**：本文档一律用**函数名 / 选择器**指位置，不写行号。`main.js` 在六小时内从 635 行增长到 1096 行，行号第二天就会失效。
+**关于定位方式**：本文档一律用**函数名 / 选择器**指位置，不写行号。`main.js` 曾在六小时内从 635 行涨到 1096 行，行号第二天就会失效。
+
+**并行协作前必读**：本仓库已初始化 git（baseline commit `725600c`）。多 agent 并行前先读 `C:\Users\56587\.workbuddy\plans\协作分工_lead与workbuddy_2026-11-17.md`。
 
 ---
 
@@ -106,10 +108,15 @@
 | --- | --- | --- |
 | 复制成草稿 | `research/复制上架实测记录_2026-11.md` | 调试浏览器直连同店 3/3 成功；链路 `create_by_sn → copyGoodsCommit → rename → detail` |
 | 改价 | `research/改价接口打通_2026-11.md` | `action/edit` 载荷回放通过。**从零拼字段会报 4000000，不要走那条路** |
-| 提交上架 | `research/提交门槛纠正_2026-11.md` | 接口通；卡在类目必填项 `17000001`（满2件折扣，字段 `two_pieces_discount`） |
+| 提交上架 | `research/提交门槛纠正_2026-11.md`、`research/提交上架打通_2026-11.md` | **接口已通，实测成功**（`提交(206438982955): ok`）。⚠️ **`17000001 满2件折扣` 是误导性错误**：库存为 0 时平台会用它伪装，把库存补到 50 后该错误消失。真门槛是尺码表 `10000014` |
+| 跨店上架 | `research/跨店上架打通_2026-11.md` | 实测成功（店铺2 登山鞋 → 店铺1）。骨架机制；骨架撞 `600102` 会自动换下一个候选。⚠️ **SKU 规格仍是骨架的，不是源的**——这是跨店最大的未完成项 |
+| 尺码表接口 | `research/尺码表接口打通_2026-11.md` | `POST /glide/forward/cabernet/mms/sizespec/action/post`。body = `{content:{meta:{groups:[{id:1}],elements:[{id:N}]},records:[{values:{...}}]},status:0,class_id:N}`，每调一次生成新 spec id。绑定靠编辑载荷的 `size_spec_id` + `size_parent_spec_id`(=1226) + `is_size_spec_sync_detail`(=1) |
+| 尺码表 class_id | 实测（1~12 全扫） | 按类目而定。运动羽绒服（cat 12508）= **5**。判断依据：只有正确 class 才会告诉你「缺哪个参数」，错误的只会回 `10000013 请选择该类目下正确的尺码表类型` |
+| 尺码表参数 id | 实测 | `10004` = 推荐身高。**`体重(kg)` 的 id 未知**（10000~10049 已排除）。一张表最多 5 个参数，重复列会报「内容不完整」 |
+| 平台互斥锁 | `main.js` 的 `withPlatform()` | 所有 `runInMall` / `saveDraftAndResolve` / `captureEditBody` 强制串行排队 + 超时看门狗。理由：`loadURL` 会抢视图、`webContents.debugger` 不能两处同时 attach |
 | 采集箱 | `main.js` `pool:*` + `lib/pool.js` + `ops.collectGoods` | 采集 → 本地池 → 跨店上架已接成闭环 |
 | 尺码匹配 | `main.js` `size:match` + `app/data/size-templates.json` | 支持「按商品尺码标签」优先，类目关键词兜底；返回 `bySizes` 标明命中方式 |
-| 登录态持久 | `main.js` `before-quit` → `flushStorageData()` | 必须走正常关窗，强杀丢登录态 |
+| 登录态持久 | `main.js` `before-quit` → `flushStorageData()` | 必须走正常关窗，强杀丢登录态。**启动/重启一律用 `tools/restart-app.ps1`**：它先请窗口自己关闭、等 `flushStorageData()` 完成，超时才降级强杀并警告。已实测：`taskkill /F` 会让两个店铺同时掉登录、Cookies 文件退化成 80 字节空壳 |
 | 图像管线 | `交付/` 70+ 张成品 | 去标 / 去水印 / 4x 超分 / 白底；Real-ESRGAN + LaMa + RapidOCR，CPU 15–25s/张 |
 | 三档定价 | `research/验证A_加价上限结论_2026-11.md` | 拼单价钳 1.08、单买价放开、市场价 > 单买价。多家厂商官方文档交叉印证 |
 | 基础技术服务费 | 拼多多 2024 公告（媒体转述） | (实付 + 平台优惠) × 0.6%；先用后付同为 0.6%；2024-09-24 后退款订单自动退回 |
@@ -232,6 +239,8 @@ Task {
 | `listGoods` 硬编码取 30 条，`total` 未显示 | `main.js` `ops:list` / `app.js` | 用户以为看到全部，实际只有前 30 条 |
 | 日志时间戳源不一致 | `main.js` 用 `toISOString()`（UTC），`app.js` 用 `toTimeString()`（本地） | 同一日志框内时间跳 8 小时 |
 | 上架库存硬编码 `stock: 50` | `app.js` 调 `publish` / `poolPublish` | 库存策略无法配置 |
+| **跨店上架只覆盖了标题 / 主图 / 价格，SKU 规格仍是骨架的** | `main.js` 的 `pool:publish` 覆盖段 | 源商品 64 个 SKU（36~45 码）上架后变成骨架的 25 个（2/4/6/8/10 码）。**这是跨店主路径的最大缺口**，见 §4 |
+| 尺码表 `体重(kg)` 参数 id 未知 | `main.js` 的 `size:match` 之后没有写入环节 | 尺码表自动写入卡在这一项，`class_id=5` 已确认 |
 
 > **在修掉前两条（改价预览、索引校验）之前，不得启用任何批量能力。**
 
