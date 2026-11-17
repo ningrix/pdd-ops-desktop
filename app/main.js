@@ -572,11 +572,36 @@ ipcMain.handle('pool:publish', async (_e, { id, mallId, stock }) => {
           s.multi_price_in_yuan = (s.multi_price / 100).toFixed(2);
           s.price_in_yuan = (s.price / 100).toFixed(2);
         }
-        body.market_price = Math.max(Number(body.market_price) || 0, Number(it.price) + 100);
+        // 参考价必须【严格大于】所有 SKU 的单买价，否则报 1000161
+        const maxSingle = Math.max.apply(null, (body.skus || []).map((s) => Number(s.price) || 0));
+        body.market_price = Math.max(maxSingle + 100, Number(it.price) + 200,
+                                     Number(body.market_price) || 0);
         body.market_price_in_yuan = (body.market_price / 100).toFixed(2);
       }
       if (stock) for (const s of (body.skus || [])) s.quantity_delta = Number(stock);
 
+      /**
+       * 尺码表处理。
+       * 实测结论：这个类目（登山鞋 11985）不强制要尺码表 —— 源商品 size_spec_id 为空也能在售。
+       * 而骨架多半继承了一张旧尺码表，改过尺码集合后那张表就对不上了，
+       * 提交时会报 10000014「尺码表参数或组别不能为空」。
+       * 所以：源没有尺码表 → 把继承来的清掉（置 0）。
+       *       源有尺码表   → 沿用源的引用（同品类才可能有效）。
+       */
+      if (!it.sizeSpecId) {
+        body.size_spec_id = 0;
+        body.size_parent_spec_id = 0;
+        body.is_size_spec_sync_detail = 0;
+        steps.push('尺码表: 源无 → 清空继承的引用');
+      } else {
+        body.size_spec_id = Number(it.sizeSpecId);
+        body.size_parent_spec_id = Number(it.sizeParentSpecId) || body.size_parent_spec_id || 0;
+        body.is_size_spec_sync_detail = 1;
+        steps.push('尺码表: 沿用源 ' + it.sizeSpecId);
+      }
+
+      // 抓载荷那一步已经点过一次保存，紧接着再存会被频控（2000000），先等一会儿
+      await sleep(12000);
       const sv = await runInMall((o) => o.applyEditBody(JSON.stringify(body), useCommit));
       const saveOk = !!(sv && sv.save && sv.save.ok);
       steps.push('覆盖标题/图/价格: ' + (saveOk ? 'ok' : JSON.stringify(sv && sv.save).slice(0, 120)));
@@ -1056,6 +1081,56 @@ ipcMain.handle('debug:netStop', async () => {
   try { await dbg.sendCommand('Network.disable'); } catch (_) {}
   if (attached) { try { dbg.detach(); } catch (_) {} }
   return { ok: true, count: records.length, records };
+});
+
+/** 通用 MMS 接口调用（调试/维护用）
+ *  在店铺视图里用页面自己的 __mms.fetch.sync 发请求，与页面同指纹。
+ *  path 例：'/glide/v2/mms/edit/commit/delete'
+ */
+ipcMain.handle('debug:mmsCall', async (_e, { path: apiPath, body }) => {
+  if (!apiPath || typeof apiPath !== 'string' || apiPath[0] !== '/') {
+    return { ok: false, error: 'path 必须以 / 开头' };
+  }
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  const payload = body && typeof body === 'object' ? body : {};
+  const js = `(() => {
+    const mms = window.__mms && window.__mms.fetch && window.__mms.fetch.sync;
+    if (typeof mms !== 'function') return JSON.stringify({ __blocked: true, error: '页面未就绪' });
+    try {
+      const r = mms('POST', location.origin + ${JSON.stringify(apiPath)}, ${JSON.stringify(payload)});
+      return JSON.stringify({ ok: true, data: (r && r.result !== undefined) ? r.result : r });
+    } catch (e) {
+      const o = {};
+      for (const k of ['error_msg', 'error_code', 'errorMsg', 'message', 'success']) {
+        if (e && e[k] !== undefined) o[k] = e[k];
+      }
+      return JSON.stringify({ ok: false, error: Object.keys(o).length ? o : String(e).slice(0, 200) });
+    }
+  })()`;
+  return withPlatform('mmsCall', async () => {
+    const wc = m.view.webContents;
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      try {
+        const raw = await wc.executeJavaScript(js, true);
+        if (raw && raw.__blocked) { await sleep(1000); continue; }
+        try { return JSON.parse(raw); } catch (_) { return { ok: false, error: String(raw).slice(0, 200) }; }
+      } catch (e) {
+        await sleep(800);
+      }
+    }
+    return { ok: false, error: '页面未就绪' };
+  }, 30000);
+});
+
+/** 抓取某个草稿的保存载荷（调试用，返回原始 JSON 字符串） */
+ipcMain.handle('debug:captureEdit', async (_e, { commit, goods }) => {
+  const m = currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  const raw = await captureEditBody(m.view.webContents, Number(commit), Number(goods));
+  if (!raw) return { ok: false, error: lastCaptureError || '没抓到' };
+  return { ok: true, size: raw.length, body: raw };
 });
 
 ipcMain.handle('debug:info', () => {  const p = STORE_FILE();

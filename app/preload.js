@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('pdd', {
   debugInfo: () => ipcRenderer.invoke('debug:info'),
   netStart: () => ipcRenderer.invoke('debug:netStart'),
   netStop: () => ipcRenderer.invoke('debug:netStop'),
+  mmsCall: (path, body) => ipcRenderer.invoke('debug:mmsCall', { path, body }),
+  captureEdit: (commit, goods) => ipcRenderer.invoke('debug:captureEdit', { commit, goods }),
 
   // 尺码表模板
   sizeList: () => ipcRenderer.invoke('size:list'),
