@@ -420,25 +420,33 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   // ② 骨架必须【同类目】—— 跨类目骨架的尺码表是另一套体系（鞋码 39-45 vs 服装 150/72A），
   //    硬套只会得到一条规格错乱的商品。宁可拒绝，不产废品。
   const srcCat = Number(it.catId) || null;
-  let cands = ls.items.slice();
+  let ranked = skeleton.rank(ls.items, srcCat);
+  let cands = srcCat ? ranked.sameCat : ranked.otherCat;
+  if (srcCat && !cands.length) {
+    const catName = (it.catNames && it.catNames.length)
+      ? it.catNames.join(' / ')
+      : ('类目 ' + srcCat);
+    return {
+      ok: false,
+      blocked: 'no-skeleton',
+      error: '目标店铺还没有「' + catName + '」这个品类的商品，无法自动上架',
+      advice: skeleton.diagnosis([], srcCat) +
+              '\n每个品类第一次上架前，需要目标店先有一个同类商品当「骨架」：' +
+              '手动发布一个「' + catName + '」商品（规格尽量填全，比如鞋就把 36~45 都加上），' +
+              '上架后可立刻下架但别删除。之后这个品类的自动上架都会克隆它 —— 一个品类只需手动铺一次。',
+      steps,
+    };
+  }
   if (srcCat) {
-    cands = cands.filter((x) => Number(x.cat_id) === srcCat);
-    if (!cands.length) {
-      return {
-        ok: false,
-        error: '目标店铺没有同品类商品可作骨架',
-        advice: '目标店需要一个和源商品同类的商品（源类目 ' + srcCat + '）。' +
-                '跨类目的规格体系完全不同（鞋码 vs 服装码），套不过去。' +
-                '办法：先在目标店手动上架一个同类商品当骨架，再回来跑。',
-        steps,
-      };
-    }
+    steps.push('同品类骨架 ' + cands.length + ' 个（其中 ' +
+               ranked.stats.neverUsed + ' 个从未用过），按最久未用优先');
   }
   steps.push('同品类骨架候选: ' + cands.length + ' 个');
 
   let draft = null;
   let base = null;
   let lastErr = null;
+  const tried = [];
   for (const cand of cands) {
     const cp = await runInMall((o) => o.copyGoods({
       index: cand.idx,
@@ -447,22 +455,29 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
       submit: false,
       allowSameStore: true,
     }));
+    tried.push(cand);
     if (cp && cp.ok) {
       draft = cp.result;
       base = cand;
+      skeleton.markUsed(cand.goods_id);       // 记账：下次优先用别的骨架
       break;
     }
     lastErr = cp && (cp.detail || cp.error);
-    steps.push('骨架 ' + String(cand.title || '').slice(0, 14) + ' 失败: ' +
-               JSON.stringify(lastErr).slice(0, 80));
+    const em = errText(lastErr);
+    steps.push('骨架 ' + String(cand.title || '').slice(0, 14) +
+               ' 失败: ' + em.slice(0, 70) +
+               (cand.lastUsedMin !== null ? '（' + cand.lastUsedMin + ' 分钟前用过）' : ''));
     await sleep(1200);
   }
   if (!draft) {
+    const all600102 = /600102|已被新建过/.test(errText(lastErr));
     return {
       ok: false,
-      error: '目标店铺没有可用的骨架商品',
-      advice: '目标店里所有商品都撞上了「该商品已被新建过」（平台限制同一商品连续新建）。' +
-              '换一个目标店铺，或等一段时间再试。',
+      failed: 'failed_known',
+      error: all600102
+        ? '目标店同品类骨架全部被频控拒绝（600102）'
+        : '目标店铺没有可用的骨架商品',
+      advice: skeleton.diagnosis(tried, srcCat),
       steps,
       detail: lastErr,
     };
@@ -519,15 +534,17 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   if (srcColors.length) {
     const cr = await withPlatform('setColors',
       () => wc.executeJavaScript(opsMod.setColors(srcColors), true), 180000);
-    steps.push('设颜色: ' + JSON.stringify((cr && cr.got) || cr).slice(0, 160));
+    steps.push('设颜色 需要: ' + JSON.stringify((cr && cr.want) || srcColors));
+    steps.push('设颜色 实际: ' + JSON.stringify((cr && cr.got) || null));
     if (!cr || !cr.ok) {
       // 颜色没设对就绝不往下走 —— 否则会产出一条「颜色错」的商品
       return {
         ok: false,
         error: '颜色规格没设置成功，已停止（未提交）',
         failed: 'failed_known',
-        advice: (cr && cr.error) || '页面颜色与源不一致。草稿在目标店草稿箱：commit=' +
-                draft.commit_id + ' goods=' + draft.goods_id,
+        advice: (cr && cr.error ? errText(cr.error) : '页面颜色与源不一致') +
+                '\n草稿仍在目标店草稿箱：commit=' + draft.commit_id +
+                ' goods=' + draft.goods_id + '（可手动删除后重试）',
         steps, draft,
       };
     }
@@ -860,6 +877,10 @@ try { pool.init(DATA_DIR); } catch (e) { trace('pool init fail: ' + e.message); 
 // ---------------------------------------------------------------- 批量队列
 const batch = require('./lib/batch');
 try { batch.init(DATA_DIR); } catch (e) { trace('batch init fail: ' + e.message); }
+
+// 骨架使用记账（跨店上架时按最久未用优先挑骨架）
+const skeleton = require('./lib/skeleton');
+try { skeleton.init(DATA_DIR); } catch (e) { trace('skeleton init fail: ' + e.message); }
 
 let batchStopRequested = false;
 let batchRunning = false;
@@ -1574,7 +1595,20 @@ async function captureEditBodyInner(wc, commit, goods) {
       log('err', '编辑页导航失败: ' + (nav.error || ''));
       return null;
     }
-    if (nav.aborted) log('warn', '导航被打断但页面已在编辑页，继续');
+    // 必须确认落在【这一条】草稿上。ERR_ABORTED 容忍逻辑只看了「在 goods_add」，
+    // 如果页面还停在别的草稿上，会把别人的载荷当成本条的（实测踩过）。
+    let nowUrl = '';
+    for (let i = 0; i < 20; i++) {
+      try { nowUrl = wc.getURL() || ''; } catch (_) { nowUrl = ''; }
+      if (nowUrl.indexOf('id=' + commit) >= 0 && nowUrl.indexOf('goods_id=' + goods) >= 0) break;
+      await sleep(500);
+    }
+    if (nowUrl.indexOf('id=' + commit) < 0 || nowUrl.indexOf('goods_id=' + goods) < 0) {
+      log('err', '导航后页面不是目标草稿（期望 commit=' + commit + ' goods=' + goods +
+                 '，实际 ' + nowUrl.slice(0, 120) + '）');
+      return null;
+    }
+    if (nav.aborted) log('warn', '导航被打断但页面已在目标草稿，继续');
     await sleep(7000);
 
     const ops = require('./lib/ops');
@@ -1685,6 +1719,30 @@ ipcMain.handle('ops:changePrice', async (_e, args) => {
 let platformQueue = Promise.resolve();
 let platformDepth = 0;
 
+/**
+ * 把任意异常转成可读文本。
+ *
+ * 为什么需要：Electron 的 executeJavaScript 在页面抛出非 Error 值时，
+ * reject 出来的就是一个普通对象。直接 String(e) 会得到 "[object Object]"，
+ * 真实原因全丢（这个坑已经在 captureEditBody 上踩过一次）。
+ */
+function errText(e) {
+  if (e === null || e === undefined) return '未知错误';
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message || String(e);
+  if (typeof e === 'object') {
+    if (typeof e.error === 'string') return e.error;
+    if (typeof e.message === 'string') return e.message;
+    if (typeof e.reason === 'string') return e.reason;
+    try {
+      const s = JSON.stringify(e);
+      if (s && s !== '{}') return s;
+    } catch (_) { /* ignore */ }
+    return Object.prototype.toString.call(e);
+  }
+  return String(e);
+}
+
 function withPlatform(label, fn, timeoutMs) {
   const limit = timeoutMs || 120000;
   const run = async () => {
@@ -1698,9 +1756,9 @@ function withPlatform(label, fn, timeoutMs) {
       });
       return await Promise.race([work, guard]);
     } catch (e) {
-      const msg = String((e && e.message) || e);
-      log('err', '平台操作失败[' + label + ']: ' + msg.slice(0, 160));
-      return { ok: false, error: msg.slice(0, 300), unknown: true };
+      const msg = errText(e);
+      log('err', '平台操作失败[' + label + ']: ' + msg.slice(0, 200));
+      return { ok: false, error: msg.slice(0, 400), unknown: true, label };
     } finally {
       if (timer) clearTimeout(timer);
       platformDepth--;
