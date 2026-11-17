@@ -60,9 +60,11 @@ function listGoods(size = 30) {
       count: arr.length,
       total: r.data && r.data.total,
       items: arr.map((g, i) => {
-        // 提取这个商品实际用到的尺码标签（来自 SKU 规格）
+        // 提取这个商品实际用到的尺码标签 + 颜色标签（来自 SKU 规格）
         const sizes = [];
         const seen = {};
+        const colors = [];
+        const cseen = {};
         const skuList = Array.isArray(g.sku_list) ? g.sku_list : [];
         for (const s of skuList) {
           const specs = Array.isArray(s.spec) ? s.spec : (Array.isArray(s.specs) ? s.specs : []);
@@ -70,8 +72,11 @@ function listGoods(size = 30) {
             const pn = sp.parent_name || sp.parentName || '';
             const sn = sp.spec_name || sp.specName || '';
             if (!sn) continue;
-            if (!/尺码|码数|size|鞋码|码/i.test(pn)) continue;
-            if (!seen[sn]) { seen[sn] = 1; sizes.push(String(sn)); }
+            if (/尺码|码数|size|鞋码|码/i.test(pn)) {
+              if (!seen[sn]) { seen[sn] = 1; sizes.push(String(sn)); }
+            } else if (/颜色|色彩|color/i.test(pn)) {
+              if (!cseen[sn]) { cseen[sn] = 1; colors.push(String(sn)); }
+            }
           }
         }
         return {
@@ -82,6 +87,8 @@ function listGoods(size = 30) {
           catNames: [g.cat_name_1, g.cat_name_2, g.cat_name_3, g.cat_name_4, g.cat_name]
             .filter(Boolean),
           sizes,
+          colors,
+          colorCount: colors.length,
           group_price: (g.sku_group_price || [])[0],
           single_price: (g.sku_price || [])[0],
           market_price: g.market_price,
@@ -552,8 +559,10 @@ function readSpecState() {
  */
 function setColors(colors) {
   const want = Array.isArray(colors) ? colors.map((x) => String(x).trim()).filter(Boolean) : [];
+  // 注意：WANT 必须声明在 try 外面 —— catch 块要用它，块作用域内声明会拿不到
   return `(async () => {
     const WANT = ${JSON.stringify(want)};
+    try {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const getIns = () => [...document.querySelectorAll('[class*="new-spec-single-color"] input')]
       .filter(i => (i.placeholder || '').indexOf('备注') < 0);
@@ -620,7 +629,14 @@ function setColors(colors) {
     const final = getIns().map(i => i.value.trim()).filter(Boolean);
     const same = final.length === WANT.length && WANT.every((v, i) => final[i] === v);
     return { ok: same, want: WANT, got: final,
-             error: same ? null : '颜色与目标不一致（需要 ' + WANT.length + ' 个，实际 ' + final.length + ' 个）' };
+             error: same ? null
+               : ('颜色与目标不一致 | 需要(' + WANT.length + '): ' + WANT.join(' / ') +
+                  ' | 实际(' + final.length + '): ' + final.join(' / ')) };
+    } catch (e) {
+      return { ok: false, want: WANT,
+               error: '页面脚本异常：' + String((e && e.message) || e),
+               stack: String((e && e.stack) || '').slice(0, 400) };
+    }
   })()`;
 }
 

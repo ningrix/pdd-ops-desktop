@@ -417,6 +417,19 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   if (!ls || !ls.ok || !ls.items || !ls.items.length) {
     return { ok: false, error: '目标店铺没有在售商品，无法作为骨架', steps };
   }
+
+  // 先把源的颜色算出来 —— 挑骨架时要看它有没有颜色规格
+  const srcColors = [];
+  {
+    const seen = {};
+    for (const s of (it.skus || [])) {
+      for (const sp of (s.spec || [])) {
+        if (!/颜色|色彩|color/i.test(sp.parent_name || '')) continue;
+        if (!seen[sp.spec_name]) { seen[sp.spec_name] = 1; srcColors.push(sp.spec_name); }
+      }
+    }
+  }
+
   // ② 骨架必须【同类目】—— 跨类目骨架的尺码表是另一套体系（鞋码 39-45 vs 服装 150/72A），
   //    硬套只会得到一条规格错乱的商品。宁可拒绝，不产废品。
   const srcCat = Number(it.catId) || null;
@@ -441,7 +454,21 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
     steps.push('同品类骨架 ' + cands.length + ' 个（其中 ' +
                ranked.stats.neverUsed + ' 个从未用过），按最久未用优先');
   }
-  steps.push('同品类骨架候选: ' + cands.length + ' 个');
+
+  // ③ 源有颜色 → 优先挑「自己就有颜色规格」的骨架
+  //    原因：改颜色是在页面已有的颜色输入框里填值。骨架本身没有颜色规格时，
+  //    页面上没有输入框可填，颜色必然设不进去（实测遇到：骨架 0 个颜色框，源 5 个颜色）。
+  if (srcColors.length && cands.length > 1) {
+    const withColors = cands.filter((x) => Number(x.colorCount || 0) > 0);
+    if (withColors.length) {
+      steps.push('源有 ' + srcColors.length + ' 个颜色 → 优先挑有颜色规格的骨架 ' +
+                 withColors.length + ' 个');
+      cands = withColors;
+    } else {
+      steps.push('⚠ 同品类骨架都没有颜色规格，颜色可能设不进去（谨慎重试）');
+    }
+  }
+  steps.push('骨架候选: ' + cands.length + ' 个');
 
   let draft = null;
   let base = null;
@@ -521,16 +548,7 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
              ' 个 / SKU 行 ' + ((before && before.skuRows) || 0));
 
   // ⑤ 用 DOM 改颜色（页面会自己生成合法 spec_id）
-  const srcColors = [];
-  {
-    const seen = {};
-    for (const s of (it.skus || [])) {
-      for (const sp of (s.spec || [])) {
-        if (!/颜色|color/i.test(sp.parent_name || '')) continue;
-        if (!seen[sp.spec_name]) { seen[sp.spec_name] = 1; srcColors.push(sp.spec_name); }
-      }
-    }
-  }
+  //    srcColors 已在挑骨架前算好
   if (srcColors.length) {
     const cr = await withPlatform('setColors',
       () => wc.executeJavaScript(opsMod.setColors(srcColors), true), 180000);
