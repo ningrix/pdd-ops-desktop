@@ -138,6 +138,13 @@
 | 「全部尺码表」跳转 | 同上 | 点击会导航到 `/goods/size/list?classId=1&leafClassId=7`（尺码表管理页），不是模板弹窗 |
 | 空白新建草稿不落库 | 同上 | 空白新建 URL 里的 `id` 只是会话内 commit；不点「保存草稿」不会进草稿箱（实测查 600001）。所以**空白新建不污染草稿箱**；克隆骨架才会 |
 | 浏览器自动化层 | `work/pw_*.js` | **Playwright `connectOverCDP('http://127.0.0.1:9333')` 可直接接管本应用的浏览器**（登录态复用、不用重扫码）。`playwright-core@1.65.1` 纯 JS 无编译。分工：**调接口用 `ops.js`（走 `__mms`），点页面用 Playwright** |
+| 安卓模拟器 | `research/MuMu打通_拼多多运行正常_2026-11-18.md` | **MuMu 12 可用，BlueStacks 不可用**。MuMu：Android 15 / `arm64-v8a` / 伪装三星 SM-A5260 / `ro.kernel.qemu` 空 / 自动装到 D 盘。BlueStacks 默认实例是 Android 7 32 位（无 arm64），PDD 启动即崩在 `libhoudini.so` |
+| APK 的 ABI 决定成败 | 同上 | MuMu **没有 `/system/lib/arm`**，只认 `arm64-v8a`。应用宝直链给的是 `armeabi-v7a`（8.32.0）→ `INSTALL_FAILED_NO_MATCHING_ABIS`。**MuMu 应用中心分发的 7.94.0 是 arm64，装上就能跑**。结论：从 MuMu 应用中心装，别自己找 APK |
+| 消费者端登录墙 | 实测 | 拼多多 **未登录时把所有商品显示为「商品已售罄」，颜色/尺码/价格全部隐藏**。这不是风控，是登录墙。所以采集必须登录买家账号 |
+| 网页端价格与规格是服务端打码 | 实测 | 桌面 UA / iPhone UA / 微信 UA / 安卓 UA + `Emulation.setDeviceMetricsOverride` 全部试过，结果一致：`minGroupPrice:"0"`、`skuProperty:[]`。`oakData` 全量搜索 0 处规格。**与 UA/设备模拟无关，换真 App 才有完整数据** |
+| 消费者端搜索会被拦 | 实测 | `mobile.yangkeduo.com/search_result.html` 会跳到 `psnl_verification.html`（安全验证）。所以只能「有链接才能读」，不能在站内搜 |
+| ADB 真人化 | `tools/adb-human.js` | `input tap` 是瞬时、精确到像素、间隔固定的操作，本身就是机器人特征。工具提供：元素框内随机偏移（避开边缘 18%）、微距 `swipe` 代替 tap（60~130ms 按下时长）、坐标 ±6px 抖动、对数正态延时（中位 1.6s）、分段变速滑动。**只能伪装行为层，深层指纹改不了** |
+| BlueStacks 卸载 | `tools/清理BlueStacks残留.bat` | `C:\Program Files\BlueStacks_nxt` 与 HKLM 注册表**需要管理员**，本会话无法提权。数据目录（D:\BlueStacksData）与用户级注册表已直接删除。**卸载前必须先 `rmdir` 掉 `C:\ProgramData\BlueStacks_nxt` 这个目录联接**，否则会误删目标 |
 | 尺码表接口 | `research/尺码表接口打通_2026-11.md` | `POST /glide/forward/cabernet/mms/sizespec/action/post`。body = `{content:{meta:{groups:[{id:1}],elements:[{id:N}]},records:[{values:{...}}]},status:0,class_id:N}`，每调一次生成新 spec id。绑定靠编辑载荷的 `size_spec_id` + `size_parent_spec_id`(=1226) + `is_size_spec_sync_detail`(=1) |
 | 尺码表 class_id | 实测（1~12 全扫） | 按类目而定。运动羽绒服（cat 12508）= **5**。判断依据：只有正确 class 才会告诉你「缺哪个参数」，错误的只会回 `10000013 请选择该类目下正确的尺码表类型` |
 | 尺码表参数 id | 实测 | `10004` = 推荐身高。**`体重(kg)` 的 id 未知**（10000~10049 已排除）。一张表最多 5 个参数，重复列会报「内容不完整」 |
