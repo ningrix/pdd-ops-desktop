@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('pdd', {
     ipcRenderer.on('bill:downloaded', h);
     return () => ipcRenderer.removeListener('bill:downloaded', h);
   },
+  // 资金复盘
+  financeCollect: (opts) => ipcRenderer.invoke('finance:collect', opts),
 
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),

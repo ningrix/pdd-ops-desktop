@@ -68,6 +68,7 @@
       <button class="tab active" data-tab="goods">商品列表</button>
       <button class="tab" data-tab="pool">采集箱</button>
       <button class="tab" data-tab="collect">采集会话</button>
+      <button class="tab" data-tab="finance">资金复盘</button>
       <button class="tab" data-tab="browser">店铺后台</button>
       <button class="tab" data-tab="result">原始结果</button>
     </div>
@@ -161,6 +162,85 @@
           <span class="collect-tip" id="collectTip">首次使用：在下方浏览器里用手机号登录一次买家账号</span>
         </div>
         <div class="collect-view" id="collectView"></div>
+      </div>
+
+      <div class="pane" id="pane-finance">
+        <div class="fin-bar">
+          <span class="fin-title">资金复盘</span>
+          <span class="fin-sub" id="finSub">还没采集</span>
+          <span class="spacer"></span>
+          <label class="mini-field">核对月份
+            <select id="finMonth"></select>
+          </label>
+          <button class="btn primary" id="btnFinCollect">采集全部店铺</button>
+          <button class="btn ghost" id="btnFinDetail" title="多花 1~2 分钟，采集逐笔明细用于分类统计">采集明细</button>
+        </div>
+
+        <div class="fin-body" id="finBody">
+          <div class="big-empty" id="finEmpty">
+            <div class="be-icon">¥</div>
+            <p>还没有资金数据</p>
+            <p class="be-sub">点右上「采集全部店铺」，会依次打开每个店的资金中心和对账中心</p>
+          </div>
+
+          <div id="finContent" style="display:none">
+            <div class="fin-cards">
+              <div class="fin-card">
+                <div class="fc-label">收入</div>
+                <div class="fc-value income" id="fcIncome">0.00</div>
+                <div class="fc-sub" id="fcIncomeSub">—</div>
+              </div>
+              <div class="fin-card">
+                <div class="fc-label">支出</div>
+                <div class="fc-value expense" id="fcExpense">0.00</div>
+                <div class="fc-sub" id="fcExpenseSub">—</div>
+              </div>
+              <div class="fin-card">
+                <div class="fc-label">净收益</div>
+                <div class="fc-value" id="fcProfit">0.00</div>
+                <div class="fc-sub">收入 − 支出</div>
+              </div>
+              <div class="fin-card">
+                <div class="fc-label">账户余额合计</div>
+                <div class="fc-value" id="fcBalance">0.00</div>
+                <div class="fc-sub" id="fcBalanceSub">货款 + 营销</div>
+              </div>
+            </div>
+
+            <div class="fin-sec">
+              <div class="fin-sec-h">分店铺</div>
+              <table class="fin-table">
+                <thead><tr>
+                  <th>店铺</th><th>账号</th>
+                  <th class="r">收入</th><th class="r">支出</th><th class="r">净收益</th>
+                  <th class="r">货款余额</th><th class="r">保证金</th>
+                </tr></thead>
+                <tbody id="finStoreBody"></tbody>
+              </table>
+            </div>
+
+            <div class="fin-sec">
+              <div class="fin-sec-h">月度趋势（多店合计）</div>
+              <table class="fin-table">
+                <thead><tr>
+                  <th>月份</th><th class="r">收入</th><th class="r">支出</th>
+                  <th class="r">净收益</th><th>占比</th>
+                </tr></thead>
+                <tbody id="finMonthBody"></tbody>
+              </table>
+            </div>
+
+            <div class="fin-sec" id="finCatSec" style="display:none">
+              <div class="fin-sec-h">资金去向（按业务类型）</div>
+              <table class="fin-table">
+                <thead><tr>
+                  <th>类型</th><th class="r">金额</th><th class="r">笔数</th><th>占比</th>
+                </tr></thead>
+                <tbody id="finCatBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="pane" id="pane-browser">

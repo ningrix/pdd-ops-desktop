@@ -1014,6 +1014,189 @@ function renderLastCard() {
   }
 }
 
+// ------------------------------------------------------------------ 资金复盘
+const fmtYuan = (fen) => {
+  if (fen === null || fen === undefined) return '—';
+  const v = Number(fen) / 100;
+  const s = Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? '-' : '') + s;
+};
+
+function renderFinance(data, month) {
+  const body = $('#finBody');
+  const empty = $('#finEmpty');
+  const content = $('#finContent');
+  if (!data || !data.stores || !data.stores.length) {
+    empty.style.display = 'flex';
+    content.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  content.style.display = 'block';
+
+  const agg = data.aggregate || {};
+  const cur = month || data.month;
+
+  // 选月份：优先用当前月的分店汇总
+  let inc = 0, exp = 0, profit = 0;
+  if (cur === data.month) {
+    inc = agg.income || 0; exp = agg.expense || 0; profit = agg.profit || 0;
+  } else {
+    const mm = (agg.months || {})[cur] || {};
+    inc = mm.income || 0; exp = mm.expense || 0; profit = mm.profit || 0;
+  }
+
+  $('#fcIncome').textContent = fmtYuan(inc);
+  $('#fcExpense').textContent = fmtYuan(exp);
+  $('#fcProfit').textContent = fmtYuan(profit);
+  $('#fcProfit').className = 'fc-value ' + (profit >= 0 ? 'income' : 'expense');
+
+  let balSum = 0, balOk = false;
+  for (const s of data.stores) {
+    if (s.balance && s.balance.cash != null) { balSum += (s.balance.cash || 0) + (s.balance.market || 0); balOk = true; }
+  }
+  $('#fcBalance').textContent = balOk ? fmtYuan(balSum) : '—';
+
+  // 收入/支出笔数
+  let ic = 0, ec = 0;
+  for (const s of data.stores) {
+    const m = (s.months || []).find((x) => x.month === cur);
+    if (m) { ic += m.incomeCount || 0; ec += m.expenseCount || 0; }
+  }
+  $('#fcIncomeSub').textContent = ic + ' 笔';
+  $('#fcExpenseSub').textContent = ec + ' 笔';
+
+  // 分店铺
+  const sb = $('#finStoreBody');
+  sb.innerHTML = '';
+  for (const s of data.stores) {
+    const m = (s.months || []).find((x) => x.month === cur);
+    const tr = document.createElement('tr');
+    if (s.error) {
+      tr.innerHTML = '<td>' + esc(s.mallName) + '</td><td colspan="6" style="color:#ef5b5b">' + esc(s.error) + '</td>';
+    } else {
+      tr.innerHTML =
+        '<td>' + esc(s.mallName) + '</td>' +
+        '<td style="color:#7d8aa3">' + esc(s.account || '—') + '</td>' +
+        '<td class="r income">' + fmtYuan(m ? m.income : null) + '</td>' +
+        '<td class="r expense">' + fmtYuan(m ? m.expense : null) + '</td>' +
+        '<td class="r ' + ((m && m.profit >= 0) ? 'income' : 'expense') + '">' + fmtYuan(m ? m.profit : null) + '</td>' +
+        '<td class="r">' + (s.balance ? fmtYuan((s.balance.cash || 0) + (s.balance.market || 0)) : '—') + '</td>' +
+        '<td class="r">' + (s.balance ? fmtYuan(s.balance.deposit) : '—') + '</td>';
+    }
+    sb.appendChild(tr);
+  }
+
+  // 月度趋势
+  const mb = $('#finMonthBody');
+  mb.innerHTML = '';
+  const months = Object.values(agg.months || {}).sort((a, b) => (a.month < b.month ? 1 : -1)).slice(0, 12);
+  const maxAbs = Math.max(1, ...months.map((m) => Math.abs(m.income || 0)));
+  for (const m of months) {
+    const pct = Math.round((Math.abs(m.income || 0) / maxAbs) * 100);
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + esc(m.month) + '</td>' +
+      '<td class="r income">' + fmtYuan(m.income) + '</td>' +
+      '<td class="r expense">' + fmtYuan(m.expense) + '</td>' +
+      '<td class="r ' + ((m.profit || 0) >= 0 ? 'income' : 'expense') + '">' + fmtYuan(m.profit) + '</td>' +
+      '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span></td>';
+    mb.appendChild(tr);
+  }
+
+  // 资金去向（有明细才显示）
+  const allDetail = [];
+  for (const s of data.stores) if (Array.isArray(s.detail)) allDetail.push.apply(allDetail, s.detail);
+  const catSec = $('#finCatSec');
+  if (allDetail.length) {
+    const CAT_LABEL = {
+      '0020002': '交易退款', '0050002': '服务支出', '0070001': '保证金转账',
+      '0010001': '订单货款', '0030001': '提现', '0040001': '技术服务费',
+    };
+    const buckets = new Map();
+    for (const d of allDetail) {
+      const code = String(d.desc || '').split('|')[0].trim();
+      const name = (String(d.desc || '').split('|')[1] || '').trim() || d.bizType || '其他';
+      const key = CAT_LABEL[code] || name.split('-')[0] || '其他';
+      if (!buckets.has(key)) buckets.set(key, { name: key, amount: 0, count: 0 });
+      const b = buckets.get(key);
+      b.amount += d.amount || 0;
+      b.count += 1;
+    }
+    const arr = [...buckets.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    const totalAbs = Math.max(1, arr.reduce((s, x) => s + Math.abs(x.amount), 0));
+    const cb = $('#finCatBody');
+    cb.innerHTML = '';
+    for (const c of arr) {
+      const pct = Math.round((Math.abs(c.amount) / totalAbs) * 100);
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(c.name) + '</td>' +
+        '<td class="r ' + (c.amount >= 0 ? 'income' : 'expense') + '">' + fmtYuan(c.amount) + '</td>' +
+        '<td class="r">' + c.count + '</td>' +
+        '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span>' + pct + '%</td>';
+      cb.appendChild(tr);
+    }
+    catSec.style.display = 'block';
+  } else {
+    catSec.style.display = 'none';
+  }
+
+  // 月份下拉
+  const sel = $('#finMonth');
+  const curVal = sel.value || data.month;
+  sel.innerHTML = '';
+  for (const m of months) {
+    const o = document.createElement('option');
+    o.value = m.month;
+    o.textContent = m.month;
+    sel.appendChild(o);
+  }
+  if (months.some((m) => m.month === curVal)) sel.value = curVal;
+  else if (months.length) sel.value = months[0].month;
+}
+
+let financeBusy = false;
+async function collectFinance(withDetail) {
+  if (financeBusy) { logWarn('正在采集，请稍候'); return; }
+  financeBusy = true;
+  const btn = $('#btnFinCollect');
+  const btn2 = $('#btnFinDetail');
+  const old1 = btn.textContent, old2 = btn2.textContent;
+  btn.disabled = true; btn2.disabled = true;
+  btn.textContent = '采集中…';
+  $('#finSub').textContent = '正在逐个店铺读取资金数据，请勿切换页签…';
+  logInfo('开始采集资金数据' + (withDetail ? '（含明细）' : '') + ' ...');
+  try {
+    const r = await window.pdd.financeCollect({ withDetail: !!withDetail, maxPages: 8 });
+    if (r && r.ok) {
+      state.finance = r;
+      renderFinance(r);
+      const okN = r.stores.filter((s) => !s.error).length;
+      $('#finSub').textContent = '采集于 ' + new Date(r.at).toLocaleTimeString() +
+        ' ｜ ' + okN + '/' + r.stores.length + ' 个店铺成功';
+      logOk('资金数据采集完成：' + okN + '/' + r.stores.length + ' 个店铺');
+      r.stores.filter((s) => s.error).forEach((s) => logWarn(s.mallName + '：' + s.error));
+    } else {
+      logErr('采集失败：' + ((r && r.error) || '未知'));
+      $('#finSub').textContent = '采集失败';
+    }
+  } catch (e) {
+    logErr('采集异常：' + (e && e.message ? e.message : e));
+    $('#finSub').textContent = '采集异常';
+  } finally {
+    financeBusy = false;
+    btn.disabled = false; btn2.disabled = false;
+    btn.textContent = old1; btn2.textContent = old2;
+  }
+}
+
+$('#btnFinCollect') && $('#btnFinCollect').addEventListener('click', () => collectFinance(false));
+$('#btnFinDetail') && $('#btnFinDetail').addEventListener('click', () => collectFinance(true));
+$('#finMonth') && $('#finMonth').addEventListener('change', (e) => {
+  if (state.finance) renderFinance(state.finance, e.target.value);
+});
+
 // ------------------------------------------------------------------ 启动
 (async () => {
   initCollector();

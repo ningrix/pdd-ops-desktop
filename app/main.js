@@ -1378,6 +1378,144 @@ ipcMain.handle('bill:openFolder', () => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// ---------------------------------------------------------------- 资金复盘
+const cashierOps = require('./lib/cashier');
+
+/** 在指定店铺视图上执行一段注入脚本 */
+async function runInMallView(mall, js, timeoutMs) {
+  return withPlatform('cashier', async () => {
+    const wc = mall.view.webContents;
+    const deadline = Date.now() + (timeoutMs || 30000);
+    while (Date.now() < deadline) {
+      try {
+        const r = await wc.executeJavaScript(js, true);
+        if (r && r.__blocked) { await sleep(800); continue; }
+        return r;
+      } catch (e) {
+        await sleep(600);
+      }
+    }
+    return { ok: false, error: '页面未就绪' };
+  }, (timeoutMs || 30000) + 10000);
+}
+
+/** 把某个店铺导航到 cashier 的资金中心（走 mms 的 ticket 跳转） */
+async function gotoCashierFinance(mall) {
+  const wc = mall.view.webContents;
+  const r = await withPlatform('gotoCashier', async () => {
+    try {
+      await wc.loadURL('https://mms.pinduoduo.com/cashier/finance/balance');
+    } catch (e) { /* 跳转中断是常态 */ }
+    for (let i = 0; i < 40; i++) {
+      await sleep(700);
+      let u = '';
+      try { u = wc.getURL() || ''; } catch (_) { u = ''; }
+      if (u.indexOf('cashier.pinduoduo.com') >= 0) return { ok: true, url: u };
+    }
+    let u = '';
+    try { u = wc.getURL() || ''; } catch (_) {}
+    return { ok: false, url: u };
+  }, 60000);
+  return r;
+}
+
+async function gotoCashierBills(mall) {
+  const wc = mall.view.webContents;
+  return withPlatform('gotoBills', async () => {
+    try { await wc.loadURL('https://cashier.pinduoduo.com/main/bills?__app_code=113'); } catch (_) {}
+    for (let i = 0; i < 30; i++) {
+      await sleep(600);
+      let u = '';
+      try { u = wc.getURL() || ''; } catch (_) {}
+      if (u.indexOf('/main/bills') >= 0) { await sleep(1500); return { ok: true }; }
+    }
+    return { ok: false };
+  }, 50000);
+}
+
+ipcMain.handle('finance:collect', async (_e, opts) => {
+  const o = Object.assign({ withDetail: false, maxPages: 8 }, opts || {});
+  const list = Array.from(malls.values());
+  if (!list.length) return { ok: false, error: '还没有店铺' };
+
+  const results = [];
+  for (const mall of list) {
+    const item = { mallId: mall.id, mallName: mall.name };
+    try {
+      activeId = mall.id;
+      attachView();
+      await sleep(1500);
+
+      // ① 资金中心 → 读余额
+      const nav = await gotoCashierFinance(mall);
+      if (!nav.ok) {
+        item.error = '打不开资金中心（' + (nav.url || '超时') + '）';
+        results.push(item);
+        continue;
+      }
+      const acc = await runInMallView(mall, cashierOps.readAccount(), 20000);
+      item.account = (acc && acc.account) || null;
+      const bal = await runInMallView(mall, cashierOps.readBalance(), 20000);
+      item.balance = bal && bal.ok ? bal : null;
+
+      // ② 对账中心 → 月汇总
+      const b2 = await gotoCashierBills(mall);
+      if (!b2.ok) {
+        item.error = '打不开对账中心';
+        results.push(item);
+        continue;
+      }
+      const mon = await runInMallView(mall, cashierOps.readMonthSummary(), 40000);
+      if (mon && mon.ok) item.months = mon.months;
+
+      // ③ 可选：读货款明细（分类要用）
+      if (o.withDetail) {
+        const tab = await runInMallView(mall, cashierOps.clickDetailTab(), 30000);
+        if (tab && tab.ok) {
+          const all = [];
+          for (let p = 0; p < o.maxPages; p++) {
+            const pg = await runInMallView(mall, cashierOps.readDetailPage(), 25000);
+            if (!pg || !pg.ok) break;
+            if (!pg.rows || !pg.rows.length) break;
+            all.push.apply(all, pg.rows);
+            if (pg.total && all.length >= pg.total) break;
+            const nx = await runInMallView(mall, cashierOps.clickNextPage(), 15000);
+            if (!nx || !nx.ok) break;
+            await sleep(1800);
+          }
+          item.detail = all;
+        }
+      }
+    } catch (e) {
+      item.error = String((e && e.message) || e);
+    }
+    results.push(item);
+    await sleep(1200);
+  }
+
+  // 汇总
+  const curMonth = new Date().toISOString().slice(0, 7);
+  const agg = { income: 0, expense: 0, profit: 0, stores: results.length, months: {} };
+  for (const r of results) {
+    if (!r.months) continue;
+    for (const m of r.months) {
+      const k = m.month;
+      if (!agg.months[k]) agg.months[k] = { month: k, income: 0, expense: 0, profit: 0 };
+      agg.months[k].income += m.income || 0;
+      agg.months[k].expense += m.expense || 0;
+      agg.months[k].profit += m.profit || 0;
+    }
+    const cm = r.months.find((m) => m.month === curMonth);
+    if (cm) {
+      agg.income += cm.income || 0;
+      agg.expense += cm.expense || 0;
+      agg.profit += cm.profit || 0;
+    }
+  }
+
+  return { ok: true, at: Date.now(), month: curMonth, aggregate: agg, stores: results };
+});
+
 // ---------------------------------------------------------------- 尺码表模板
 const SIZE_TPL_FILE = path.join(__dirname, 'data', 'size-templates.json');
 

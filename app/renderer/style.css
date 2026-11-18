@@ -354,3 +354,37 @@ tbody .warn { color: var(--err); }
 }
 .collect-tip { font-size: 11px; color: #6b7a90; white-space: nowrap; }
 .collect-view { flex: 1 1 auto; min-height: 120px; position: relative; }
+
+/* ---------------- 资金复盘 ---------------- */
+.fin-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--bg2);
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.fin-bar .fin-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+.fin-bar .fin-sub { font-size: 12px; color: #7d8aa3; }
+.fin-bar .spacer { flex: 1; }
+.fin-bar select {
+  background: var(--bg3); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 5px; padding: 4px 6px; font-size: 12px;
+}
+.fin-body { padding: 14px; overflow: auto; height: calc(100% - 52px); }
+.fin-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.fin-card {
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 13px 15px;
+}
+.fc-label { font-size: 12px; color: #7d8aa3; margin-bottom: 6px; }
+.fc-value { font-size: 22px; font-weight: 600; color: var(--fg); letter-spacing: .3px; }
+.fc-value.income { color: #3ecf8e; }
+.fc-value.expense { color: #ef5b5b; }
+.fc-sub { font-size: 11px; color: #7d8aa3; margin-top: 5px; }
+.fin-sec { margin-bottom: 18px; }
+.fin-sec-h { font-size: 12px; font-weight: 600; color: var(--fg2); margin-bottom: 8px; }
+.fin-table { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--bg2); border-radius: 8px; overflow: hidden; }
+.fin-table th { text-align: left; padding: 8px 11px; color: #7d8aa3; font-weight: 500; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.02); }
+.fin-table td { padding: 8px 11px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--fg2); }
+.fin-table td.r, .fin-table th.r { text-align: right; font-variant-numeric: tabular-nums; }
+.fin-table td.income { color: #3ecf8e; }
+.fin-table td.expense { color: #ef5b5b; }
+.fin-bar-pct { display: inline-block; height: 6px; border-radius: 3px; background: #5a82ff; vertical-align: middle; margin-right: 6px; }
