@@ -60,11 +60,18 @@ function readMonthSummary() {
   })()`;
 }
 
-/** 读资金中心的四个余额 */
+/** 读资金中心的四个余额（先等页面真正渲染出「货款账户」） */
 function readBalance() {
   return `(async () => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    await sleep(1200);
+    // 财务页是 SPA，路由到了不代表渲染完。等锚点文字出现再读。
+    let ready = false;
+    for (let i = 0; i < 40; i++) {
+      const t = (document.body.innerText || '');
+      if (t.indexOf('货款账户') >= 0 && t.indexOf('店铺保证金') >= 0) { ready = true; break; }
+      await sleep(500);
+    }
+    await sleep(600);
     const txt = (document.body.innerText || '').replace(/\\s+/g, ' ');
     const grab = (re) => { const m = txt.match(re); return m ? m[1] : null; };
     const num = (s) => {
@@ -74,14 +81,14 @@ function readBalance() {
       return Math.round(parseFloat(v) * 100);
     };
     return {
-      ok: true,
-      cash: num(grab(/货款账户（元）[^0-9\\-+]{0,12}([\\d.,]+)/)),
+      ok: ready,
+      cash: num(grab(/货款账户（元）[^0-9\\-+]{0,14}([\\d.,]+)/)),
       cashAvailable: num(grab(/含可用余额：([\\d.,]+)/)),
-      market: num(grab(/营销账户（元）[^0-9\\-+]{0,12}([\\d.,]+)/)),
+      market: num(grab(/营销账户（元）[^0-9\\-+]{0,14}([\\d.,]+)/)),
       marketAvailable: num(grab(/可提现余额：([\\d.,]+)/)),
-      deposit: num(grab(/店铺保证金（元）[^0-9\\-+]{0,12}([\\d.,]+)/)),
-      activityDeposit: num(grab(/活动保证金（元）[^0-9\\-+]{0,12}([\\d.,]+)/)),
-      _raw: txt.slice(0, 300),
+      deposit: num(grab(/店铺保证金（元）[^0-9\\-+]{0,14}([\\d.,]+)/)),
+      activityDeposit: num(grab(/活动保证金（元）[^0-9\\-+]{0,14}([\\d.,]+)/)),
+      _raw: txt.slice(0, 240),
     };
   })()`;
 }
