@@ -138,6 +138,7 @@
 | 「全部尺码表」跳转 | 同上 | 点击会导航到 `/goods/size/list?classId=1&leafClassId=7`（尺码表管理页），不是模板弹窗 |
 | 空白新建草稿不落库 | 同上 | 空白新建 URL 里的 `id` 只是会话内 commit；不点「保存草稿」不会进草稿箱（实测查 600001）。所以**空白新建不污染草稿箱**；克隆骨架才会 |
 | 浏览器自动化层 | `work/pw_*.js` | **Playwright `connectOverCDP('http://127.0.0.1:9333')` 可直接接管本应用的浏览器**（登录态复用、不用重扫码）。`playwright-core@1.65.1` 纯 JS 无编译。分工：**调接口用 `ops.js`（走 `__mms`），点页面用 Playwright** |
+| 采集会话登录态必须 flush | pp/main.js 的 efore-quit | **踩过的坑**：退出时只 flush 了店铺分区，采集会话（persist:collector）的 cookie 没落盘，每次重启都掉买家登录态，导致网页补图静默失败（0 张图）。已修为同时 flush COLLECTOR_PARTITION |
 | 安卓模拟器 | `research/MuMu打通_拼多多运行正常_2026-11-18.md` | **MuMu 12 可用，BlueStacks 不可用**。MuMu：Android 15 / `arm64-v8a` / 伪装三星 SM-A5260 / `ro.kernel.qemu` 空 / 自动装到 D 盘。BlueStacks 默认实例是 Android 7 32 位（无 arm64），PDD 启动即崩在 `libhoudini.so` |
 | APK 的 ABI 决定成败 | 同上 | MuMu **没有 `/system/lib/arm`**，只认 `arm64-v8a`。应用宝直链给的是 `armeabi-v7a`（8.32.0）→ `INSTALL_FAILED_NO_MATCHING_ABIS`。**MuMu 应用中心分发的 7.94.0 是 arm64，装上就能跑**。结论：从 MuMu 应用中心装，别自己找 APK |
 | 消费者端登录墙 | 实测 | 拼多多 **未登录时把所有商品显示为「商品已售罄」，颜色/尺码/价格全部隐藏**。这不是风控，是登录墙。所以采集必须登录买家账号 |
