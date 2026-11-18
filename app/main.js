@@ -205,12 +205,26 @@ function getCollector() {
     },
   });
 
-  // 用移动端 UA：消费者端页面按手机布局渲染，元素更好定位
+  /**
+   * UA 必须用桌面 Chrome。
+   *
+   * 不能用 iPhone UA —— 实测：移动端 UA 会让拼多多判定你在手机浏览器里，
+   * 直接跳到 down_download.html（App 下载引导页，页面显示「正在跳转...」永不结束）。
+   * 桌面 UA 下手机站按正常响应式渲染，元素大小也正常。
+   */
   try {
     collectorView.webContents.setUserAgent(
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 ' +
-      '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36');
   } catch (_) { /* ignore */ }
+
+  // 兜底：万一同一个 webContents 被跳到下载引导页，主动退回
+  collectorView.webContents.on('will-navigate', (e, url) => {
+    if (/down_download|app_download|market_download/i.test(url)) {
+      e.preventDefault();
+      log('warn', '[采集会话] 拦下一次 App 下载引导跳转，保持在当前页');
+    }
+  });
 
   collectorView.webContents.on('did-finish-load', () => {
     log('info', '[采集会话] 加载完成: ' + collectorView.webContents.getURL().slice(0, 90));
