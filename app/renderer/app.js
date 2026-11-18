@@ -86,7 +86,11 @@ function syncBounds() {
   }
   let el = null;
   if (state.tab === 'browser' && state.malls.length) el = $('#pane-browser');
-  else if (state.tab === 'collect') el = $('#collectView');
+  else if (state.tab === 'collect') {
+    // 采集页的浏览器默认收起；只有点了「买家账号登录」才显示
+    const cv = $('#collectView');
+    if (cv && cv.style.display !== 'none') el = cv;
+  }
   if (!el) {
     window.pdd.toggleView(false);
     return;
@@ -135,188 +139,116 @@ function setResult(obj) {
 function initCollector() {
   const input = $('#collectInput');
   const btn = $('#btnCollectApp');
-  const steps = $('#collectSteps');
+  const status = $('#collectStatus');
   const result = $('#collectResult');
-  const toggleWeb = $('#btnToggleWeb');
-  const webBar = $('#collectWebBar');
+  const needLogin = $('#btnNeedLogin');
+  const view = $('#collectView');
   if (!input || !btn) return;
 
-  const go = $('#btnCollectGo');
-  const rd = $('#btnCollectRead');
-  const urlIn = $('#collectUrl');
-  const tip = $('#collectTip');
-
-  /** 步骤状态：idle / doing / done / fail */
-  const setStep = (k, st) => {
-    if (!steps) return;
-    const el = steps.querySelector('[data-k="' + k + '"]');
-    if (!el) return;
-    el.classList.remove('doing', 'done', 'fail');
-    if (st && st !== 'idle') el.classList.add(st);
-  };
-  const resetSteps = () => ['open', 'read', 'save'].forEach((k) => setStep(k, 'idle'));
-
-  const setTip = (t, cls) => {
-    if (!tip) return;
-    tip.textContent = t;
-    tip.style.color = cls === 'err' ? '#ff8080' : (cls === 'ok' ? '#3ddc84' : '#6b7a90');
+  const setStatus = (t, cls) => {
+    if (!status) return;
+    status.textContent = t;
+    status.className = 'cc-status' + (cls ? ' ' + cls : '');
   };
 
-  // ---- 主路径：从 App 采集 ----
-  const runAppCollect = async () => {
+  const yen = (f) => (f ? '¥' + (f / 100).toFixed(2) : '—');
+  const tags = (arr) => (arr || []).map((x) => '<span class="cc-tag">' + esc(x) + '</span>').join('');
+
+  const run = async () => {
     const target = (input.value || '').trim();
-    if (!target) {
-      result.innerHTML = '<span class="cc-warn">先粘贴一个商品链接或填商品ID</span>';
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = '采集中…';
-    resetSteps();
-    result.innerHTML = '<span style="color:#6b7a90">正在打开商品，约 40 秒，请别关窗口…</span>';
+    if (!target) { setStatus('先粘贴一个商品链接，或填商品ID', 'err'); input.focus(); return; }
 
-    // 视觉上让步骤跟着走（实际是估算，真实结果以返回为准）
-    setStep('open', 'doing');
-    const t1 = setTimeout(() => { setStep('open', 'done'); setStep('read', 'doing'); }, 22000);
-    const t2 = setTimeout(() => { setStep('read', 'done'); setStep('save', 'doing'); }, 50000);
+    btn.disabled = true;
+    btn.textContent = '采集中';
+    result.innerHTML = '';
+    setStatus('正在打开商品并读取…约 40 秒，别关窗口');
+    logInfo('开始采集：' + target);
 
     try {
-      const deepEl = document.getElementById('collectDeep');
-      const deep = !!(deepEl && deepEl.checked);
-      if (deep) {
-        result.innerHTML = '<span class="cc-warn">深度读取会打开规格弹层，个别商品可能直接下单，请留意手机上的订单</span>';
-        await new Promise((r) => setTimeout(r, 1200));
-      }
-      const r = await window.pdd.appCollect(target, deep);
-      clearTimeout(t1); clearTimeout(t2);
+      const r = await window.pdd.collectFull(target, false);
 
       if (!r || !r.ok) {
-        setStep('open', 'done');
-        setStep('read', 'fail');
         const msg = (r && r.error) || '采集失败';
-        result.innerHTML = '<span class="cc-warn">' + esc(msg) + '</span>' +
-          '<div style="color:#6b7a90;margin-top:6px">检查：模拟器是否在运行、拼多多是否已登录、商品链接是否有效</div>';
-        logErr('App 采集失败：' + msg);
+        setStatus(msg, 'err');
+        result.innerHTML = '<div style="color:#6b7a90">检查：模拟器是否在运行、拼多多是否登录、链接是否有效</div>';
+        logErr('采集失败：' + msg);
         return;
       }
 
       const d = r.data;
-      setStep('open', 'done');
-      setStep('read', 'done');
-      setStep('save', 'doing');
 
       // 存进采集箱
       const pack = {
         title: d.title,
         url: d.url,
-        gallery: [],
+        gallery: d.gallery || [],
         price: d.price,
         marketPrice: d.marketPrice,
-        catNames: [],
+        catNames: d.catNames || [],
+        catId: d.catId || null,
+        property: d.property || [],
         skus: [],
         sizes: d.sizes || [],
         colors: d.colors || [],
       };
       const add = await window.pdd.poolAddExternal(pack);
-      if (add && add.ok) {
-        setStep('save', 'done');
-      } else {
-        setStep('save', 'fail');
-      }
 
-      const yen = (f) => (f ? '¥' + (f / 100).toFixed(2) : '—');
-      const tags = (arr) => (arr || []).map((x) => '<span class="cc-tag">' + esc(x) + '</span>').join('');
+      setStatus(add && add.ok
+        ? '已存入采集箱 · ' + (d.gallery || []).length + ' 张图 · ' + (d.colors || []).length + ' 色 × ' + (d.sizes || []).length + ' 码'
+        : '采集到了，但入库失败：' + ((add && add.error) || '未知'),
+        add && add.ok ? 'ok' : 'err');
+
+      const thumbs = (d.gallery || []).slice(0, 6)
+        .map((u) => '<img src="' + esc(u) + '" loading="lazy" />').join('');
 
       result.innerHTML =
         '<div class="cc-name">' + esc(d.title || '(无标题)') + '</div>' +
-        '<div style="margin-top:4px">' +
+        '<div>' +
           '<span class="cc-price">' + yen(d.price) + '</span>' +
-          (d.marketPrice ? ' <span style="color:#6b7a90;text-decoration:line-through">' + yen(d.marketPrice) + '</span>' : '') +
-          (d.sold ? ' <span style="color:#6b7a90">· ' + esc(d.sold) + '</span>' : '') +
-          (d.mallName ? ' <span style="color:#6b7a90">· ' + esc(d.mallName) + '</span>' : '') +
+          (d.marketPrice ? '<span class="cc-old">' + yen(d.marketPrice) + '</span>' : '') +
+          (d.sold ? '<span style="color:#6b7a90;margin-left:10px">' + esc(d.sold) + '</span>' : '') +
+          (d.mallName ? '<span style="color:#6b7a90;margin-left:10px">' + esc(d.mallName) + '</span>' : '') +
         '</div>' +
-        (d.colors && d.colors.length
-          ? '<div style="margin-top:6px"><span style="color:#6b7a90">颜色 </span>' + tags(d.colors) + '</div>'
-          : '') +
-        (d.sizes && d.sizes.length
-          ? '<div style="margin-top:2px"><span style="color:#6b7a90">尺码 </span>' + tags(d.sizes) + '</div>'
-          : '<div style="margin-top:2px;color:#6b7a90">尺码 单规格（无尺码）</div>') +
-        (add && add.ok
-          ? '<div style="margin-top:8px;color:#3ddc84">✓ 已存入采集箱，去「采集箱」页可以上架</div>'
-          : '<div style="margin-top:8px;color:#ffb454">采集成功，但入库失败：' + esc((add && add.error) || '未知') + '</div>') +
+        (d.colors && d.colors.length ? '<div style="margin-top:6px"><span style="color:#6b7a90">颜色 </span>' + tags(d.colors) + '</div>' : '') +
+        (d.sizes && d.sizes.length ? '<div style="margin-top:2px"><span style="color:#6b7a90">尺码 </span>' + tags(d.sizes) + '</div>' : '') +
+        (thumbs ? '<div class="cc-thumbs">' + thumbs + '</div>' : '') +
         (d.notes && d.notes.length
-          ? '<div style="margin-top:6px;color:#6b7a90;font-size:11.5px">' + d.notes.map(esc).join('；') + '</div>'
+          ? '<div style="margin-top:8px;color:#5c6a7e;font-size:11.5px">' + d.notes.map(esc).join('；') + '</div>'
           : '');
 
-      logOk('App 采集成功：' + String(d.title || '').slice(0, 24) +
-            '（' + (d.colors || []).length + ' 色 × ' + (d.sizes || []).length + ' 码）');
+      logOk('采集成功：' + String(d.title || '').slice(0, 22) +
+            '（' + (d.gallery || []).length + ' 图）');
       if (add && add.ok) refreshPool();
     } catch (e) {
-      clearTimeout(t1); clearTimeout(t2);
-      setStep('read', 'fail');
       const msg = e && e.message ? e.message : String(e);
-      result.innerHTML = '<span class="cc-warn">采集异常：' + esc(msg) + '</span>';
-      logErr('App 采集异常：' + msg);
+      setStatus('采集异常：' + msg, 'err');
+      logErr('采集异常：' + msg);
     } finally {
       btn.disabled = false;
-      btn.textContent = '开始采集';
+      btn.textContent = '采集';
     }
   };
 
-  btn.addEventListener('click', runAppCollect);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runAppCollect(); });
+  btn.addEventListener('click', run);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
 
-  // ---- 次要路径：网页打开（抓主图用）----
-  if (toggleWeb && webBar) {
-    toggleWeb.addEventListener('click', () => {
-      const on = webBar.style.display === 'none';
-      webBar.style.display = on ? 'flex' : 'none';
-      toggleWeb.textContent = on ? '收起网页' : '需要主图？用网页打开这个链接';
-      if (on && urlIn && !urlIn.value) urlIn.value = (input.value || '').trim();
+  // 买家账号登录：需要时才把浏览器露出来
+  if (needLogin && view) {
+    needLogin.addEventListener('click', () => {
+      const hidden = view.style.display === 'none';
+      view.style.display = hidden ? 'block' : 'none';
+      needLogin.textContent = hidden ? '收起浏览器' : '买家账号登录 / 换账号';
+      if (hidden) {
+        setStatus('在下方浏览器里用手机号登录一次买家账号，登录后才能抓到主图');
+        window.pdd.collectorShow(true).catch(() => {});
+      } else {
+        window.pdd.collectorShow(false).catch(() => {});
+      }
       scheduleSync();
-      setTimeout(scheduleSync, 250);
+      setTimeout(scheduleSync, 300);
     });
   }
-
-  if (go) go.addEventListener('click', async () => {
-    let u = (urlIn.value || '').trim();
-    if (!u) { setTip('先粘一个商品链接', 'err'); return; }
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    setTip('正在打开…');
-    try {
-      const r = await window.pdd.collectorNavigate(u);
-      if (r && r.ok) {
-        if (/login/i.test(String(r.url || ''))) setTip('需要登录：请在下方用手机号登录一次买家账号', 'err');
-        else setTip('已打开，点「读取」');
-      } else setTip('打开失败：' + ((r && r.error) || '未知'), 'err');
-    } catch (e) { setTip('打开异常：' + (e && e.message ? e.message : e), 'err'); }
-    scheduleSync();
-  });
-  if (urlIn) urlIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && go) go.click(); });
-
-  if (rd) rd.addEventListener('click', async () => {
-    rd.disabled = true;
-    setTip('正在读取页面…');
-    try {
-      const r = await window.pdd.collectorRead();
-      let d = r;
-      if (r && r.ok && typeof r.value === 'string') { try { d = JSON.parse(r.value); } catch (_) { d = r; } }
-      if (!d || !d.ok) {
-        const why = (d && d.notes && d.notes[0]) || (d && d.needLogin ? '页面要求登录' : '没读到商品数据');
-        setTip(why, 'err'); logErr('网页采集失败：' + why); setResult(d); return;
-      }
-      const add = await window.pdd.poolAddExternal(d);
-      if (add && add.ok) {
-        setTip('已存入采集箱', 'ok');
-        logOk('网页采集：' + String(d.title).slice(0, 24) + '（' + (d.gallery || []).length + ' 图）');
-        await refreshPool();
-      } else setTip('入库失败：' + ((add && add.error) || '未知'), 'err');
-      setResult(d);
-    } catch (e) {
-      setTip('读取异常：' + (e && e.message ? e.message : e), 'err');
-    } finally { rd.disabled = false; }
-  });
 }
-
 // ------------------------------------------------------------------ 输入弹窗
 function askText({ title = '输入', placeholder = '', value = '' } = {}) {
   return withViewHidden(() => new Promise((resolve) => {
@@ -1213,6 +1145,29 @@ function renderFinance(data, month) {
       '<td class="r ' + ((m.profit || 0) >= 0 ? 'income' : 'expense') + '">' + fmtYuan(m.profit) + '</td>' +
       '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span></td>';
     mb.appendChild(tr);
+  }
+
+  // 资金限制
+  const rsec = $('#finRestrictSec');
+  const rbody = $('#finRestrictBody');
+  const restrictRows = [];
+  for (const s of data.stores) {
+    for (const r of (s.restrictions || [])) restrictRows.push({ mall: s.mallName, r });
+  }
+  if (restrictRows.length) {
+    rsec.style.display = 'block';
+    rbody.innerHTML = '';
+    for (const { mall, r } of restrictRows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(mall) + '</td>' +
+        '<td>' + esc(String(r.reason || '').slice(0, 30)) + '</td>' +
+        '<td class="r expense">' + (r.amount != null ? fmtYuan(r.amount) : esc(r.amountRaw || '—')) + '</td>' +
+        '<td style="color:#7d8aa3">' + esc(String(r.releaseCond || '').slice(0, 46)) + '</td>';
+      rbody.appendChild(tr);
+    }
+  } else {
+    rsec.style.display = 'none';
   }
 
   // 资金去向（有明细才显示）

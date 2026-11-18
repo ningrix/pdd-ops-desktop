@@ -1146,29 +1146,68 @@ ipcMain.handle('collector:read', async () => {
 });
 
 /**
- * 从安卓 App 采集（MuMu 模拟器 + ADB）。
+ * 一键采集：App 拿价格/规格 + 网页拿主图/详情图/属性，合并后返回。
  *
- * 为什么要走 App：消费者端网页的价格和规格是服务端打码的，
- * 换任何 UA / 设备模拟都拿不到；App 里是全的。
- *
- * 用 spawn + ELECTRON_RUN_AS_NODE 跑工具脚本，避免把 ADB 轮询塞进主进程。
+ * 两个来源分工的原因：
+ *   · 网页端价格和规格是服务端打码的（实测任何 UA / 设备模拟都一样）
+ *   · App 里的商品图在缓存里，导不出来
+ * 所以必须两边一起用。网页那半段失败不算失败，只是没图。
  */
-ipcMain.handle('app:collect', async (e, { target, deep }) => {
+ipcMain.handle('collect:full', async (e, { target, deep }) => {
   const t = String(target || '').trim();
   if (!t) return { ok: false, error: '先填商品链接或商品ID' };
-
   const gid = (t.match(/(\d{8,})/) || [])[1];
   if (!gid) return { ok: false, error: '链接或ID里找不到商品编号（需要 8 位以上数字）' };
 
-  const script = path.join(__dirname, '..', 'tools', 'pdd-app-collect.js');
-  if (!fs.existsSync(script)) return { ok: false, error: '找不到采集脚本 tools/pdd-app-collect.js' };
+  // ---------- 1. App：价格 / 颜色 / 尺码 ----------
+  const appR = await collectFromApp(gid, !!deep);
+  if (!appR || !appR.ok) return appR || { ok: false, error: 'App 采集失败' };
+  const data = appR.data;
+  const notes = (data.notes || []).slice();
 
-  log('info', 'App 采集开始：' + gid);
+  // ---------- 2. 网页：主图 / 详情图 / 属性 ----------
+  let web = null;
+  try {
+    web = await collectFromWeb(data.url || ('https://mobile.yangkeduo.com/goods.html?goods_id=' + gid));
+  } catch (ex) {
+    notes.push('网页补图失败：' + errText(ex));
+  }
+
+  if (web && web.ok) {
+    // 网页的主图 + 详情图合并，去重
+    const imgs = [];
+    const seen = new Set();
+    for (const u of [].concat(web.gallery || [], web.detailGallery || [])) {
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      imgs.push(u);
+    }
+    data.gallery = imgs.slice(0, 20);
+    data.detailGallery = (web.detailGallery || []).slice(0, 30);
+    data.property = web.property || [];
+    data.catNames = web.cats || data.catNames || [];
+    data.catId = web.catId || null;
+    if (!data.title && web.title) data.title = web.title;
+    if (!data.price && web.price) data.price = web.price;
+    notes.push('主图 ' + (data.gallery || []).length + ' 张来自网页端');
+  } else {
+    notes.push('没取到图片（网页端未登录或读取失败），可以稍后单独补');
+  }
+
+  data.notes = notes;
+  return { ok: true, data };
+});
+
+/** 跑 App 采集脚本 */
+function collectFromApp(gid, deep) {
+  const script = path.join(__dirname, '..', 'tools', 'pdd-app-collect.js');
+  if (!fs.existsSync(script)) return Promise.resolve({ ok: false, error: '找不到采集脚本 tools/pdd-app-collect.js' });
+
+  log('info', 'App 采集：' + gid + (deep ? '（深度）' : '（安全）'));
 
   return new Promise((resolve) => {
     const args = [script, gid, '--json'];
     if (deep) args.push('--deep');
-    log('info', deep ? 'App 采集（深度模式：会打开规格弹层）' : 'App 采集（安全模式：不点购买按钮）');
     const child = spawn(process.execPath, args, {
       env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' }),
       windowsHide: true,
@@ -1178,42 +1217,57 @@ ipcMain.handle('app:collect', async (e, { target, deep }) => {
     let out = '';
     let err = '';
     let done = false;
-
     const finish = (r) => { if (done) return; done = true; try { child.kill(); } catch (_) {} resolve(r); };
-
-    // 采集实测约 40~70 秒（App 冷启动 + 商品页渲染 + SKU 弹层），给足 3 分钟
-    const timer = setTimeout(() => {
-      finish({ ok: false, error: '采集超时（180 秒）。检查模拟器是否在运行、拼多多是否已登录' });
-    }, 180000);
+    const timer = setTimeout(() => finish({ ok: false, error: 'App 采集超时（180 秒）。检查模拟器是否在运行、拼多多是否已登录' }), 180000);
 
     child.stdout.on('data', (d) => { out += d.toString('utf8'); });
     child.stderr.on('data', (d) => { err += d.toString('utf8'); });
-
-    child.on('error', (ex) => {
-      clearTimeout(timer);
-      finish({ ok: false, error: '启动采集脚本失败：' + errText(ex) });
-    });
-
+    child.on('error', (ex) => { clearTimeout(timer); finish({ ok: false, error: '启动采集脚本失败：' + errText(ex) }); });
     child.on('close', () => {
       clearTimeout(timer);
-      // 脚本只往 stdout 写一行 JSON；前面可能有杂音，取最后一个 { 起始的块
       const i = out.lastIndexOf('{');
       let data = null;
-      if (i >= 0) {
-        try { data = JSON.parse(out.slice(i)); } catch (_) { data = null; }
-      }
-      if (!data) {
-        finish({ ok: false, error: '采集脚本没有返回可解析的结果', raw: (out + err).slice(-600) });
-        return;
-      }
-      if (!data.ok) {
-        finish({ ok: false, error: (data.notes && data.notes[0]) || '采集数据不全', data });
-        return;
-      }
+      if (i >= 0) { try { data = JSON.parse(out.slice(i)); } catch (_) { data = null; } }
+      if (!data) { finish({ ok: false, error: '采集脚本没有返回可解析的结果', raw: (out + err).slice(-600) }); return; }
+      if (!data.ok) { finish({ ok: false, error: (data.notes && data.notes[0]) || '采集数据不全', data }); return; }
       finish({ ok: true, data });
     });
   });
-});
+}
+
+/** 在采集会话（买家账号）里打开商品页并读取，用于补主图/详情图/属性 */
+async function collectFromWeb(url) {
+  const v = getCollector();
+  const wc = v.webContents;
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; resolve(); };
+    const timer = setTimeout(done, 25000);
+    wc.once('did-finish-load', () => { clearTimeout(timer); setTimeout(done, 2500); });
+    wc.once('did-fail-load', () => { clearTimeout(timer); done(); });
+    try { wc.loadURL(url).catch(done); } catch (_) { done(); }
+  });
+
+  await sleep(1500);
+
+  try {
+    const raw = await wc.executeJavaScript(COLLECTOR_READ_JS, true);
+    const d = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return d;
+  } catch (ex) {
+    return { ok: false, error: errText(ex) };
+  }
+}
+
+/**
+ * 兼容旧入口：只跑 App 那半段（不含网页补图）。
+ * 保留它是因为界面上「深度读取」的警告和分级反馈依赖这个粒度。
+ */
+ipcMain.handle('app:collect', async (e, { target, deep }) => collectFromApp(
+  (String(target || '').match(/(\d{8,})/) || [])[1] || '',
+  !!deep,
+).then((r) => (r && r.data && r.data.goodsId ? r : { ok: false, error: '链接或ID里找不到商品编号' })));
 
 /**
  * 把外部链接采集到的商品存进采集箱。
@@ -1534,7 +1588,21 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
         if (m2) item.account = m2[1];
       }
 
-      // ② 对账中心 → 月汇总
+      // ③ 资金限制（货款为 0 往往就是这个原因）
+      const rl = await withPlatform('restrict', async () => {
+        try { await wc.loadURL('https://mms.pinduoduo.com/pg/restrict_list'); } catch (_) {}
+        await sleep(4000);
+        return { ok: true };
+      }, 40000);
+      if (rl && rl.ok) {
+        const rr = await runInMallView(mall, cashierOps.readRestrictions(), 30000);
+        if (rr && rr.ok && rr.items && rr.items.length) {
+          item.restrictions = rr.items;
+          item.restrictTotal = rr.total;
+        }
+      }
+
+      // ④ 对账中心 → 月汇总
       const b2 = await gotoCashierBills(mall);
       if (!b2.ok) {
         item.error = '打不开对账中心';
@@ -1544,7 +1612,7 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       const mon = await runInMallView(mall, cashierOps.readMonthSummary(), 40000);
       if (mon && mon.ok) item.months = mon.months;
 
-      // ③ 可选：读货款明细（分类要用）
+      // ⑤ 可选：读货款明细（分类要用）
       if (o.withDetail) {
         const tab = await runInMallView(mall, cashierOps.clickDetailTab(), 30000);
         if (tab && tab.ok) {
@@ -2426,6 +2494,13 @@ app.on('before-quit', async (event) => {
     } catch (e) {
       trace('flush fail ' + m.partition + ': ' + e.message);
     }
+  }
+  // 采集会话（买家账号）也必须 flush，否则退出后登录态丢失，网页补图会全部失败
+  try {
+    await session.fromPartition(COLLECTOR_PARTITION).flushStorageData();
+    trace('flushed ' + COLLECTOR_PARTITION);
+  } catch (e) {
+    trace('flush fail ' + COLLECTOR_PARTITION + ': ' + e.message);
   }
   try { await session.defaultSession.flushStorageData(); } catch (_) { /* ignore */ }
   trace('flush done, quitting');

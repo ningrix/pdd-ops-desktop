@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('pdd', {
 
   // 从安卓 App 采集（价格/颜色/尺码，网页端拿不到）
   appCollect: (target, deep) => ipcRenderer.invoke('app:collect', { target, deep }),
+  collectFull: (target, deep) => ipcRenderer.invoke('collect:full', { target, deep }),
   // 账单下载
   billLastDownload: () => ipcRenderer.invoke('bill:lastDownload'),
   billOpenFolder: () => ipcRenderer.invoke('bill:openFolder'),

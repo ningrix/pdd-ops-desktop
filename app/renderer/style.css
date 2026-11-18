@@ -430,3 +430,33 @@ tbody .warn { color: var(--err); }
 .cc-deep { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #6b7a90; cursor: pointer; user-select: none; }
 .cc-deep input { accent-color: #3b6ef0; cursor: pointer; }
 .cc-deep:hover { color: #9fb0c6; }
+
+/* ---------------- 采集（极简版）---------------- */
+#pane-collect.active { display: flex; flex-direction: column; }
+.cc-wrap { flex: 0 0 auto; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); background: var(--bg2); }
+.cc-row { display: flex; gap: 10px; align-items: center; }
+.cc-row input[type=text] {
+  flex: 1 1 auto; min-width: 220px; height: 38px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 7px; background: #10151d; color: #dbe3ee; font-size: 13px;
+}
+.cc-row input[type=text]:focus { outline: none; border-color: #3b6ef0; }
+.cc-go { height: 38px; padding: 0 26px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.cc-status { margin-top: 10px; font-size: 12.5px; color: #6b7a90; min-height: 18px; }
+.cc-status.ok { color: #3ddc84; }
+.cc-status.err { color: #ff8080; }
+.cc-result { margin-top: 12px; font-size: 13px; line-height: 1.75; color: #c3cedd; }
+.cc-result .cc-name { font-size: 14.5px; font-weight: 600; color: #e8eef7; margin-bottom: 4px; }
+.cc-result .cc-price { color: #ffd166; font-weight: 700; font-size: 15px; }
+.cc-result .cc-old { color: #6b7a90; text-decoration: line-through; margin-left: 6px; }
+.cc-result .cc-tag {
+  display: inline-block; margin: 3px 6px 3px 0; padding: 2px 9px;
+  border: 1px solid #2c3a4e; border-radius: 10px; font-size: 12px; color: #9fb0c6;
+}
+.cc-result .cc-thumbs { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cc-result .cc-thumbs img {
+  width: 62px; height: 62px; object-fit: cover; border-radius: 6px; border: 1px solid #223;
+  background: #0d1219;
+}
+.cc-foot { margin-top: 10px; }
+.collect-view { flex: 1 1 auto; min-height: 100px; position: relative; }
+.btn.link { background: none; border: none; padding: 0; color: #6f9bff; font-size: 12px; cursor: pointer; text-decoration: underline; }
