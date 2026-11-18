@@ -71,10 +71,6 @@ function dumpUi() {
   return String(adb(['shell', 'cat', '/sdcard/ui_collect.xml']));
 }
 
-/**
- * 解析 uiautomator XML，按文档顺序取出所有 text 节点。
- * 顺序很重要：「颜色」标签之后、到「尺码」标签之前的就是颜色值。
- */
 function parseNodes(xml) {
   const out = [];
   const re = /<node\b[^>]*>/g;
@@ -85,7 +81,7 @@ function parseNodes(xml) {
     const b = /\bbounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(tag);
     const c = /\bclickable="(true|false)"/.exec(tag);
     if (!t) continue;
-    const text = t[1].trim();
+    const text = decodeEntities(t[1]).trim();
     if (!text) continue;
     out.push({
       text,
@@ -97,27 +93,44 @@ function parseNodes(xml) {
   return out;
 }
 
+/** uiautomator 会把 emoji 输出成 HTML 实体，解码回来便于判断 */
+function decodeEntities(s) {
+  return String(s)
+    .replace(/&#(\d+);/g, (_, d) => {
+      try { return String.fromCodePoint(Number(d)); } catch (e) { return ''; }
+    })
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+}
+
+// ------------------------------------------------------------- 过滤规则
 /** 明显不是商品标题的文本 */
 const NOT_TITLE = [
   /服饰类商品|消费提醒|七天无理由|不支持七天|已洗涤|吊牌/,
   /^(已售|券后|补贴|官方|品牌|店铺|支持|预计|最快|收藏|客服|进店|我关注)/,
-  /退货包运费|极速退款|保证金|假一赔十|顺丰包邮|48小时发货|未发货秒退/,
-  /^(商品详情|商品大图|商品缩略图|颜色款式|商品保障|店铺保障)/,
+  /退货包运费|极速退款|保证金|假一赔十|顺丰包邮|48小时发货|未发货秒退|全场包邮/,
+  /^(商品详情|商品大图|商品缩略图|颜色款式|商品保障|店铺保障|商品评价)/,
   /^[\d\s¥.:%★+\-]+$/,
-  /\.(gif|png|jpe?g|slim|webp|svg)(\?|$)/i,   // 资源文件名
-  /^[0-9a-f]{8}-[0-9a-f]{4}-/i,                  // uuid
-  /^[0-9a-f]{16,}$/i,                           // 长 hash
-  /件$|人拼|人收藏|人好评|人买过/,
+  /件$|人拼|人收藏|人好评|人买过|人已拼/,
   /券$|关注券|无门槛|优惠前|已优惠|立即领取/,
   /^(店铺|收藏|客服|分享|首页|关闭弹窗|点击查看)/,
+  /\.(gif|png|jpe?g|slim|webp|svg)(\?|$)/i,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-/i,
+  /^[0-9a-f]{16,}$/i,
+  // 拼单/团购 干扰
+  /拼单|去拼单|团长|即将结束|参与可立即|已拼\s*$/,
+  /\d{1,2}:\d{2}:\d{2}/,          // 倒计时
+  /^这些人已拼/,
+  /先用后付|0元下单|支付方式|确认收货后再付款/,
 ];
 
-/** 尺码值的严格模式 */
+const PRICE_LABEL = '(?:大促价|秒杀价|活动价|到手价|补贴价|新客价?|券后价?|拼单价|单买价|百亿补贴)';
+
 const SIZE_PATTERNS = [
-  /^\d{1,3}(?:\.5)?$/,                    // 36 / 39.5 / 100
-  /^\d{1,3}[（(][^)）]{1,20}[)）]$/,       // 2（90-100）
-  /^\d{1,3}\/\d{1,3}[A-Z]?$/,             // 150/72A
+  /^\d{1,3}(?:\.5)?$/,
+  /^\d{1,3}[（(][^)）]{1,20}[)）]$/,
+  /^\d{1,3}\/\d{1,3}[A-Z]?$/,
   /^(?:XXS|XS|S|M|L|XL|XXL|XXXL|\dXL|均码|F|FREE)$/i,
+  /^(?:均码|通用)$/,
 ];
 
 function isSizeToken(t) {
@@ -126,133 +139,133 @@ function isSizeToken(t) {
   return SIZE_PATTERNS.some((re) => re.test(s));
 }
 
-function isPriceText(s) {
-  return /^¥\s*\d/.test(s) || /^(补贴价|新客|券后|拼单价|单买价)\s*¥/.test(s);
+function priceFrom(text) {
+  // 「大促价 ¥ 20.9」/「券后¥323.88」/「¥20.9」
+  const re = new RegExp('^' + PRICE_LABEL + '?\\s*[¥￥]\\s*(\\d+(?:\\.\\d+)?)$');
+  const m = re.exec(String(text).trim());
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  return Number.isFinite(v) ? Math.round(v * 100) : null;
 }
 
-/** 从商品详情页解析：标题 / 价格
- *
- * 标题的关键技巧：它在价格节点之后（实测 y 轴上紧跟「券后 ¥ xxx」）。
- * 只靠"最长文本"会抓到《消费提醒》那段法律文案。
- */
+function isPriceNode(text) {
+  return priceFrom(text) !== null;
+}
+
+// ------------------------------------------------------------- 详情页
 function parseDetail(nodes) {
   const out = { title: null, price: null, marketPrice: null, sold: null };
 
   // ---- 价格 ----
   const prices = [];
+  const priceIdx = [];
   for (let i = 0; i < nodes.length; i++) {
-    const t = nodes[i].text;
-    let m = /^(?:补贴价|新客|券后|拼单价|单买价)?\s*¥\s*(\d+(?:\.\d+)?)$/.exec(t);
-    if (m) { prices.push(Math.round(parseFloat(m[1]) * 100)); continue; }
-    // 「¥」单独一个节点，后面跟数字
-    if (t === '¥' && i + 1 < nodes.length) {
-      const nx = nodes[i + 1].text;
-      if (/^\d+(?:\.\d+)?$/.test(nx)) prices.push(Math.round(parseFloat(nx) * 100));
+    const v = priceFrom(nodes[i].text);
+    if (v !== null) { prices.push(v); priceIdx.push(i); continue; }
+    if (nodes[i].text === '¥' || nodes[i].text === '￥') {
+      const nx = nodes[i + 1] ? nodes[i + 1].text : '';
+      if (/^\d+(?:\.\d+)?$/.test(nx)) {
+        prices.push(Math.round(parseFloat(nx) * 100));
+        priceIdx.push(i);
+      }
     }
   }
   if (prices.length) {
     out.price = Math.min.apply(null, prices);
-    if (prices.length > 1) {
-      const mx = Math.max.apply(null, prices);
-      if (mx !== out.price) out.marketPrice = mx;
-    }
+    const mx = Math.max.apply(null, prices);
+    if (mx !== out.price) out.marketPrice = mx;
   }
 
-  // ---- 标题：优先取「价格节点之后」的文本 ----
-  const priceIdx = [];
-  for (let i = 0; i < nodes.length; i++) {
-    if (isPriceText(nodes[i].text) || (nodes[i].text === '¥' && i + 1 < nodes.length
-        && /^\d/.test(nodes[i + 1].text))) priceIdx.push(i);
-  }
+  // ---- 标题：价格节点之后，取「最长且最干净」的 ----
   const cands = [];
+  const pushCand = (t, dist) => {
+    const s = String(t).trim();
+    if (s.length < 8 || s.length > 90) return;
+    if (NOT_TITLE.some((re) => re.test(s))) return;
+    if (!/[\u4e00-\u9fa5]/.test(s)) return;
+    if (/[¥￥]/.test(s)) return;
+    cands.push({ t: s, dist });
+  };
   for (const pi of priceIdx) {
-    for (let k = pi + 1; k <= pi + 8 && k < nodes.length; k++) {
-      const t = nodes[k].text;
-      if (t.length < 8 || t.length > 90) continue;
-      if (NOT_TITLE.some((re) => re.test(t))) continue;
-      if (!/[\u4e00-\u9fa5]/.test(t)) continue;
-      cands.push({ t, dist: k - pi });
-      break;
-    }
+    for (let k = pi + 1; k <= pi + 10 && k < nodes.length; k++) pushCand(nodes[k].text, k - pi);
+  }
+  if (!cands.length) {
+    // 兜底：全页扫描
+    nodes.forEach((n, i) => pushCand(n.text, 100 + i));
   }
   if (cands.length) {
-    cands.sort((a, b) => b.t.length - a.t.length);   // 商品标题通常最长，徽标/券名都短
-    out.title = cands[0].t;
-  }
-  // 兜底：全文最长的、不含排除词的文本
-  if (!out.title) {
-    let best = null;
-    for (const n of nodes) {
-      const t = n.text;
-      if (t.length < 10 || t.length > 90) continue;
-      if (NOT_TITLE.some((re) => re.test(t))) continue;
-      if (!best || t.length > best.length) best = t;
-    }
-    out.title = best;
+    // 先按距离分组：距离越近越可能是标题；同距离内取最长
+    cands.sort((a, b) => (a.dist - b.dist) || (b.t.length - a.t.length));
+    // 再在最近的一批里取最长
+    const nearest = cands.filter((c) => c.dist <= cands[0].dist + 3);
+    nearest.sort((a, b) => b.t.length - a.t.length);
+    out.title = nearest[0].t;
   }
 
-  const sold = nodes.find((n) => /^已售[\d.]+[万+]*[件元]|^本店已拼/.test(n.text));
+  const sold = nodes.find((n) => /^已售[\d.]+[万+]*[件元]|^本店已拼|^[\d.]+万\+?人已拼/.test(n.text));
   out.sold = sold ? sold.text : null;
   return out;
 }
 
-/** 从 SKU 选择器解析：颜色 / 尺码 / 各档价格 */
+// ------------------------------------------------------------- SKU 弹层
+const COLOR_LABELS = ['颜色分类', '颜色', '颜色款式', '选择颜色', '颜色/款式'];
+const SIZE_LABELS = ['尺码', '选择尺码', '尺寸'];
+
+/**
+ * 判断当前 dump 里是否真有 SKU 弹层。
+ * 关键：弹层里必然同时出现「颜色xxxx」和「尺码」两个标签，且有「请选择」提示。
+ * 只看一个标签会误判 —— 详情页里也有「颜色款式」字样。
+ */
+function detectSkuSheet(nodes) {
+  let hintIdx = -1;
+  for (let i = 0; i < nodes.length; i++) {
+    if (/^请选择[:：]?\s*\S*(颜色|尺码)/.test(nodes[i].text)) { hintIdx = i; break; }
+  }
+  const ci = nodes.findIndex((n) => COLOR_LABELS.indexOf(n.text.trim()) >= 0);
+  const si = nodes.findIndex((n) => SIZE_LABELS.indexOf(n.text.trim()) >= 0);
+  return { isSheet: hintIdx >= 0 && ci >= 0 && si >= 0 && ci < si, hintIdx, ci, si };
+}
+
 function parseSku(nodes) {
   const out = { colors: [], sizes: [], prices: [], selectedHint: null };
+  const det = detectSkuSheet(nodes);
+  if (!det.isSheet) return out;
 
-  // SKU 弹层是浮在详情页之上的，所以两个页面的文字都会出现在 dump 里。
-  // 技巧：取「最后一次出现」的标签 —— 弹层渲染在详情页之后。
-  const COLOR_LABELS = ['颜色分类', '颜色', '颜色款式', '选择颜色'];
-  let iColor = -1, iSize = -1;
-  for (let i = 0; i < nodes.length; i++) {
+  out.selectedHint = nodes[det.hintIdx].text;
+
+  // 颜色：颜色标签之后 → 尺码标签之前
+  for (let i = det.ci + 1; i < det.si; i++) {
     const t = nodes[i].text.trim();
-    if (COLOR_LABELS.indexOf(t) >= 0) iColor = i;
-    else if (/^尺码$|^选择尺码$/.test(t)) iSize = i;
+    if (t.length < 2 || t.length > 42) continue;
+    if (isSizeToken(t)) continue;
+    if (isPriceNode(t)) continue;
+    if (NOT_TITLE.some((re) => re.test(t))) continue;
+    if (/^(请选择|优惠|减少数量|增加数量|关闭弹窗|点击查看|查看全部)/.test(t)) continue;
+    if (/\d{5,}|@|\*{3,}/.test(t)) continue;
+    if (/^[\x00-\x7F]+$/.test(t) && t.length > 4) continue;
+    out.colors.push(t);
   }
 
-  // ---- 颜色：颜色标签之后、尺码标签之前 ----
-  if (iColor >= 0) {
-    const end = iSize > iColor ? iSize : Math.min(iColor + 30, nodes.length);
-    for (let i = iColor + 1; i < end; i++) {
-      const t = nodes[i].text.trim();
-      if (!t || t.length < 2 || t.length > 42) continue;
-      if (/^(马上卖完|即将售罄|请选择|优惠|颜色)$/.test(t)) continue;
-      if (isSizeToken(t)) continue;
-      if (isPriceText(t)) continue;
-      if (NOT_TITLE.some((re) => re.test(t))) continue;
-      if (/^(请选择|优惠|减少数量|增加数量|关闭弹窗|点击查看|查看全部)/.test(t)) continue;
-      if (/\d{5,}|@|\*{3,}/.test(t)) continue;          // 手机号/地址/长数字
-      if (/^[\x00-\x7F]*$/.test(t) && t.length > 4) continue;   // 纯 ASCII 长串
-      out.colors.push(t);
+  // 尺码：尺码标签之后，严格匹配形态，遇到第一个不匹配就停
+  for (let i = det.si + 1; i < Math.min(det.si + 40, nodes.length); i++) {
+    const t = nodes[i].text.trim();
+    if (!t) continue;
+    if (/^(免费服务|优惠|选择|请选择|立即支付|加入购物车|确定)/.test(t)) break;
+    if (isSizeToken(t)) out.sizes.push(t);
+    else if (out.sizes.length > 0) {
+      if (!/^(马上卖完|即将售罄)$/.test(t)) break;
     }
   }
 
-  // ---- 尺码：尺码标签之后，严格匹配尺码形态，遇到第一个不匹配就停 ----
-  if (iSize >= 0) {
-    for (let i = iSize + 1; i < Math.min(iSize + 40, nodes.length); i++) {
-      const t = nodes[i].text.trim();
-      if (!t) continue;
-      if (/^(免费服务|优惠|选择|请选择|立即支付|加入购物车)/.test(t)) break;
-      if (isSizeToken(t)) out.sizes.push(t);
-      else if (out.sizes.length > 0) {
-        // 已经收集到尺码后又出现非尺码文本 → 尺码段结束
-        if (!/^(马上卖完|即将售罄)$/.test(t)) break;
-      }
-    }
-  }
-
-  // ---- 价格档 ----
   for (const n of nodes) {
-    const m = /^(补贴价|新客|券后|拼单价|单买价)\s*¥\s*(\d+(?:\.\d+)?)/.exec(n.text);
-    if (m) out.prices.push({ label: m[1], fen: Math.round(parseFloat(m[2]) * 100) });
+    const v = priceFrom(n.text);
+    if (v === null) continue;
+    const m = new RegExp('^(' + PRICE_LABEL + ')').exec(n.text);
+    out.prices.push({ label: m ? m[1] : '价格', fen: v });
   }
-
-  const hint = nodes.find((n) => /^请选择[:：]/.test(n.text));
-  out.selectedHint = hint ? hint.text : null;
 
   out.colors = [...new Set(out.colors)];
   out.sizes = [...new Set(out.sizes)];
-  // 价格档去重
   const seenP = new Set();
   out.prices = out.prices.filter((p) => {
     const k = p.label + p.fen;
@@ -262,37 +275,13 @@ function parseSku(nodes) {
   return out;
 }
 
-/** 找可点的购买按钮并打开 SKU 选择器 */
-async function openSkuSheet() {
-  const xml = dumpUi();
-  const nodes = parseNodes(xml);
-  // 优先「发起拼单 / 单独购买 / 直接拼单」
-  const cands = nodes.filter((n) => /发起拼单|单独购买|直接拼单|立即购买/.test(n.text));
-  if (!cands.length) return false;
-  const btn = cands.find((n) => /发起拼单|直接拼单/.test(n.text)) || cands[0];
-  const cx = Math.round((btn.x1 + btn.x2) / 2);
-  const cy = Math.round((btn.y1 + btn.y2) / 2);
-  await humanTap(cx, cy);
-  await sleep(3500);
-  return true;
-}
-
-/**
- * 用 App 打开商品详情。
- *
- * 必须用自定义 scheme `pinduoduo://`，不能用 http(s) 链接 ——
- * 后者会让系统打开浏览器而不是 App（实测）。
- * scheme 从 `dumpsys package` 里查到的可用值：pinduoduo / pddopen。
- *
- * 首次加载实测要 15~25 秒（App 冷启动 + 商品页渲染），所以要轮询等标题出现。
- */
+// ------------------------------------------------------------- 动作
 async function openProduct(gid) {
   const schemeUrl = `pinduoduo://com.xunmeng.pinduoduo/goods.html?goods_id=${gid}`;
   adb(['shell', 'am', 'force-stop', 'com.xunmeng.pinduoduo']);
   await sleep(1200);
   adb(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', schemeUrl]);
 
-  // 轮询等页面渲染出标题（最长 35 秒）
   let nodes = [];
   for (let i = 0; i < 14; i++) {
     await sleep(2500);
@@ -304,13 +293,69 @@ async function openProduct(gid) {
 }
 
 /**
+ * 打开规格选择器 —— **绝不点购买按钮**。
+ *
+ * 血泪教训：底部「发起拼单」在**单规格商品**上会直接下单（实测误下了一单
+ * ¥20.9 的先用后付）。所以这里只点「规格/款式」那一行，它只会弹选择器。
+ *
+ * 优先级：
+ *   1. 详情页的商品款式图/规格行（点它只开弹层）
+ *   2. 「已选」「请选择」那一行
+ *   3. 都不存在 → 判定为单规格商品，直接返回 false，不点任何东西
+ */
+async function openSpecSheetSafe() {
+  const nodes = parseNodes(dumpUi());
+
+  // 绝不允许点的购买类按钮（即便匹配也只用于排除）
+  const BUY_RE = /发起拼单|直接拼单|单独购买|立即购买|去拼单|立即支付|确认拼单|下单/;
+
+  // 1) 详情页的款式/规格缩略图区 —— 点它只打开选择器
+  //    实测标签是「颜色款式」，旁边跟着「商品缩略图1..N」
+  const STYLE_RE = /颜色款式|商品款式图|商品规格图|款式图|选择规格|规格图/;
+  const styleThumb = nodes.find((n) => STYLE_RE.test(n.text) && !BUY_RE.test(n.text));
+  if (styleThumb) {
+    await humanTap(Math.round((styleThumb.x1 + styleThumb.x2) / 2),
+                   Math.round((styleThumb.y1 + styleThumb.y2) / 2));
+    await sleep(3000);
+    return { opened: true, via: 'style-thumb' };
+  }
+
+  // 1b) 退一步：整行里带「款式」字样的可点节点
+  const styleRow = nodes.find((n) => /款式/.test(n.text) && n.clickable && !BUY_RE.test(n.text));
+  if (styleRow) {
+    await humanTap(Math.round((styleRow.x1 + styleRow.x2) / 2),
+                   Math.round((styleRow.y1 + styleRow.y2) / 2));
+    await sleep(3000);
+    return { opened: true, via: 'style-row' };
+  }
+
+  // 2) 「已选：xxx」/「请选择 xxx」行
+  const selRow = nodes.find((n) => /^(已选|请选择)/.test(n.text) && !BUY_RE.test(n.text));
+  if (selRow) {
+    await humanTap(Math.round((selRow.x1 + selRow.x2) / 2),
+                   Math.round((selRow.y1 + selRow.y2) / 2));
+    await sleep(3000);
+    return { opened: true, via: 'selected-row' };
+  }
+
+  // 3) 什么都不点 —— 单规格商品没有可选规格
+  return { opened: false, via: null, reason: '详情页没有规格入口（可能是单规格商品）' };
+}
+
+/**
  * 主流程
  * @param {string} goodsIdOrUrl
+ * @param {{deep?: boolean}} opts
+ *   deep=false（默认）：**绝不点购买按钮**。只读详情页能看到的（标题/价格/当前选中款式），
+ *                       颜色和尺码读不到就如实说明。
+ *   deep=true ：点「发起拼单」打开规格弹层，能读到全部颜色/尺码。
+ *                       风险：若商品已有默认规格或只有单一规格，拼多多会**直接下单**
+ *                       （实测误下过一单 ¥20.9 的先用后付）。必须由用户显式开启。
  */
-async function collect(goodsIdOrUrl) {
-  const gid = String(goodsIdOrUrl).match(/(\d{8,})/)
-    ? String(goodsIdOrUrl).match(/(\d{8,})/)[1]
-    : null;
+async function collect(goodsIdOrUrl, opts) {
+  const deep = !!(opts && opts.deep);
+  const mm = String(goodsIdOrUrl).match(/(\d{8,})/);
+  const gid = mm ? mm[1] : null;
   if (!gid) throw new Error('给一个 goods_id 或包含 goods_id 的链接');
 
   const result = {
@@ -319,11 +364,10 @@ async function collect(goodsIdOrUrl) {
     url: `https://mobile.yangkeduo.com/goods.html?goods_id=${gid}`,
     title: null, price: null, marketPrice: null, sold: null, mallName: null,
     colors: [], sizes: [], prices: [],
-    skuCount: 0, waitedMs: 0,
+    skuCount: 0, waitedMs: 0, sheetOpened: false, sheetVia: null, deep: deep,
     notes: [],
   };
 
-  // 1. 用 App 打开商品
   const opened = await openProduct(gid);
   result.waitedMs = opened.waitedMs;
   Object.assign(result, {
@@ -333,8 +377,8 @@ async function collect(goodsIdOrUrl) {
     sold: opened.detail.sold,
   });
 
-  // 店铺名
-  const mall = opened.nodes.find((n) => /^[\u4e00-\u9fa5A-Za-z0-9]{2,24}(店|馆)$/.test(n.text));
+  const mall = opened.nodes.find((n) => /^.{2,24}(店|馆|旗舰店)$/.test(n.text)
+    && !/^(我关注|进店|店铺)/.test(n.text));
   if (mall) result.mallName = mall.text;
 
   if (!result.title) {
@@ -342,21 +386,34 @@ async function collect(goodsIdOrUrl) {
     return result;
   }
 
-  // 2. 打开规格选择器
-  const okBtn = await openSkuSheet();
-  if (!okBtn) {
-    result.notes.push('没找到购买按钮，规格未读到');
+  // 有一个款式名就先记下来（详情页会显示当前选中的那个）
+  const styleRow = opened.nodes.find((n) => /^颜色款式$/.test(n.text));
+  const hasStyleSection = !!styleRow;
+
+  if (!deep) {
+    result.notes.push(hasStyleSection
+      ? '有颜色款式，但读全规格需要打开规格弹层；安全模式不点购买按钮（会误下单）。需要的话勾选「深度读取」'
+      : '详情页没有款式区，可能是单规格商品');
+    result.ok = !!result.title;
     return result;
   }
 
-  // 3. 轮询等 SKU 弹层出现（最多 12 秒）
+  // ---- 深度模式：点购买按钮打开弹层 ----
+  const sheet = await openSpecSheetSafe();
+  result.sheetVia = sheet.via || null;
+  if (!sheet.opened) {
+    result.notes.push(sheet.reason || '没有规格入口');
+    result.ok = !!result.title;
+    return result;
+  }
+
   let nodes = [];
   let sku = { colors: [], sizes: [], prices: [] };
   for (let i = 0; i < 6; i++) {
     await sleep(2000);
     nodes = parseNodes(dumpUi());
     sku = parseSku(nodes);
-    if (sku.colors.length || sku.sizes.length) break;
+    if (sku.colors.length || sku.sizes.length) { result.sheetOpened = true; break; }
   }
 
   result.colors = sku.colors;
@@ -365,49 +422,50 @@ async function collect(goodsIdOrUrl) {
   result.selectedHint = sku.selectedHint;
   result.skuCount = sku.colors.length * sku.sizes.length;
 
-  if (!result.colors.length && !result.sizes.length) {
-    result.notes.push('规格选择器打开了但没解析到值，检查 SKU 弹层是否真的出现');
+  if (!result.sheetOpened) {
+    result.notes.push('规格弹层没确认打开（缺「请选择 颜色/尺码」提示）');
   }
 
   result.ok = !!(result.title && (result.colors.length || result.sizes.length));
   return result;
 }
 
-// ---------------------------------------------------------------- CLI
+// ------------------------------------------------------------- CLI
 async function main() {
-  const args = process.argv.slice(2).filter((a) => a !== '--json');
   const asJson = process.argv.includes('--json');
+  const deep = process.argv.includes('--deep');
+  const args = process.argv.slice(2).filter((a) => a !== '--json' && a !== '--deep');
   const target = args[0];
 
   if (!target) {
-    console.log('用法: node tools/pdd-app-collect.js <goods_id 或 商品链接> [--json]');
+    console.log('用法: node tools/pdd-app-collect.js <goods_id 或 商品链接> [--json] [--deep]');
+    console.log('      --deep  打开规格弹层读全部颜色/尺码（可能直接下单，慎用）');
     console.log('');
-    // 顺手体检
     console.log('设备:', DEV);
     console.log('adb :', ADB);
-    const devs = String(adb(['devices'])).trim();
-    console.log(devs);
+    console.log(String(adb(['devices'])).trim());
     const has = String(adb(['shell', 'pm', 'list', 'packages'])).includes('com.xunmeng.pinduoduo');
     console.log('拼多多已安装:', has);
     return;
   }
 
-  const r = await collect(target);
+  const r = await collect(target, { deep });
   if (asJson) console.log(JSON.stringify(r, null, 2));
   else {
+    const y = (fen) => (fen ? (fen / 100).toFixed(2) + ' 元' : '-');
     console.log('商品ID :', r.goodsId);
+    console.log('店铺   :', r.mallName || '-');
     console.log('标题   :', r.title);
-    console.log('价格   :', r.price ? (r.price / 100).toFixed(2) + ' 元' : '-',
-                '(' + (r.price || 0) + ' 分)');
-    console.log('参考价 :', r.marketPrice ? (r.marketPrice / 100).toFixed(2) + ' 元' : '-');
+    console.log('价格   :', y(r.price), r.price ? '(' + r.price + ' 分)' : '');
+    console.log('参考价 :', y(r.marketPrice));
     console.log('已售   :', r.sold || '-');
     console.log('颜色   :', r.colors.length, '个');
     r.colors.forEach((c, i) => console.log('   ', i + 1, c));
     console.log('尺码   :', r.sizes.length, '个');
-    console.log('   ', r.sizes.join('  '));
+    if (r.sizes.length) console.log('   ', r.sizes.join('  '));
     if (r.prices.length) {
       console.log('价格档 :');
-      r.prices.forEach((p) => console.log('   ', p.label, (p.fen / 100).toFixed(2) + ' 元'));
+      r.prices.forEach((p) => console.log('   ', p.label, y(p.fen)));
     }
     console.log('SKU数  :', r.skuCount);
     if (r.notes.length) { console.log('备注   :'); r.notes.forEach((n) => console.log('   ', n)); }
@@ -419,4 +477,4 @@ if (require.main === module) {
   main().catch((e) => { console.error('失败:', e && e.message); process.exit(1); });
 }
 
-module.exports = { collect, parseNodes, parseDetail, parseSku, ADB, DEV };
+module.exports = { collect, parseNodes, parseDetail, parseSku, detectSkuSheet, ADB, DEV };

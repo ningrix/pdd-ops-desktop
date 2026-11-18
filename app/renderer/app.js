@@ -133,76 +133,187 @@ function setResult(obj) {
 
 // ------------------------------------------------------------------ 采集会话
 function initCollector() {
+  const input = $('#collectInput');
+  const btn = $('#btnCollectApp');
+  const steps = $('#collectSteps');
+  const result = $('#collectResult');
+  const toggleWeb = $('#btnToggleWeb');
+  const webBar = $('#collectWebBar');
+  if (!input || !btn) return;
+
   const go = $('#btnCollectGo');
   const rd = $('#btnCollectRead');
   const urlIn = $('#collectUrl');
   const tip = $('#collectTip');
-  if (!go || !rd || !urlIn) return;
+
+  /** 步骤状态：idle / doing / done / fail */
+  const setStep = (k, st) => {
+    if (!steps) return;
+    const el = steps.querySelector('[data-k="' + k + '"]');
+    if (!el) return;
+    el.classList.remove('doing', 'done', 'fail');
+    if (st && st !== 'idle') el.classList.add(st);
+  };
+  const resetSteps = () => ['open', 'read', 'save'].forEach((k) => setStep(k, 'idle'));
 
   const setTip = (t, cls) => {
+    if (!tip) return;
     tip.textContent = t;
     tip.style.color = cls === 'err' ? '#ff8080' : (cls === 'ok' ? '#3ddc84' : '#6b7a90');
   };
 
-  go.addEventListener('click', async () => {
-    let u = urlIn.value.trim();
+  // ---- 主路径：从 App 采集 ----
+  const runAppCollect = async () => {
+    const target = (input.value || '').trim();
+    if (!target) {
+      result.innerHTML = '<span class="cc-warn">先粘贴一个商品链接或填商品ID</span>';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '采集中…';
+    resetSteps();
+    result.innerHTML = '<span style="color:#6b7a90">正在打开商品，约 40 秒，请别关窗口…</span>';
+
+    // 视觉上让步骤跟着走（实际是估算，真实结果以返回为准）
+    setStep('open', 'doing');
+    const t1 = setTimeout(() => { setStep('open', 'done'); setStep('read', 'doing'); }, 22000);
+    const t2 = setTimeout(() => { setStep('read', 'done'); setStep('save', 'doing'); }, 50000);
+
+    try {
+      const deepEl = document.getElementById('collectDeep');
+      const deep = !!(deepEl && deepEl.checked);
+      if (deep) {
+        result.innerHTML = '<span class="cc-warn">深度读取会打开规格弹层，个别商品可能直接下单，请留意手机上的订单</span>';
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+      const r = await window.pdd.appCollect(target, deep);
+      clearTimeout(t1); clearTimeout(t2);
+
+      if (!r || !r.ok) {
+        setStep('open', 'done');
+        setStep('read', 'fail');
+        const msg = (r && r.error) || '采集失败';
+        result.innerHTML = '<span class="cc-warn">' + esc(msg) + '</span>' +
+          '<div style="color:#6b7a90;margin-top:6px">检查：模拟器是否在运行、拼多多是否已登录、商品链接是否有效</div>';
+        logErr('App 采集失败：' + msg);
+        return;
+      }
+
+      const d = r.data;
+      setStep('open', 'done');
+      setStep('read', 'done');
+      setStep('save', 'doing');
+
+      // 存进采集箱
+      const pack = {
+        title: d.title,
+        url: d.url,
+        gallery: [],
+        price: d.price,
+        marketPrice: d.marketPrice,
+        catNames: [],
+        skus: [],
+        sizes: d.sizes || [],
+        colors: d.colors || [],
+      };
+      const add = await window.pdd.poolAddExternal(pack);
+      if (add && add.ok) {
+        setStep('save', 'done');
+      } else {
+        setStep('save', 'fail');
+      }
+
+      const yen = (f) => (f ? '¥' + (f / 100).toFixed(2) : '—');
+      const tags = (arr) => (arr || []).map((x) => '<span class="cc-tag">' + esc(x) + '</span>').join('');
+
+      result.innerHTML =
+        '<div class="cc-name">' + esc(d.title || '(无标题)') + '</div>' +
+        '<div style="margin-top:4px">' +
+          '<span class="cc-price">' + yen(d.price) + '</span>' +
+          (d.marketPrice ? ' <span style="color:#6b7a90;text-decoration:line-through">' + yen(d.marketPrice) + '</span>' : '') +
+          (d.sold ? ' <span style="color:#6b7a90">· ' + esc(d.sold) + '</span>' : '') +
+          (d.mallName ? ' <span style="color:#6b7a90">· ' + esc(d.mallName) + '</span>' : '') +
+        '</div>' +
+        (d.colors && d.colors.length
+          ? '<div style="margin-top:6px"><span style="color:#6b7a90">颜色 </span>' + tags(d.colors) + '</div>'
+          : '') +
+        (d.sizes && d.sizes.length
+          ? '<div style="margin-top:2px"><span style="color:#6b7a90">尺码 </span>' + tags(d.sizes) + '</div>'
+          : '<div style="margin-top:2px;color:#6b7a90">尺码 单规格（无尺码）</div>') +
+        (add && add.ok
+          ? '<div style="margin-top:8px;color:#3ddc84">✓ 已存入采集箱，去「采集箱」页可以上架</div>'
+          : '<div style="margin-top:8px;color:#ffb454">采集成功，但入库失败：' + esc((add && add.error) || '未知') + '</div>') +
+        (d.notes && d.notes.length
+          ? '<div style="margin-top:6px;color:#6b7a90;font-size:11.5px">' + d.notes.map(esc).join('；') + '</div>'
+          : '');
+
+      logOk('App 采集成功：' + String(d.title || '').slice(0, 24) +
+            '（' + (d.colors || []).length + ' 色 × ' + (d.sizes || []).length + ' 码）');
+      if (add && add.ok) refreshPool();
+    } catch (e) {
+      clearTimeout(t1); clearTimeout(t2);
+      setStep('read', 'fail');
+      const msg = e && e.message ? e.message : String(e);
+      result.innerHTML = '<span class="cc-warn">采集异常：' + esc(msg) + '</span>';
+      logErr('App 采集异常：' + msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '开始采集';
+    }
+  };
+
+  btn.addEventListener('click', runAppCollect);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runAppCollect(); });
+
+  // ---- 次要路径：网页打开（抓主图用）----
+  if (toggleWeb && webBar) {
+    toggleWeb.addEventListener('click', () => {
+      const on = webBar.style.display === 'none';
+      webBar.style.display = on ? 'flex' : 'none';
+      toggleWeb.textContent = on ? '收起网页' : '需要主图？用网页打开这个链接';
+      if (on && urlIn && !urlIn.value) urlIn.value = (input.value || '').trim();
+      scheduleSync();
+      setTimeout(scheduleSync, 250);
+    });
+  }
+
+  if (go) go.addEventListener('click', async () => {
+    let u = (urlIn.value || '').trim();
     if (!u) { setTip('先粘一个商品链接', 'err'); return; }
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
     setTip('正在打开…');
     try {
       const r = await window.pdd.collectorNavigate(u);
       if (r && r.ok) {
-        const landed = String(r.url || '');
-        if (/login/i.test(landed)) {
-          setTip('需要登录：请在下方用手机号登录一次买家账号', 'err');
-        } else {
-          setTip('已打开，点「读取商品」');
-        }
-      } else {
-        setTip('打开失败：' + ((r && r.error) || '未知'), 'err');
-      }
-    } catch (e) {
-      setTip('打开异常：' + (e && e.message ? e.message : e), 'err');
-    }
+        if (/login/i.test(String(r.url || ''))) setTip('需要登录：请在下方用手机号登录一次买家账号', 'err');
+        else setTip('已打开，点「读取」');
+      } else setTip('打开失败：' + ((r && r.error) || '未知'), 'err');
+    } catch (e) { setTip('打开异常：' + (e && e.message ? e.message : e), 'err'); }
     scheduleSync();
   });
+  if (urlIn) urlIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && go) go.click(); });
 
-  urlIn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') go.click();
-  });
-
-  rd.addEventListener('click', async () => {
+  if (rd) rd.addEventListener('click', async () => {
     rd.disabled = true;
     setTip('正在读取页面…');
     try {
       const r = await window.pdd.collectorRead();
       let d = r;
-      if (r && r.ok && typeof r.value === 'string') {
-        try { d = JSON.parse(r.value); } catch (_) { d = r; }
-      }
+      if (r && r.ok && typeof r.value === 'string') { try { d = JSON.parse(r.value); } catch (_) { d = r; } }
       if (!d || !d.ok) {
         const why = (d && d.notes && d.notes[0]) || (d && d.needLogin ? '页面要求登录' : '没读到商品数据');
-        setTip(why + '（先在浏览器里登录买家账号，再点读取）', 'err');
-        logWarn('采集失败：' + why);
-        setResult(d);
-        return;
+        setTip(why, 'err'); logErr('网页采集失败：' + why); setResult(d); return;
       }
       const add = await window.pdd.poolAddExternal(d);
       if (add && add.ok) {
-        setTip('已存入采集箱：' + String(d.title).slice(0, 16), 'ok');
-        logOk('已采集：' + String(d.title).slice(0, 24) +
-              '（' + (d.gallery || []).length + ' 图 / ' + (d.skuCount || 0) + ' SKU）');
+        setTip('已存入采集箱', 'ok');
+        logOk('网页采集：' + String(d.title).slice(0, 24) + '（' + (d.gallery || []).length + ' 图）');
         await refreshPool();
-      } else {
-        setTip('入库失败：' + ((add && add.error) || '未知'), 'err');
-      }
+      } else setTip('入库失败：' + ((add && add.error) || '未知'), 'err');
       setResult(d);
     } catch (e) {
       setTip('读取异常：' + (e && e.message ? e.message : e), 'err');
-      logErr('采集异常：' + (e && e.message ? e.message : e));
-    } finally {
-      rd.disabled = false;
-    }
+    } finally { rd.disabled = false; }
   });
 }
 

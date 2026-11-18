@@ -155,11 +155,34 @@
       </div>
 
       <div class="pane" id="pane-collect">
-        <div class="collect-bar">
-          <input type="text" id="collectUrl" placeholder="粘贴别人的商品链接，例如 https://mobile.yangkeduo.com/goods.html?goods_id=..." />
-          <button class="btn primary" id="btnCollectGo">打开</button>
-          <button class="btn" id="btnCollectRead">读取商品</button>
-          <span class="collect-tip" id="collectTip">首次使用：在下方浏览器里用手机号登录一次买家账号</span>
+        <div class="cc-wrap">
+          <div class="cc-head">
+            <div class="cc-title">采集别人的商品</div>
+            <div class="cc-sub">粘贴商品链接或商品ID，自动读出标题、价格、颜色、尺码，存进采集箱</div>
+          </div>
+          <div class="cc-input-row">
+            <input type="text" id="collectInput"
+                   placeholder="https://mobile.yangkeduo.com/goods.html?goods_id=...   或直接填商品ID，如 777382886639" />
+            <button class="btn primary cc-go" id="btnCollectApp">开始采集</button>
+          </div>
+          <div class="cc-steps" id="collectSteps">
+            <span class="cc-step" data-k="open">① 打开商品</span>
+            <span class="cc-step" data-k="read">② 读规格</span>
+            <span class="cc-step" data-k="save">③ 存采集箱</span>
+            <label class="cc-deep" title="打开规格弹层才能读全部颜色/尺码，但个别商品会直接下单，需自行取消">
+              <input type="checkbox" id="collectDeep" /> 深度读取全部规格
+            </label>
+          </div>
+          <div class="cc-result" id="collectResult"></div>
+          <div class="cc-extra">
+            <button class="btn link" id="btnToggleWeb">需要主图？用网页打开这个链接</button>
+          </div>
+        </div>
+        <div class="cc-webbar" id="collectWebBar" style="display:none">
+          <input type="text" id="collectUrl" placeholder="网页链接" />
+          <button class="btn" id="btnCollectGo">打开</button>
+          <button class="btn" id="btnCollectRead">读取</button>
+          <span class="collect-tip" id="collectTip"></span>
         </div>
         <div class="collect-view" id="collectView"></div>
       </div>

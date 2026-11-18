@@ -61,6 +61,9 @@ contextBridge.exposeInMainWorld('pdd', {
   collectorEval: (code) => ipcRenderer.invoke('collector:eval', { code }),
   collectorRead: () => ipcRenderer.invoke('collector:read'),
   poolAddExternal: (pack) => ipcRenderer.invoke('pool:addExternal', pack),
+
+  // 从安卓 App 采集（价格/颜色/尺码，网页端拿不到）
+  appCollect: (target, deep) => ipcRenderer.invoke('app:collect', { target, deep }),
   // 账单下载
   billLastDownload: () => ipcRenderer.invoke('bill:lastDownload'),
   billOpenFolder: () => ipcRenderer.invoke('bill:openFolder'),

@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const os = require('os');
 
 const TRACE_FILE = path.join(os.tmpdir(), 'pdd-trace.log');
@@ -1145,6 +1146,76 @@ ipcMain.handle('collector:read', async () => {
 });
 
 /**
+ * 从安卓 App 采集（MuMu 模拟器 + ADB）。
+ *
+ * 为什么要走 App：消费者端网页的价格和规格是服务端打码的，
+ * 换任何 UA / 设备模拟都拿不到；App 里是全的。
+ *
+ * 用 spawn + ELECTRON_RUN_AS_NODE 跑工具脚本，避免把 ADB 轮询塞进主进程。
+ */
+ipcMain.handle('app:collect', async (e, { target, deep }) => {
+  const t = String(target || '').trim();
+  if (!t) return { ok: false, error: '先填商品链接或商品ID' };
+
+  const gid = (t.match(/(\d{8,})/) || [])[1];
+  if (!gid) return { ok: false, error: '链接或ID里找不到商品编号（需要 8 位以上数字）' };
+
+  const script = path.join(__dirname, '..', 'tools', 'pdd-app-collect.js');
+  if (!fs.existsSync(script)) return { ok: false, error: '找不到采集脚本 tools/pdd-app-collect.js' };
+
+  log('info', 'App 采集开始：' + gid);
+
+  return new Promise((resolve) => {
+    const args = [script, gid, '--json'];
+    if (deep) args.push('--deep');
+    log('info', deep ? 'App 采集（深度模式：会打开规格弹层）' : 'App 采集（安全模式：不点购买按钮）');
+    const child = spawn(process.execPath, args, {
+      env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' }),
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let out = '';
+    let err = '';
+    let done = false;
+
+    const finish = (r) => { if (done) return; done = true; try { child.kill(); } catch (_) {} resolve(r); };
+
+    // 采集实测约 40~70 秒（App 冷启动 + 商品页渲染 + SKU 弹层），给足 3 分钟
+    const timer = setTimeout(() => {
+      finish({ ok: false, error: '采集超时（180 秒）。检查模拟器是否在运行、拼多多是否已登录' });
+    }, 180000);
+
+    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    child.stderr.on('data', (d) => { err += d.toString('utf8'); });
+
+    child.on('error', (ex) => {
+      clearTimeout(timer);
+      finish({ ok: false, error: '启动采集脚本失败：' + errText(ex) });
+    });
+
+    child.on('close', () => {
+      clearTimeout(timer);
+      // 脚本只往 stdout 写一行 JSON；前面可能有杂音，取最后一个 { 起始的块
+      const i = out.lastIndexOf('{');
+      let data = null;
+      if (i >= 0) {
+        try { data = JSON.parse(out.slice(i)); } catch (_) { data = null; }
+      }
+      if (!data) {
+        finish({ ok: false, error: '采集脚本没有返回可解析的结果', raw: (out + err).slice(-600) });
+        return;
+      }
+      if (!data.ok) {
+        finish({ ok: false, error: (data.notes && data.notes[0]) || '采集数据不全', data });
+        return;
+      }
+      finish({ ok: true, data });
+    });
+  });
+});
+
+/**
  * 把外部链接采集到的商品存进采集箱。
  * sourceMallId 用 '__external__' 标记，跨店上架时不会被误判为"同店"。
  */
@@ -1457,6 +1528,11 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       item.account = (acc && acc.account) || null;
       const bal = await runInMallView(mall, cashierOps.readBalance(), 20000);
       item.balance = bal && bal.ok ? bal : null;
+      // 账号名兜底：从余额页原文里再抠一次（readAccount 有时赶在渲染前）
+      if (!item.account && bal && bal._raw) {
+        const m2 = String(bal._raw).match(/返回商家后台\s*(\S+)\s*退出/);
+        if (m2) item.account = m2[1];
+      }
 
       // ② 对账中心 → 月汇总
       const b2 = await gotoCashierBills(mall);

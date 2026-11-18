@@ -388,3 +388,45 @@ tbody .warn { color: var(--err); }
 .fin-table td.income { color: #3ecf8e; }
 .fin-table td.expense { color: #ef5b5b; }
 .fin-bar-pct { display: inline-block; height: 6px; border-radius: 3px; background: #5a82ff; vertical-align: middle; margin-right: 6px; }
+
+/* ---------------- 采集会话（App 采集为主）---------------- */
+/* 注意：#collectView 是原生视图落点，其祖先不得用 transform/filter/backdrop-filter */
+#pane-collect.active { display: flex; flex-direction: column; }
+.cc-wrap { flex: 0 0 auto; padding: 16px 18px 12px; border-bottom: 1px solid var(--line); background: var(--bg2); }
+.cc-head { margin-bottom: 12px; }
+.cc-title { font-size: 15px; font-weight: 600; letter-spacing: .3px; }
+.cc-sub { font-size: 12px; color: #6b7a90; margin-top: 4px; }
+.cc-input-row { display: flex; gap: 10px; align-items: center; }
+.cc-input-row input[type=text] {
+  flex: 1 1 auto; min-width: 220px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 6px; background: #10151d; color: #dbe3ee;
+}
+.cc-input-row input[type=text]:focus { outline: none; border-color: #3b6ef0; }
+.cc-go { height: 34px; padding: 0 20px; font-weight: 600; white-space: nowrap; }
+.cc-steps { display: flex; gap: 18px; margin-top: 12px; font-size: 12px; color: #5c6a7e; }
+.cc-step.doing { color: #6f9bff; }
+.cc-step.done  { color: #3ddc84; }
+.cc-step.fail  { color: #ff8080; }
+.cc-result { margin-top: 10px; font-size: 12.5px; line-height: 1.7; color: #c3cedd; }
+.cc-result .cc-name { font-size: 13.5px; font-weight: 600; color: #e8eef7; }
+.cc-result .cc-price { color: #ffd166; font-weight: 600; }
+.cc-result .cc-tag {
+  display: inline-block; margin: 3px 6px 3px 0; padding: 1px 8px;
+  border: 1px solid #2c3a4e; border-radius: 10px; font-size: 11.5px; color: #9fb0c6;
+}
+.cc-result .cc-warn { color: #ffb454; }
+.cc-extra { margin-top: 8px; }
+.btn.link {
+  background: none; border: none; padding: 0; color: #6f9bff;
+  font-size: 12px; cursor: pointer; text-decoration: underline;
+}
+.cc-webbar {
+  display: flex; gap: 8px; align-items: center; flex: 0 0 auto;
+  padding: 8px 18px; border-bottom: 1px solid var(--line); background: var(--bg2);
+}
+.cc-webbar input[type=text] { flex: 1 1 auto; min-width: 160px; }
+.collect-tip { font-size: 11px; color: #6b7a90; white-space: nowrap; }
+.collect-view { flex: 1 1 auto; min-height: 100px; position: relative; }
+.cc-deep { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #6b7a90; cursor: pointer; user-select: none; }
+.cc-deep input { accent-color: #3b6ef0; cursor: pointer; }
+.cc-deep:hover { color: #9fb0c6; }
