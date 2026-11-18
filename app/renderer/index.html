@@ -67,7 +67,8 @@
     <div class="tabs">
       <button class="tab active" data-tab="goods">商品列表</button>
       <button class="tab" data-tab="pool">采集箱</button>
-      <button class="tab" data-tab="browser">浏览器</button>
+      <button class="tab" data-tab="collect">采集会话</button>
+      <button class="tab" data-tab="browser">店铺后台</button>
       <button class="tab" data-tab="result">原始结果</button>
     </div>
 
@@ -150,6 +151,16 @@
             <tbody id="batchBody"></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="pane" id="pane-collect">
+        <div class="collect-bar">
+          <input type="text" id="collectUrl" placeholder="粘贴别人的商品链接，例如 https://mobile.yangkeduo.com/goods.html?goods_id=..." />
+          <button class="btn primary" id="btnCollectGo">打开</button>
+          <button class="btn" id="btnCollectRead">读取商品</button>
+          <span class="collect-tip" id="collectTip">首次使用：在下方浏览器里用手机号登录一次买家账号</span>
+        </div>
+        <div class="collect-view" id="collectView"></div>
       </div>
 
       <div class="pane" id="pane-browser">

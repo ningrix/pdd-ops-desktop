@@ -79,12 +79,23 @@ function focusInput(el, selectAll) {
 
 let rafPending = false;
 function syncBounds() {
-  if (!state.visible || state.tab !== 'browser' || !state.malls.length) {
+  // 采集会话不需要店铺，所以单独判断
+  if (!state.visible) {
     window.pdd.toggleView(false);
     return;
   }
-  const pane = $('#pane-browser');
-  const r = pane.getBoundingClientRect();
+  let el = null;
+  if (state.tab === 'browser' && state.malls.length) el = $('#pane-browser');
+  else if (state.tab === 'collect') el = $('#collectView');
+  if (!el) {
+    window.pdd.toggleView(false);
+    return;
+  }
+  const r = el.getBoundingClientRect();
+  if (r.width < 40 || r.height < 40) {
+    window.pdd.toggleView(false);
+    return;
+  }
   window.pdd.toggleView(true);
   window.pdd.setBounds({
     x: Math.round(r.left), y: Math.round(r.top),
@@ -99,17 +110,100 @@ function scheduleSync() {
 window.addEventListener('resize', scheduleSync);
 
 function setTab(name) {
+  const prev = state.tab;
   state.tab = name;
   $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $$('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   const pb = $('#pane-browser');
   if (pb) pb.classList.toggle('browser-on', name === 'browser' && !!state.malls.length);
+  // 切换采集会话 / 店铺后台 视图
+  if (name === 'collect') {
+    window.pdd.collectorShow(true).catch(() => {});
+  } else if (prev === 'collect') {
+    window.pdd.collectorShow(false).catch(() => {});
+  }
   scheduleSync();
+  if (name === 'collect') setTimeout(scheduleSync, 300);
 }
 $$('.tab').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)));
 
 function setResult(obj) {
   $('#resultBox').textContent = JSON.stringify(obj, null, 2);
+}
+
+// ------------------------------------------------------------------ 采集会话
+function initCollector() {
+  const go = $('#btnCollectGo');
+  const rd = $('#btnCollectRead');
+  const urlIn = $('#collectUrl');
+  const tip = $('#collectTip');
+  if (!go || !rd || !urlIn) return;
+
+  const setTip = (t, cls) => {
+    tip.textContent = t;
+    tip.style.color = cls === 'err' ? '#ff8080' : (cls === 'ok' ? '#3ddc84' : '#6b7a90');
+  };
+
+  go.addEventListener('click', async () => {
+    let u = urlIn.value.trim();
+    if (!u) { setTip('先粘一个商品链接', 'err'); return; }
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    setTip('正在打开…');
+    try {
+      const r = await window.pdd.collectorNavigate(u);
+      if (r && r.ok) {
+        const landed = String(r.url || '');
+        if (/login/i.test(landed)) {
+          setTip('需要登录：请在下方用手机号登录一次买家账号', 'err');
+        } else {
+          setTip('已打开，点「读取商品」');
+        }
+      } else {
+        setTip('打开失败：' + ((r && r.error) || '未知'), 'err');
+      }
+    } catch (e) {
+      setTip('打开异常：' + (e && e.message ? e.message : e), 'err');
+    }
+    scheduleSync();
+  });
+
+  urlIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') go.click();
+  });
+
+  rd.addEventListener('click', async () => {
+    rd.disabled = true;
+    setTip('正在读取页面…');
+    try {
+      const r = await window.pdd.collectorRead();
+      let d = r;
+      if (r && r.ok && typeof r.value === 'string') {
+        try { d = JSON.parse(r.value); } catch (_) { d = r; }
+      }
+      if (!d || !d.ok) {
+        const why = (d && d.notes && d.notes[0]) || (d && d.needLogin ? '页面要求登录' : '没读到商品数据');
+        setTip(why + '（先在浏览器里登录买家账号，再点读取）', 'err');
+        logWarn('采集失败：' + why);
+        setResult(d);
+        return;
+      }
+      const add = await window.pdd.poolAddExternal(d);
+      if (add && add.ok) {
+        setTip('已存入采集箱：' + String(d.title).slice(0, 16), 'ok');
+        logOk('已采集：' + String(d.title).slice(0, 24) +
+              '（' + (d.gallery || []).length + ' 图 / ' + (d.skuCount || 0) + ' SKU）');
+        await refreshPool();
+      } else {
+        setTip('入库失败：' + ((add && add.error) || '未知'), 'err');
+      }
+      setResult(d);
+    } catch (e) {
+      setTip('读取异常：' + (e && e.message ? e.message : e), 'err');
+      logErr('采集异常：' + (e && e.message ? e.message : e));
+    } finally {
+      rd.disabled = false;
+    }
+  });
 }
 
 // ------------------------------------------------------------------ 输入弹窗
@@ -922,6 +1016,7 @@ function renderLastCard() {
 
 // ------------------------------------------------------------------ 启动
 (async () => {
+  initCollector();
   logInfo('界面已就绪');
   await refreshMalls();
   await refreshPool();

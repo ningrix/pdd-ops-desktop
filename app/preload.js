@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('pdd', {
   draftsList: (args) => ipcRenderer.invoke('drafts:list', args || {}),
   draftsDelete: (ids) => ipcRenderer.invoke('drafts:delete', { ids }),
 
+  // 采集会话（买家账号登录，读别人的商品链接）
+  collectorShow: (on) => ipcRenderer.invoke('collector:show', on),
+  collectorNavigate: (url) => ipcRenderer.invoke('collector:navigate', url),
+  collectorEval: (code) => ipcRenderer.invoke('collector:eval', { code }),
+  collectorRead: () => ipcRenderer.invoke('collector:read'),
+  poolAddExternal: (pack) => ipcRenderer.invoke('pool:addExternal', pack),
+
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),
   debugInfo: () => ipcRenderer.invoke('debug:info'),

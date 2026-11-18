@@ -339,3 +339,18 @@ tbody .warn { color: var(--err); }
 .fld input[type=text], .fld select { width: 100%; margin-top: 5px; }
 .fld input[type=range] { width: 190px; vertical-align: middle; margin-top: 6px; }
 .hint { font-size: 11px; color: #6b7a90; line-height: 1.6; margin: 6px 0; }
+
+/* ---------------- 采集会话 ---------------- */
+/* 注意：.collect-view 是原生视图的落点，其祖先不得使用 transform/filter 等
+   （会改变 containing block，setBounds 会贴错位置） */
+#pane-collect.active { display: flex; flex-direction: column; }
+.collect-bar {
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  background: var(--bg2); flex: 0 0 auto;
+}
+.collect-bar input[type=text] {
+  flex: 1 1 auto; min-width: 180px;
+}
+.collect-tip { font-size: 11px; color: #6b7a90; white-space: nowrap; }
+.collect-view { flex: 1 1 auto; min-height: 120px; position: relative; }

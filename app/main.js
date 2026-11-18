@@ -166,37 +166,99 @@ function focusMainWindow() {
 
 function detachView() {
   if (!mainWindow || !attachedId) return;
-  const m = malls.get(attachedId);
-  if (m) {
-    try { mainWindow.contentView.removeChildView(m.view); } catch (_) { /* ignore */ }
+  const target = (attachedId === '__collector__')
+    ? (collectorView && !collectorView.webContents.isDestroyed() ? collectorView : null)
+    : (malls.get(attachedId) || {}).view;
+  if (target) {
+    try { mainWindow.contentView.removeChildView(target); } catch (_) { /* ignore */ }
   }
   attachedId = null;
   // 视图摘掉后必须把键盘焦点交还 HTML 层，否则弹窗输入框打不进字
   focusMainWindow();
 }
 
+// ---------------------------------------------------------------- 采集会话
+/**
+ * 采集会话：独立 partition 的 WebContentsView，用来登录「买家账号」，
+ * 打开别人的商品链接读取数据（消费者端商品页强制登录，实测 needLogin:true）。
+ * 与商家店铺完全隔离：不同 partition、不同 cookie，互不影响登录态。
+ */
+const { COLLECTOR_READ_JS } = require('./lib/collector');
+
+const COLLECTOR_PARTITION = 'persist:collector';
+const COLLECTOR_HOME = 'https://mobile.yangkeduo.com/';
+let collectorView = null;
+
+function getCollector() {
+  if (collectorView && !collectorView.webContents.isDestroyed()) return collectorView;
+
+  const sess = session.fromPartition(COLLECTOR_PARTITION);
+  sess.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+
+  collectorView = new WebContentsView({
+    webPreferences: {
+      partition: COLLECTOR_PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+
+  // 用移动端 UA：消费者端页面按手机布局渲染，元素更好定位
+  try {
+    collectorView.webContents.setUserAgent(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 ' +
+      '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+  } catch (_) { /* ignore */ }
+
+  collectorView.webContents.on('did-finish-load', () => {
+    log('info', '[采集会话] 加载完成: ' + collectorView.webContents.getURL().slice(0, 90));
+  });
+  collectorView.webContents.on('did-navigate', (_e, url) => {
+    log('info', '[采集会话] 导航: ' + String(url).slice(0, 110));
+  });
+
+  collectorView.webContents.loadURL(COLLECTOR_HOME);
+  trace('collector view created');
+  return collectorView;
+}
+
+/** 当前应该挂载哪个视图：'mall' 或 'collector' */
+let viewKind = 'mall';
+
+function activeView() {
+  if (viewKind === 'collector') return getCollector();
+  const m = currentMall();
+  return m ? m.view : null;
+}
+
 function attachView() {
   if (!mainWindow) return;
-  const mall = currentMall();
-  if (!mall || !viewVisible) {
+  const v = activeView();
+  if (!v || !viewVisible) {
     detachView();
     return;
   }
-  if (attachedId && attachedId !== mall.id) detachView();
-  if (attachedId !== mall.id) {
-    try { mainWindow.contentView.addChildView(mall.view); } catch (_) { /* ignore */ }
-    attachedId = mall.id;
-    trace('view attached ' + mall.id);
+  const key = (viewKind === 'collector') ? '__collector__' : (currentMall() || {}).id;
+  if (!key) { detachView(); return; }
+  if (attachedId && attachedId !== key) detachView();
+  if (attachedId !== key) {
+    try { mainWindow.contentView.addChildView(v); } catch (_) { /* ignore */ }
+    attachedId = key;
+    trace('view attached ' + key);
   }
   applyBounds();
 }
 
 function applyBounds() {
   if (!attachedId || !mainWindow) return;
-  const m = malls.get(attachedId);
-  if (!m) return;
+  const v = (attachedId === '__collector__')
+    ? (collectorView && !collectorView.webContents.isDestroyed() ? collectorView : null)
+    : (malls.get(attachedId) || {}).view;
+  if (!v) return;
   try {
-    m.view.setBounds({
+    v.setBounds({
       x: Math.round(Math.max(0, viewBounds.x)),
       y: Math.round(Math.max(0, viewBounds.y)),
       width: Math.round(Math.max(120, viewBounds.width)),
@@ -990,6 +1052,85 @@ ipcMain.handle('img:setFileInput', async (_e, { files, selector }) => {
   if (!m) return { ok: false, error: '还没有店铺' };
   return withPlatform('setFileInput',
     () => setFileInputFiles(m.view.webContents, selector || 'input[type=file]', files), 60000);
+});
+
+// ---------------------------------------------------------------- 采集会话 IPC
+/** 切换右侧浏览区显示「店铺后台」还是「采集会话」 */
+ipcMain.handle('collector:show', async (_e, on) => {
+  viewKind = on ? 'collector' : 'mall';
+  if (on) getCollector();
+  detachView();
+  attachView();
+  return { ok: true, kind: viewKind };
+});
+
+ipcMain.handle('collector:navigate', async (_e, url) => {
+  const v = getCollector();
+  const target = url || COLLECTOR_HOME;
+  try { await v.webContents.loadURL(target); } catch (e) {
+    if (!/ERR_ABORTED/.test(String(e && e.message))) return { ok: false, error: errText(e) };
+  }
+  return { ok: true, url: v.webContents.getURL() };
+});
+
+/** 采集会话里执行任意 JS（调试用） */
+ipcMain.handle('collector:eval', async (_e, { code, timeoutMs }) => {
+  const v = getCollector();
+  return withPlatform('collectorEval', async () => {
+    const val = await v.webContents.executeJavaScript(code, true);
+    return { ok: true, value: val };
+  }, timeoutMs || 60000);
+});
+
+/**
+ * 从采集会话当前页面读商品数据。
+ * 消费者端商品页强制登录（实测 needLogin:true），登录后数据在
+ * window.rawData.store.initDataObj.goods 里；同时做一轮 DOM 兜底。
+ */
+ipcMain.handle('collector:read', async () => {
+  const v = getCollector();
+  return withPlatform('collectorRead', async () => {
+    const val = await v.webContents.executeJavaScript(COLLECTOR_READ_JS, true);
+    return val;
+  }, 90000);
+});
+
+/**
+ * 把外部链接采集到的商品存进采集箱。
+ * sourceMallId 用 '__external__' 标记，跨店上架时不会被误判为"同店"。
+ */
+ipcMain.handle('pool:addExternal', async (_e, pack) => {
+  if (!pack || !pack.title) return { ok: false, error: '没有商品数据' };
+
+  // 补充价格：若只有总价没有 SKU，用最低价兜底
+  const skus = Array.isArray(pack.skus) ? pack.skus : [];
+  const prices = skus.map((s) => Number(s.group) || 0).filter((n) => n > 0);
+  const price = Number(pack.price) || (prices.length ? Math.min.apply(null, prices) : 0);
+
+  const id = pool.add({
+    title: String(pack.title).slice(0, 60),
+    thumb: (pack.gallery || [])[0] || null,
+    gallery: pack.gallery || [],
+    price,
+    marketPrice: Number(pack.marketPrice) || (price ? Math.round(price * 1.1) : 0),
+    catId: null,
+    catNames: pack.catNames || [],
+    skus,
+    sizes: pack.sizes || [],
+    sizeSpecId: null,
+    sizeParentSpecId: null,
+    costTemplateId: null,
+    shipmentLimitSecond: null,
+    twoPiecesDiscount: 95,
+    sourceGoodsId: null,
+    sourceCommitId: null,
+    sourceMallId: '__external__',
+    sourceMallName: '外部链接',
+    sourceUrl: pack.url || null,
+  });
+  log('ok', '已采集外部商品：' + String(pack.title).slice(0, 20) +
+            '（' + (pack.gallery || []).length + ' 图 / ' + skus.length + ' SKU）');
+  return { ok: true, id };
 });
 
 // ---------------------------------------------------------------- 草稿清理
