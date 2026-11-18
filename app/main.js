@@ -100,12 +100,47 @@ function log(level, msg) {
 }
 
 // ---------------------------------------------------------------- 店铺视图
+// ---------------------------------------------------------------- 账单下载接管
+// 对账中心的「下载账单」是 JS 触发的浏览器下载，没 href 可抓。
+// 只能在 session 层接管 will-download，落盘到 app\userdata\bills\。
+let lastBillDownload = null;
+
+function attachDownloadHandler(sess) {
+  try {
+    sess.on('will-download', (event, item) => {
+      try {
+        const dir = path.join(DATA_DIR, 'bills');
+        fs.mkdirSync(dir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const raw = String(item.getFilename() || 'bill.xlsx');
+        const safe = raw.replace(/[\\\\/:*?"<>|]/g, '_');
+        const full = path.join(dir, stamp + '-' + safe);
+        item.setSavePath(full);
+        item.once('done', (_e, state) => {
+          if (state === 'completed') {
+            let size = 0;
+            try { size = fs.statSync(full).size; } catch (_) {}
+            lastBillDownload = { path: full, name: safe, at: Date.now(), size };
+            log('ok', '账单已下载: ' + safe + '（' + Math.round(size / 1024) + ' KB）');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              try { mainWindow.webContents.send('bill:downloaded', lastBillDownload); } catch (_) {}
+            }
+          } else {
+            log('err', '账单下载失败: ' + state);
+          }
+        });
+      } catch (e) { trace('download handler error: ' + e.message); }
+    });
+  } catch (e) { trace('attach download fail: ' + e.message); }
+}
+
 function createMall(name, forcedId) {
   const id = forcedId || ('mall_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
   const partition = 'persist:' + id;
 
   const sess = session.fromPartition(partition);
   sess.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+  attachDownloadHandler(sess);
   trace('session ready ' + partition);
 
   const view = new WebContentsView({
@@ -1332,6 +1367,17 @@ ipcMain.handle('batch:retryKnown', () => {
   return { ok: true };
 });
 
+// ---------------------------------------------------------------- 账单下载查询
+ipcMain.handle('bill:lastDownload', () => lastBillDownload);
+ipcMain.handle('bill:openFolder', () => {
+  try {
+    const dir = path.join(DATA_DIR, 'bills');
+    fs.mkdirSync(dir, { recursive: true });
+    shell.openPath(dir);
+    return { ok: true, dir };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
 // ---------------------------------------------------------------- 尺码表模板
 const SIZE_TPL_FILE = path.join(__dirname, 'data', 'size-templates.json');
 
@@ -1741,8 +1787,10 @@ ipcMain.handle('debug:netStart', async () => {
     if (url.indexOf('pinduoduo.com') < 0) return;
     records.push({
       url: url.split('?')[0].replace('https://mms.pinduoduo.com', ''),
+      fullUrl: url,
       query: url.indexOf('?') >= 0 ? url.split('?')[1].slice(0, 200) : '',
       method: req.method,
+      headers: req.headers || null,
       body: req.postData || null,
       ts: Date.now(),
     });

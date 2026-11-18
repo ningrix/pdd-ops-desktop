@@ -61,6 +61,14 @@ contextBridge.exposeInMainWorld('pdd', {
   collectorEval: (code) => ipcRenderer.invoke('collector:eval', { code }),
   collectorRead: () => ipcRenderer.invoke('collector:read'),
   poolAddExternal: (pack) => ipcRenderer.invoke('pool:addExternal', pack),
+  // 账单下载
+  billLastDownload: () => ipcRenderer.invoke('bill:lastDownload'),
+  billOpenFolder: () => ipcRenderer.invoke('bill:openFolder'),
+  onBillDownloaded: (cb) => {
+    const h = (_e, payload) => cb(payload);
+    ipcRenderer.on('bill:downloaded', h);
+    return () => ipcRenderer.removeListener('bill:downloaded', h);
+  },
 
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),
