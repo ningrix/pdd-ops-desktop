@@ -155,5 +155,55 @@ function clickDetailTab() {
   })()`;
 }
 
+/** 读资金限制列表（/pg/restrict_list）—— 资金被限制的原因和金额 */
+function readRestrictions() {
+  return `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    // 这个函数在 mms 域执行（不是 cashier），所以先等 mms 的 SPA 渲染完
+    let found = false;
+    for (let i = 0; i < 60; i++) {
+      for (const tb of document.querySelectorAll('table')) {
+        const heads = [...tb.querySelectorAll('th')].map(x => (x.innerText || '').trim());
+        if (heads.some(h => h.indexOf('限制原因') >= 0)) { found = true; break; }
+      }
+      if (found) break;
+      // __mms 可用说明 mms 页面已经加载完
+      await sleep(500);
+    }
+    if (!found) {
+      return { ok: false, error: '限制表未出现', url: location.href.slice(0, 100),
+               _head: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 200) };
+    }
+    await sleep(400);
+
+    const out = [];
+    for (const tb of document.querySelectorAll('table')) {
+      const heads = [...tb.querySelectorAll('th')].map(x => (x.innerText || '').trim());
+      if (!heads.some(h => h.indexOf('限制原因') >= 0)) continue;
+      const rows = [...tb.querySelectorAll('tr')].slice(1)
+        .map(tr => [...tr.querySelectorAll('td')].map(x => (x.innerText || '').replace(/\\s+/g, ' ').trim()))
+        .filter(r => r.length >= 3 && r[0]);
+      for (const r of rows) {
+        const idx = (kw) => heads.findIndex(h => h.indexOf(kw) >= 0);
+        const pick = (kw) => { const i = idx(kw); return i >= 0 ? r[i] : null; };
+        const amountRaw = pick('限制金额') || '';
+        const amtM = String(amountRaw).match(/([\\d.]+)\\s*元/);
+        out.push({
+          reason: pick('限制原因') || r[0],
+          amount: amtM ? Math.round(parseFloat(amtM[1]) * 100) : null,
+          amountRaw: amountRaw || null,
+          detail: pick('限制金额说明') || pick('说明') || null,
+          releaseCond: pick('解除限制条件') || pick('解除') || null,
+        });
+      }
+    }
+    const body = (document.body.innerText || '').replace(/\\s+/g, ' ');
+    const m = body.match(/共查询到\\s*(\\d+)\\s*条/);
+    return { ok: true, total: m ? parseInt(m[1], 10) : out.length, items: out };
+  })()`;
+}
+
 module.exports = { readAccount, readMonthSummary, readBalance,
-                   readDetailPage, clickNextPage, clickDetailTab };
+                   readDetailPage, clickNextPage, clickDetailTab,
+                   readRestrictions };
+

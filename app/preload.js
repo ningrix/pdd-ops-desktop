@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('pdd', {
   },
   // 资金复盘
   financeCollect: (opts) => ipcRenderer.invoke('finance:collect', opts),
+  financeRestrictions: () => ipcRenderer.invoke('finance:restrictions'),
 
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),

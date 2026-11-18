@@ -1444,6 +1444,60 @@ async function runBatchLoop(opts) {
   log('info', '批量结束：' + JSON.stringify(batch.stats()));
 }
 
+// ---------------------------------------------------------------- 资金限制（独立采集）
+/**
+ * 单独采集资金限制列表。
+ * 为什么不塞进 finance:collect：采集结束时视图停在 cashier 域，
+ * 从 cashier 跨回 mms 域的 loadURL 常常不生效（实测日志里完全没触发导航）。
+ * 独立入口可以先把视图放回 mms 域再导航，成功率高得多。
+ */
+ipcMain.handle('finance:restrictions', async () => {
+  const list = Array.from(malls.values());
+  if (!list.length) return { ok: false, error: '还没有店铺' };
+  const out = [];
+  for (const mall of list) {
+    const rec = { mallId: mall.id, mallName: mall.name, items: [], error: null };
+    try {
+      activeId = mall.id;
+      attachView();
+      await sleep(1200);
+
+      const ok = await withPlatform('restrictNav', async () => {
+        const wc = mall.view.webContents;
+        // 若已经在 mms 域，直接去限制页；否则先回 mms 首页
+        let cur = '';
+        try { cur = wc.getURL() || ''; } catch (_) {}
+        if (cur.indexOf('mms.pinduoduo.com') < 0) {
+          try { await wc.loadURL('https://mms.pinduoduo.com/home/'); } catch (_) {}
+          await sleep(3000);
+        }
+        try { await wc.loadURL('https://mms.pinduoduo.com/pg/restrict_list'); } catch (_) {}
+        for (let i = 0; i < 40; i++) {
+          await sleep(500);
+          let u = '';
+          try { u = wc.getURL() || ''; } catch (_) {}
+          if (u.indexOf('restrict_list') >= 0) { await sleep(2000); return true; }
+        }
+        return false;
+      }, 70000);
+
+      if (!ok) {
+        rec.error = '打不开资金限制页';
+      } else {
+        const rr = await runInMallView(mall, cashierOps.readRestrictions(), 45000);
+        if (rr && rr.ok) rec.items = rr.items || [];
+        else rec.error = (rr && rr.error) || '读取失败';
+      }
+    } catch (e) {
+      rec.error = String((e && e.message) || e);
+    }
+    out.push(rec);
+    await sleep(800);
+  }
+  const total = out.reduce((s, x) => s + (x.items ? x.items.length : 0), 0);
+  return { ok: true, stores: out, total };
+});
+
 ipcMain.handle('batch:start', async (_e, { ids, options }) => {
   if (batchRunning) return { ok: false, error: '已有批量任务在跑' };
   if (!Array.isArray(ids) || !ids.length) return { ok: false, error: '没有选中商品' };
@@ -1571,7 +1625,7 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       attachView();
       await sleep(1500);
 
-      // ① 资金中心 → 读余额
+      // ① 资金中心 → 读余额和账号
       const nav = await gotoCashierFinance(mall);
       if (!nav.ok) {
         item.error = '打不开资金中心（' + (nav.url || '超时') + '）';
@@ -1588,21 +1642,8 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
         if (m2) item.account = m2[1];
       }
 
-      // ③ 资金限制（货款为 0 往往就是这个原因）
-      const rl = await withPlatform('restrict', async () => {
-        try { await wc.loadURL('https://mms.pinduoduo.com/pg/restrict_list'); } catch (_) {}
-        await sleep(4000);
-        return { ok: true };
-      }, 40000);
-      if (rl && rl.ok) {
-        const rr = await runInMallView(mall, cashierOps.readRestrictions(), 30000);
-        if (rr && rr.ok && rr.items && rr.items.length) {
-          item.restrictions = rr.items;
-          item.restrictTotal = rr.total;
-        }
-      }
 
-      // ④ 对账中心 → 月汇总
+      // ③ 对账中心 → 月汇总
       const b2 = await gotoCashierBills(mall);
       if (!b2.ok) {
         item.error = '打不开对账中心';
@@ -1612,7 +1653,7 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       const mon = await runInMallView(mall, cashierOps.readMonthSummary(), 40000);
       if (mon && mon.ok) item.months = mon.months;
 
-      // ⑤ 可选：读货款明细（分类要用）
+      // ④ 可选：读货款明细（分类要用）
       if (o.withDetail) {
         const tab = await runInMallView(mall, cashierOps.clickDetailTab(), 30000);
         if (tab && tab.ok) {

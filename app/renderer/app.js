@@ -1259,6 +1259,38 @@ async function collectFinance(withDetail) {
 
 $('#btnFinCollect') && $('#btnFinCollect').addEventListener('click', () => collectFinance(false));
 $('#btnFinDetail') && $('#btnFinDetail').addEventListener('click', () => collectFinance(true));
+$('#btnFinRestrict') && $('#btnFinRestrict').addEventListener('click', async () => {
+  const btn = $('#btnFinRestrict');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '读取中…';
+  logInfo('读取资金限制 ...');
+  try {
+    const r = await window.pdd.financeRestrictions();
+    if (r && r.ok) {
+      const rows = [];
+      for (const s of (r.stores || [])) {
+        for (const it of (s.items || [])) rows.push({ mall: s.mallName, it });
+        if (s.error) logWarn(s.mallName + '：' + s.error);
+      }
+      if (state.finance) {
+        // 把限制合并进当前数据并重渲染
+        for (const s of (state.finance.stores || [])) {
+          const hit = (r.stores || []).find((x) => x.mallId === s.mallId);
+          if (hit && hit.items && hit.items.length) s.restrictions = hit.items;
+        }
+        renderFinance(state.finance);
+      }
+      logOk('资金限制：共 ' + (r.total || 0) + ' 条');
+    } else {
+      logErr('读取失败：' + ((r && r.error) || '未知'));
+    }
+  } catch (e) {
+    logErr('读取异常：' + (e && e.message ? e.message : e));
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+});
+
 $('#finMonth') && $('#finMonth').addEventListener('change', (e) => {
   if (state.finance) renderFinance(state.finance, e.target.value);
 });
