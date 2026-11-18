@@ -806,8 +806,44 @@ function scanAllSizeSystems() {
   })()`;
 }
 
+/**
+ * 列出本店草稿。
+ * 实测接口：/glide/v2/mms/query/commit/list，必须传 length + start
+ * （不传会报 3000000「length不能为空 & start不能为空」）。
+ */
+function listDrafts(length, start) {
+  const n = Number(length) || 50;
+  const s = Number(start) || 0;
+  return wrap(`
+    const r = call('/glide/v2/mms/query/commit/list', { length: ${n}, start: ${s} });
+    if (!r.ok) return { ok: false, error: '拉取草稿失败', detail: r.err };
+    const d = r.data || {};
+    const arr = d.list || d.commit_list || d.goods_list || (Array.isArray(d) ? d : []);
+    return {
+      ok: true,
+      total: d.total,
+      items: arr.map(x => ({
+        commit_id: x.goods_commit_id || x.commit_id || x.id,
+        goods_id: x.goods_id,
+        title: String(x.goods_name || x.title || ''),
+        updated: x.updated_at || x.update_time || x.modify_time || null
+      }))
+    };
+  `);
+}
+
+/** 删除一条草稿。实测接口成功返回 true。 */
+function deleteDraft(commitId, goodsId) {
+  return wrap(`
+    const r = call('/glide/v2/mms/edit/commit/delete',
+                   { goods_commit_id: ${Number(commitId)}, goods_id: ${Number(goodsId)} });
+    return { ok: r.ok, detail: r.ok ? r.data : r.err };
+  `);
+}
+
 module.exports = { ping, listGoods, copyGoods, draftDetail, submitDraft,
                    applyEditBody, clickSaveDraft, resolveCommit, readPageCommit,
                    hasSaveButton, setBatchStock, readPageErrors, collectGoods,
                    readSpecState, setColors, setSizes, scrollToSpec,
-                   listSizeSystems, switchSizeSystem, scanAllSizeSystems };
+                   listSizeSystems, switchSizeSystem, scanAllSizeSystems,
+                   listDrafts, deleteDraft };

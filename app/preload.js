@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('pdd', {
   watermarkItem: (args) => ipcRenderer.invoke('img:watermark', args),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
 
+  // 草稿清理
+  draftsList: (args) => ipcRenderer.invoke('drafts:list', args || {}),
+  draftsDelete: (ids) => ipcRenderer.invoke('drafts:delete', { ids }),
+
   // 状态与诊断
   pingMall: (id) => ipcRenderer.invoke('ops:pingMall', id),
   debugInfo: () => ipcRenderer.invoke('debug:info'),

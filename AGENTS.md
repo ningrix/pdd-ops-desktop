@@ -132,6 +132,8 @@
 | 尺码表（跨店） | 同上 | 源商品 `size_spec_id` 为空 = 该类目不要求尺码表。骨架继承的旧表在改码后会冲突，报 `10000014`。解法：把 `size_spec_id` / `size_parent_spec_id` / `is_size_spec_sync_detail` 全部置 0 |
 | 参考价规则 | 同上 | `1000161 规格单买价格必须小于参考价格` —— `market_price` 必须**严格大于**所有 SKU 的最大单买价，相等也会被拒 |
 | 删草稿接口 | 实测 | `POST /glide/v2/mms/edit/commit/delete`，参数 `{goods_commit_id, goods_id}`，成功返回 `true` |
+| 草稿列表接口 | 实测 | `POST /glide/v2/mms/query/commit/list`，**必须传 `length` + `start`**（不传报 `3000000 参数校验失败: length不能为空 & start不能为空`）。返回 `{total, list[]}` |
+| 草稿清理 | `ops.listDrafts` / `ops.deleteDraft` + IPC `drafts:list` / `drafts:delete` | **每次测试后必须清理**。实测一次会话能积累 34 条草稿（跨店上架失败就留一条）。清理后复查 `total === 0` 才算完成 |
 | 尺码表接口 | `research/尺码表接口打通_2026-11.md` | `POST /glide/forward/cabernet/mms/sizespec/action/post`。body = `{content:{meta:{groups:[{id:1}],elements:[{id:N}]},records:[{values:{...}}]},status:0,class_id:N}`，每调一次生成新 spec id。绑定靠编辑载荷的 `size_spec_id` + `size_parent_spec_id`(=1226) + `is_size_spec_sync_detail`(=1) |
 | 尺码表 class_id | 实测（1~12 全扫） | 按类目而定。运动羽绒服（cat 12508）= **5**。判断依据：只有正确 class 才会告诉你「缺哪个参数」，错误的只会回 `10000013 请选择该类目下正确的尺码表类型` |
 | 尺码表参数 id | 实测 | `10004` = 推荐身高。**`体重(kg)` 的 id 未知**（10000~10049 已排除）。一张表最多 5 个参数，重复列会报「内容不完整」 |

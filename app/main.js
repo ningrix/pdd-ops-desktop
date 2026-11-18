@@ -992,6 +992,37 @@ ipcMain.handle('img:setFileInput', async (_e, { files, selector }) => {
     () => setFileInputFiles(m.view.webContents, selector || 'input[type=file]', files), 60000);
 });
 
+// ---------------------------------------------------------------- 草稿清理
+/**
+ * 列出当前店铺的草稿。
+ * 为什么做成正式能力：跨店上架失败会留下草稿（实测积累到 34 条），
+ * 手动去后台一条条删非常烦。而且草稿堆多了会干扰后续判断（哪个是有效的）。
+ */
+ipcMain.handle('drafts:list', async (_e, { mallId } = {}) => {
+  const m = mallId ? malls.get(mallId) : currentMall();
+  if (!m) return { ok: false, error: '还没有店铺' };
+  if (mallId) { activeId = mallId; attachView(); await sleep(2200); }
+  const r = await runInMall((o) => o.listDrafts(100, 0));
+  return Object.assign({ mallId: m.id, mallName: m.name }, r || { ok: false });
+});
+
+/** 删除草稿。ids: [{commit_id, goods_id}] */
+ipcMain.handle('drafts:delete', async (_e, { ids }) => {
+  const list = Array.isArray(ids) ? ids : [];
+  if (!list.length) return { ok: false, error: '没有要删的草稿' };
+  const results = [];
+  for (const it of list) {
+    const r = await runInMall((o) => o.deleteDraft(it.commit_id, it.goods_id));
+    const ok = !!(r && r.ok && (r.detail === true || r.detail === 'true' || typeof r.detail === 'boolean'));
+    results.push({ commit_id: it.commit_id, goods_id: it.goods_id, ok,
+                   error: ok ? null : JSON.stringify((r && r.detail) || r) });
+    await sleep(700);   // 别打太密
+  }
+  const done = results.filter((x) => x.ok).length;
+  log(done ? 'ok' : 'err', '删除草稿 ' + done + '/' + list.length);
+  return { ok: done > 0, done, total: list.length, results };
+});
+
 // 初始化采集箱存储
 try { pool.init(DATA_DIR); } catch (e) { trace('pool init fail: ' + e.message); }
 
