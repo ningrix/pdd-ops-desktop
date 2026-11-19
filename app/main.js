@@ -343,9 +343,8 @@ function createWindow() {
     title: '拼多多上货中台',
     icon: path.join(__dirname, 'assets', 'icons', 'app-256.png'),
     // 隐藏系统标题栏，由 renderer 的 .topbar 兼任（消除白色横条 + 品牌重复）
-    // 约束：height 必须等于 style.css 的 --topbar-h；color 必须等于 --topbar-bg
+    // 不使用 titleBarOverlay：窗口按钮由渲染层 .win-controls 自绘，避免原生 overlay 与 CSS 顶栏像素错位
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#18213a', symbolColor: '#c9d4e6', height: 38 },
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -430,6 +429,19 @@ ipcMain.handle('view:toggle', (_e, visible) => {
 
 /** 渲染层弹窗打开前调用：确保窗口拿回键盘焦点 */
 ipcMain.handle('window:focus', () => focusMainWindow());
+
+/** 自绘窗口按钮（最小化/最大化/关闭） */
+ipcMain.handle('window:action', (_e, action) => {
+  if (!mainWindow) return false;
+  try {
+    if (action === 'minimize') mainWindow.minimize();
+    else if (action === 'maximize') {
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      else mainWindow.maximize();
+    } else if (action === 'close') mainWindow.close();
+    return true;
+  } catch (_) { return false; }
+});
 
 ipcMain.handle('view:bounds', (_e, b) => {
   if (b && typeof b.x === 'number') {
@@ -530,9 +542,27 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   steps.push('目标店铺: ' + target.name);
 
   // ① 目标店找一个骨架商品
-  const ls = await runInMall((o) => o.listGoods(30));
+  //
+  //    优先用缓存和采集时预分配好的结果：上架不该每次都现拉 listGoods（几秒到几十秒）。
+  //    缓存过期（10 分钟）才回退到现场拉取。
+  const planForThis = (it.skeletonPlans || []).find((p) => p.mallId === target.id) || null;
+  let ls = null;
+  const cachedGoods = skeleton.getCachedMallGoods(target.id);
+  if (cachedGoods && cachedGoods.items.length) {
+    ls = { ok: true, items: cachedGoods.items };
+    steps.push('商品清单用缓存（' + cachedGoods.ageMin + ' 分钟前，' + cachedGoods.items.length + ' 条）');
+  } else {
+    ls = await runInMall((o) => o.listGoods(30));
+    if (ls && ls.ok && Array.isArray(ls.items)) skeleton.cacheMallGoods(target.id, ls.items);
+  }
   if (!ls || !ls.ok || !ls.items || !ls.items.length) {
     return { ok: false, error: '目标店铺没有在售商品，无法作为骨架', steps };
+  }
+  if (planForThis && planForThis.ready) {
+    const usable = (planForThis.candidates || []).filter((c) => c.ready).length;
+    steps.push('采集时已预分配骨架：' + usable + ' 个可用，首选 ' + planForThis.best);
+  } else if (planForThis && !planForThis.ready) {
+    steps.push('⚠ 采集时的预分配结论：' + (planForThis.advice || '骨架不可用，仍在重试'));
   }
 
   // 先把源的颜色算出来 —— 挑骨架时要看它有没有颜色规格
@@ -552,6 +582,13 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   const srcCat = Number(it.catId) || null;
   let ranked = skeleton.rank(ls.items, srcCat);
   let cands = srcCat ? ranked.sameCat : ranked.otherCat;
+
+  // 预分配结果给的「首选骨架」提到最前面，其余仍按 LRU 排
+  if (planForThis && planForThis.best && cands.length) {
+    const i = cands.findIndex((x) => String(x.goods_id) === String(planForThis.best));
+    if (i > 0) cands = [cands[i]].concat(cands.slice(0, i), cands.slice(i + 1));
+  }
+
   if (srcCat && !cands.length) {
     const catName = (it.catNames && it.catNames.length)
       ? it.catNames.join(' / ')
@@ -1340,6 +1377,114 @@ ipcMain.handle('app:collect', async (e, { target, deep }) => collectFromApp(
 ).then((r) => (r && r.data && r.data.goodsId ? r : { ok: false, error: '链接或ID里找不到商品编号' })));
 
 /**
+ * 骨架预分配：采集完就把「这个商品能上架到哪些店、用哪个骨架」算出来。
+ *
+ * 为什么提前算：上架时才找骨架有两个问题 ——
+ *   ① 批量跑到第 N 个才炸，前面白做；
+ *   ② 每次都要现拉 listGoods（几秒到几十秒）。
+ *
+ * 类目从哪来（重要）：
+ *   App 端拿不到类目，类目只有网页端给。但网页登录和模拟器登录会互相踢（同一账号）。
+ *   所以对「自己店铺之间搬家」这类场景，走一条更稳的路：
+ *   源商品就在自己店里 → 用源店的商品清单反查 cat_id。
+ *   查不到才退回用采集时记下的 catId。
+ */
+async function preassignSkeletons(poolId, catIdHint, colorCountHint) {
+  const it = poolId ? pool.get(poolId) : null;
+  if (!it) return { ok: false, error: '找不到这条采集箱条目' };
+
+  let catId = Number(catIdHint) || Number(it.catId) || null;
+  let catFrom = catId ? '采集时记录' : null;
+
+  // 从源店反查类目 —— 自己店之间搬家时最可靠
+  if (!catId && it.sourceMallId && it.sourceGoodsId) {
+    try {
+      const srcMall = malls.get(it.sourceMallId);
+      if (srcMall) {
+        let cached = skeleton.getCachedMallGoods(it.sourceMallId);
+        if (!cached) {
+          const prev = activeId;
+          activeId = it.sourceMallId;
+          attachView();
+          await sleep(1800);
+          const ls = await runInMall((o) => o.listGoods(50));
+          if (ls && ls.ok && Array.isArray(ls.items)) skeleton.cacheMallGoods(it.sourceMallId, ls.items);
+          if (prev && prev !== it.sourceMallId) { activeId = prev; attachView(); }
+          cached = skeleton.getCachedMallGoods(it.sourceMallId);
+        }
+        const hit = cached && cached.items.find((x) => String(x.goods_id) === String(it.sourceGoodsId));
+        if (hit && Number(hit.cat_id)) { catId = Number(hit.cat_id); catFrom = '从源店商品反查'; }
+      }
+    } catch (e) {
+      log('warn', '反查源商品类目失败：' + errText(e));
+    }
+  }
+
+  if (!catId) {
+    const why = '这条商品没有类目信息（App 端不提供类目，网页端没登上）。' +
+                '先在「采集会话」里登录网页版拼多多重采一次，或换一个自己的店之间搬家的商品';
+    pool.update(poolId, { skeletonPlans: null, skeletonReady: false, skeletonAdvice: why });
+    return { ok: false, error: why, plans: [] };
+  }
+
+  if (catFrom) log('info', '骨架预分配用类目 ' + catId + '（' + catFrom + '）');
+
+  const colorCount = Number(colorCountHint) || (it.colors || []).length || 0;
+  const plans = [];
+  for (const m of malls.values()) {
+    let p = null;
+    try {
+      let cached = skeleton.getCachedMallGoods(m.id);
+      if (!cached && m.view && !m.view.webContents.isDestroyed()) {
+        const prevActive = activeId;
+        activeId = m.id;
+        attachView();
+        await sleep(1800);
+        const ls = await runInMall((o) => o.listGoods(30));
+        if (ls && ls.ok && Array.isArray(ls.items)) skeleton.cacheMallGoods(m.id, ls.items);
+        if (prevActive && prevActive !== m.id) { activeId = prevActive; attachView(); }
+      }
+      p = skeleton.plan(m.id, catId, { colorCount });
+      p.mallName = m.name;
+    } catch (e) {
+      p = {
+        mallId: m.id, mallName: m.name, catId,
+        ready: false, count: 0, candidates: [], best: null, allCooling: false,
+        advice: '预分配失败：' + errText(e),
+      };
+    }
+    plans.push(p);
+  }
+
+  const readyCount = plans.filter((x) => x.ready).length;
+  pool.update(poolId, {
+    catId,
+    colors: (it.colors && it.colors.length) ? it.colors : (colorCount ? it.colors : it.colors),
+    skeletonPlans: plans,
+    skeletonReady: readyCount > 0,
+    skeletonReadyCount: readyCount,
+    skeletonPlannedAt: Date.now(),
+    skeletonCatFrom: catFrom,
+  });
+
+  log(readyCount ? 'ok' : 'warn',
+      '骨架预分配：' + readyCount + '/' + plans.length + ' 个店铺可上架（类目 ' + catId + '，' + catFrom + '）');
+  return { ok: true, plans, readyCount, catId, catFrom };
+}
+
+ipcMain.handle('skeleton:preassign', async (_e, { poolId } = {}) => {
+  if (!poolId) return { ok: false, error: '缺少 poolId' };
+  return preassignSkeletons(poolId);
+});
+
+/** 只读查询：某个类目在某个店能不能上架（不刷新缓存） */
+ipcMain.handle('skeleton:plan', async (_e, { mallId, catId, colorCount } = {}) => {
+  const id = mallId || activeId;
+  if (!id) return { ok: false, error: '没有指定店铺' };
+  return { ok: true, plan: skeleton.plan(id, catId, { colorCount: Number(colorCount) || 0 }) };
+});
+
+/**
  * 把外部链接采集到的商品存进采集箱。
  * sourceMallId 用 '__external__' 标记，跨店上架时不会被误判为"同店"。
  */
@@ -1357,8 +1502,10 @@ ipcMain.handle('pool:addExternal', async (_e, pack) => {
     gallery: pack.gallery || [],
     price,
     marketPrice: Number(pack.marketPrice) || (price ? Math.round(price * 1.1) : 0),
-    catId: null,
+    catId: Number(pack.catId) || null,
     catNames: pack.catNames || [],
+    colors: pack.colors || [],
+    property: pack.property || [],
     skus,
     sizes: pack.sizes || [],
     sizeSpecId: null,
@@ -1374,7 +1521,16 @@ ipcMain.handle('pool:addExternal', async (_e, pack) => {
   });
   log('ok', '已采集外部商品：' + String(pack.title).slice(0, 20) +
             '（' + (pack.gallery || []).length + ' 图 / ' + skus.length + ' SKU）');
-  return { ok: true, id };
+
+  // 采集完立刻预分配骨架：把「能上架到哪些店、用哪个骨架」算好存进条目。
+  // 失败不影响采集结果，只是这条暂时显示「未分配」。
+  let skel = null;
+  try {
+    skel = await preassignSkeletons(id);
+  } catch (e) {
+    log('warn', '骨架预分配失败（不影响采集）：' + errText(e));
+  }
+  return { ok: true, id, skeleton: skel };
 });
 
 // ---------------------------------------------------------------- 草稿清理

@@ -66,13 +66,22 @@ function list() {
     title: it.title,
     sourceMallName: it.sourceMallName,
     sourceGoodsId: it.sourceGoodsId,
+    catId: it.catId || null,
     price: it.price,
     images: (it.gallery || []).length,
     skus: (it.skus || []).length,
     sizes: it.sizes || [],
+    colors: it.colors || [],
     catNames: it.catNames || [],
     thumb: it.thumb,
     createdAt: it.createdAt,
+    // 骨架预分配结果：界面靠这几个字段显示「能不能上架、用哪个骨架」
+    skeletonPlans: it.skeletonPlans || null,
+    skeletonReady: it.skeletonReady,
+    skeletonReadyCount: it.skeletonReadyCount,
+    skeletonAdvice: it.skeletonAdvice || null,
+    skeletonPlannedAt: it.skeletonPlannedAt || null,
+    skeletonCatFrom: it.skeletonCatFrom || null,
   }));
 }
 
@@ -103,4 +112,19 @@ function remove(id) {
   return true;
 }
 
-module.exports = { init, list, add, get, remove };
+/**
+ * 局部更新一条。
+ * 用途：采集后回写骨架预分配结果（skeletonPlans / skeletonReady）。
+ * 浅合并，不改动没传的字段。
+ */
+function update(id, patch) {
+  if (!id || !patch || typeof patch !== 'object') return null;
+  const all = load();
+  const i = all.findIndex((x) => x.id === id);
+  if (i < 0) return null;
+  all[i] = Object.assign({}, all[i], patch);
+  save(all);
+  return all[i];
+}
+
+module.exports = { init, list, add, get, remove, update };

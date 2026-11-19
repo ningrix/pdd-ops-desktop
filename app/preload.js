@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('pdd', {
   // 内置浏览器
   toggleView: (visible) => ipcRenderer.invoke('view:toggle', visible),
   focusWindow: () => ipcRenderer.invoke('window:focus'),
+  windowAction: (action) => ipcRenderer.invoke('window:action', action),
   setBounds: (b) => ipcRenderer.invoke('view:bounds', b),
   navigate: (url) => ipcRenderer.invoke('view:navigate', url),
   reload: () => ipcRenderer.invoke('view:reload'),
@@ -30,6 +31,8 @@ contextBridge.exposeInMainWorld('pdd', {
   poolCollect: (index, goodsId) => ipcRenderer.invoke('pool:collect', { index, goodsId }),
   poolRemove: (id) => ipcRenderer.invoke('pool:remove', id),
   poolDetail: (id) => ipcRenderer.invoke('pool:detail', id),
+  skeletonPreassign: (poolId) => ipcRenderer.invoke('skeleton:preassign', { poolId }),
+  skeletonPlan: (args) => ipcRenderer.invoke('skeleton:plan', args || {}),
   poolPublish: (args) => ipcRenderer.invoke('pool:publish', args),
   // 批量队列
   batchStart: (ids, options) => ipcRenderer.invoke('batch:start', { ids, options }),

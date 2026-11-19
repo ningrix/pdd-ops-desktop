@@ -38,11 +38,7 @@
 7. **原生视图摘掉后必须显式把键盘焦点还给 HTML 层。** `WebContentsView` 是原生子视图，被点过就持有原生键盘焦点；`removeChildView` 之后主窗口的 `webContents` **不会**自动重新获得焦点。症状：弹窗里 input 是 `document.activeElement`，但 `document.hasFocus() === false` —— 鼠标能点、**键盘打不进字、也删不掉字**。
    修法：`main.js` 的 `detachView()` 与 `view:toggle(false)` 里调用 `focusMainWindow()`；渲染层每次弹窗打开调 `window.pdd.focusWindow()`，并用 `focusInput()` 等两帧后重试 `focus + select`。已实测（`Input.insertText` 走真实输入路径、逐字符 `dispatchKeyEvent`、退格）：修复前 `hasFocus:false`，修复后 `hasFocus:true` 且能打中文/能删。
 8. 需要重排时用 `ResizeObserver` 而不是手工调 `scheduleSync()`——新加的工具条、页签行高变化都不会触发 `window.resize`。
-9. **窗口顶部即标题栏。** `main.js` 的 `BrowserWindow` 用 `titleBarStyle: 'hidden'` + `titleBarOverlay`，系统标题栏已隐藏，`.topbar` 兼任标题栏。三处必须同步，改一处就要改另两处：
-   - `titleBarOverlay.height` == CSS `--topbar-h`
-   - `titleBarOverlay.color` == CSS `--topbar-bg`
-   - `.topbar` 的 `padding-right` 必须留出窗口按钮宽度（实测 136px，现留 152px）
-   拖拽靠 `.topbar { -webkit-app-region: drag }`。**新增任何顶栏可点元素都必须补 `-webkit-app-region: no-drag`**，否则点击会被当成拖拽、按钮点不动。
+9. **窗口顶部即标题栏。** `main.js` 的 `BrowserWindow` 用 `titleBarStyle: 'hidden'`，**不使用 `titleBarOverlay`**；窗口按钮由渲染层 `.win-controls` 自绘，通过 `window:action` IPC 控制最小化/最大化/关闭。`.topbar` 高度为 `--topbar-h`（40px），`.topbar` 可拖拽，`.win-controls` 及其按钮必须 `-webkit-app-region: no-drag`。**新增任何顶栏可点元素都必须补 `-webkit-app-region: no-drag`**，否则点击会被当成拖拽、按钮点不动。
 
 ### 1.2 平台操作红线
 
@@ -78,7 +74,7 @@
 | `app/lib/inspect.js` | 商品检测·规则层（纯 Node 零依赖，不读图） | 可改 |
 | `app/lib/imgtool.js` | imgtool 的 Node 封装：spawn Python、下载图、失败分类 | 可改 |
 | `tools/imgtool/` | Python 图像工具包（超分/水印/图像检测），见下 | 可改 |
-| `app/renderer/index.html` | 界面结构（4 个页签：商品列表 / 采集箱 / 浏览器 / 原始结果） | 可改，守 §1.1 |
+| `app/renderer/index.html` | 界面结构（左侧导航：商品列表 / 采集箱 / 采集会话 / 资金复盘 / 店铺后台；左下日志/原始结果抽屉） | 可改，守 §1.1 |
 | `app/renderer/style.css` | 样式（无框架、无预处理器） | 可改，守 §1.1 |
 | `app/renderer/app.js` | 界面逻辑（单文件，全局 `$` / `state`） | 可改，守 §1.1 |
 | `app/data/size-templates.json` | 尺码表模板库（6 套） | 可改 |
@@ -159,6 +155,7 @@
 | 图集去重 | `ops.collectGoods` + `lib/pool.js` | **平台返回的 `galleries` 本身带重复**（实测 21 项只有 11 个唯一 URL）。采集侧去重，读取侧再兜一层（旧数据也生效）。不去重会导致加水印重复处理、上架后主图重复图位 |
 | 尺码是「自定义」不是标准码制 | 实测源商品 SKU spec | **很多商品的尺码是商家自定义的**：`parent_id=1226`（尺码）、`spec_id` 是该商品私有的、值是 `2（90-100）` 这类自由文本，**不在「通用/中国码/欧码/英码/德码/美码/均码」任一标准码制里**。所以「遍历 7 种码制找覆盖最好」对这类商品永远失败（缺码 = 全部）。正确方向：找页面上的「自定义尺码」输入入口（曾观测到一个 placeholder 为 `未使用模板` 的文本框），**未验证** |
 | 骨架频控 | `lib/skeleton.js` | `600102 该商品已被新建过` 是**时间性限流**，实测：同一骨架克隆成功后 1 分钟再克隆就被拒。窗口期平台未公开。对策：记录每个骨架最近使用时间、按最久未用优先轮换；全失败时把每个骨架的「X 分钟前用过」列出来 |
+| 骨架预分配 | `lib/skeleton.js` 的 `plan()` + `main.js` 的 `preassignSkeletons()` | **采集完就把「能上架到哪些店、用哪个骨架」算好存进采集箱条目**（`skeletonPlans`），上架时直接用，不再现场拉 `listGoods`。三个好处：① 没骨架的问题从「上架时」提前到「采集时」；② 省掉每次几秒到几十秒的清单拉取；③ 批量不会再跑到第 N 个才炸。店铺商品清单缓存 10 分钟（`skeleton-cache.json`）。**类目来源**：App 端拿不到类目，网页端才有；但网页登录与模拟器登录互相踢，所以自己店之间搬家时**从源店的商品清单反查 `cat_id`**（`sourceMallId`+`sourceGoodsId` → `cat_id`）。界面「骨架」列显示 ✓可上 / ⏳冷却中 / ✗无同类骨架 |
 | 骨架需有颜色规格 | `ops.listGoods` 的 `colors/colorCount` | 改颜色是在页面**已有的**颜色输入框里填值。骨架本身没有颜色规格时页面上没有输入框可填，颜色必然设不进去（实测：骨架 0 个颜色框 / 源 5 个颜色）。所以源有颜色时优先挑 `colorCount > 0` 的骨架 |
 | 注入脚本语法校验 | `tools/check-injections.js` | `ops.js` 用模板字面量拼注入代码。拼错了 Electron 只回一句 "Script failed to execute"，看不出哪错。这个脚本用 `vm.Script` 编译全部注入脚本并打印出错行。**已踩过的坑**：在模板字面量里写注释，注释里的 `\n` 变成真实换行截断注释，后半句变成代码 → 整体语法错误 |
 | 异常转文本 | `main.js` 的 `errText()` | Electron 的 `executeJavaScript` 在页面抛非 Error 值时 reject 出的是普通对象，`String(e)` 得到 `[object Object]`，真实原因全丢。必须用 `errText()` 递归取 `error`/`message`/`reason`/JSON |
@@ -277,6 +274,12 @@ BatchTask {
 - `#copyFactor` 加了 `input/change/keyup` 监听，改倍数时价格预览实时更新
 - `copyGoods` / `collectGoods` 改为**按 `goods_id` 精确认商品**（`goodsId` 参数），不再依赖列表下标；找不到就明确报错
 - 两个批量前置缺陷已清除，批量队列已启用
+- `refreshStatus()` 改为并发检测 + 状态缓存：单店 IPC 异常不再中断整轮；`refreshMalls` 重绘时灯不再闪回灰色；页面导航/加载期间不会把健康店铺误报成红色离线
+- 左侧导航收纳「商品列表/采集箱/采集会话/资金复盘/店铺后台」五个页签；顶栏只保留品牌和刷新/主题；原「显示浏览器」与「店铺后台」重复，已移除，店铺后台页签即控制原生视图
+- 顶栏右侧控件只保留刷新与主题；主题切换改为瞬时切换（不再做整页颜色过渡），只在主题按钮内做小圆圈扩散，避免软渲染下的割裂/白屏
+- 采集箱改为紧凑行（30px 缩略图、4px 行距、操作按钮单行），日志和原始结果一起收进左下角抽屉，`#log` / `#resultBox` 保留在 DOM 中供 agent 直接读取
+- 左侧栏宽度 248px；店铺后台 `WebContentsView` 默认 `MALL_ZOOM = 0.7`（每次 `did-finish-load` 重新应用，避免跨子域失效）
+- 桌面快捷方式与应用窗口使用 `app/assets/icons/app.ico`（图标源文件 `app-icon.svg`，多尺寸 ICO 由 `work/make_app_icon.py` 生成）
 
 **仍在**：
 
@@ -284,7 +287,6 @@ BatchTask {
 | --- | --- | --- |
 | 复制完成后「再复制一条」按钮实际执行 `close` | `app.js` 的 `openCopyDialog` 内 `#copyOk.onclick` 尾段 | 文案与行为不符，点了只会关闭 |
 | `withViewHidden()` 用局部布尔挂起视图，且 `finally` 无条件恢复 | `app.js` 与 `syncBounds` | 弹窗开着时拖窗口 / 切页签 → 原生视图压回弹窗上；快速双击「添加店铺」可使视图永久隐藏 |
-| `refreshStatus()` 串行 `await`，单店无 try/catch | `app.js` | 改价期间 `loadURL` 会让健康店铺显示为离线；IPC reject 会中断整轮 |
 | 删除店铺用 `window.confirm()` | `app.js` 的 `refreshMalls` 内点击处理 | 原生模态冻结界面，无法做输入店铺名确认 |
 | `listGoods` 硬编码取 30 条，`total` 未显示 | `main.js` `ops:list` / `app.js` | 用户以为看到全部，实际只有前 30 条 |
 | 日志时间戳源不一致 | `main.js` 的 `log()` 已改本地时间；`trace()` 仍是 UTC | 日志框正常，trace 文件里是 UTC |

@@ -13,9 +13,17 @@ const state = {
   poolSel: new Set(),
   last: null,
   sizeTpl: null,
+  // 店铺在线状态缓存：id -> { online: true|false|null, reason, at, checking }
+  // 列表重绘时先按缓存画，避免每次 refreshMalls 都把灯闪回灰色
+  mallStatus: new Map(),
 };
 
 // ------------------------------------------------------------------ 日志
+function updateLogMeta() {
+  const box = $('#log');
+  const count = $('#logCount');
+  if (count && box) count.textContent = box.children.length ? box.children.length + ' 条' : '';
+}
 function addLog(line) {
   const box = $('#log');
   const el = document.createElement('div');
@@ -26,14 +34,66 @@ function addLog(line) {
   box.appendChild(el);
   box.scrollTop = box.scrollHeight;
   while (box.children.length > 500) box.removeChild(box.firstChild);
+  updateLogMeta();
+  const panel = $('#logPanel');
+  const badge = $('#logBadge');
+  const logVisible = panel && panel.classList.contains('open') && $('#drawerLog') && $('#drawerLog').style.display !== 'none';
+  if (badge && !logVisible) {
+    const n = (parseInt(badge.textContent, 10) || 0) + 1;
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.style.display = 'inline-block';
+  }
 }
 const logOk = (m) => addLog({ level: 'ok', msg: m });
 const logErr = (m) => addLog({ level: 'err', msg: m });
 const logInfo = (m) => addLog({ level: 'info', msg: m });
 const logWarn = (m) => addLog({ level: 'warn', msg: m });
 
+function switchDrawer(kind) {
+  $$('.drawer-tab').forEach((t) => t.classList.toggle('active', t.dataset.drawer === kind));
+  const logBody = $('#drawerLog');
+  const resultBody = $('#drawerResult');
+  if (logBody) logBody.style.display = kind === 'log' ? 'flex' : 'none';
+  if (resultBody) resultBody.style.display = kind === 'result' ? 'flex' : 'none';
+  const count = $('#logCount');
+  if (count) count.style.display = kind === 'log' ? '' : 'none';
+  if (kind === 'log') {
+    const box = $('#log');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+}
+function setDrawer(kind, open) {
+  const panel = $('#logPanel');
+  if (!panel) return;
+  panel.classList.toggle('open', !!open);
+  if (open) {
+    switchDrawer(kind || 'log');
+    if ((kind || 'log') === 'log') {
+      const badge = $('#logBadge');
+      if (badge) { badge.style.display = 'none'; badge.textContent = '0'; }
+    }
+  }
+}
+$('#btnLogToggle').addEventListener('click', () => {
+  const panel = $('#logPanel');
+  const isOpenLog = panel.classList.contains('open') && $('#drawerLog').style.display !== 'none';
+  setDrawer('log', !isOpenLog);
+});
+$('#btnResultToggle').addEventListener('click', () => {
+  const panel = $('#logPanel');
+  const isOpenResult = panel.classList.contains('open') && $('#drawerResult').style.display !== 'none';
+  setDrawer('result', !isOpenResult);
+});
+$$('.drawer-tab').forEach((t) => t.addEventListener('click', () => switchDrawer(t.dataset.drawer)));
+$('#btnLogClose').addEventListener('click', () => setDrawer('log', false));
+
 window.pdd.onLog((l) => addLog(l));
-$('#btnClearLog').addEventListener('click', () => { $('#log').innerHTML = ''; });
+$('#btnClearLog').addEventListener('click', () => {
+  $('#log').innerHTML = '';
+  const badge = $('#logBadge');
+  if (badge) { badge.style.display = 'none'; badge.textContent = '0'; }
+  updateLogMeta();
+});
 
 const money = (fen) => (fen === undefined || fen === null ? '-' : (Number(fen) / 100).toFixed(2));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
@@ -114,9 +174,11 @@ function scheduleSync() {
 window.addEventListener('resize', scheduleSync);
 
 function setTab(name) {
+  // 「原始结果」不再是独立页签，收进左下角抽屉里
+  if (name === 'result') { setDrawer('result', true); return; }
   const prev = state.tab;
   state.tab = name;
-  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  $$('[data-tab]').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $$('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   const pb = $('#pane-browser');
   if (pb) pb.classList.toggle('browser-on', name === 'browser' && !!state.malls.length);
@@ -129,7 +191,7 @@ function setTab(name) {
   scheduleSync();
   if (name === 'collect') setTimeout(scheduleSync, 300);
 }
-$$('.tab').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)));
+$$('[data-tab]').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)));
 
 function setResult(obj) {
   $('#resultBox').textContent = JSON.stringify(obj, null, 2);
@@ -290,6 +352,10 @@ async function refreshMalls(selectId) {
 
   const ul = $('#mallList');
   ul.innerHTML = '';
+  // 已经删掉的店铺，状态缓存一起清掉
+  for (const id of [...state.mallStatus.keys()]) {
+    if (!state.malls.some((m) => m.id === id)) state.mallStatus.delete(id);
+  }
   if (!state.malls.length) {
     ul.innerHTML = '<li class="empty">还没有店铺，点右上「＋ 添加店铺」</li>';
   } else {
@@ -317,32 +383,91 @@ async function refreshMalls(selectId) {
         refreshStatus();
       });
       ul.appendChild(li);
+      paintMallStatus(m.id);
     }
   }
   const pb = $('#pane-browser');
   if (pb) pb.classList.toggle('browser-on', state.tab === 'browser' && !!state.malls.length);
   scheduleSync();
-  refreshStatus();
+  scheduleStatus(60);
 }
 
-let statusBusy = false;
-async function refreshStatus() {
-  if (statusBusy || !state.malls.length) return;
-  statusBusy = true;
-  try {
-    for (const m of state.malls) {
-      const r = await window.pdd.pingMall(m.id);
-      const dot = document.querySelector('#mallList li[data-id="' + m.id + '"] .st');
-      if (!dot) continue;
-      const online = !!(r && r.online);
-      dot.className = 'st ' + (online ? 'on' : 'off');
-      dot.title = online ? '在线（已登录）' : ('离线：' + ((r && r.reason) || '未登录'));
-    }
-  } finally {
-    statusBusy = false;
-  }
+// ------------------------------------------------------------------ 店铺在线指示灯
+// 旧实现：串行 await + 单店无 try/catch。只要有一个店铺在改价/加载，
+// ping 抛错就会中断整轮，后面的灯永远停在灰色；而且 refreshMalls 重绘
+// 列表会把所有灯重置成 unknown，看起来就是「指示灯坏了」。
+// 现在：所有店铺并发检测，单店失败不影响其他店，结果写进缓存并带时间戳。
+function paintMallStatus(id) {
+  const dot = document.querySelector('#mallList li[data-id="' + id + '"] .st');
+  if (!dot) return;
+  const s = state.mallStatus.get(id) || { online: null, reason: '未检测', at: 0, checking: false };
+  const known = s.online === true || s.online === false;
+  const cls = (!known && s.checking) ? 'checking'
+    : (s.online === true ? 'on' : (s.online === false ? 'off' : 'unknown'));
+  dot.className = 'st ' + cls;
+  let txt;
+  if (s.checking) {
+    txt = known
+      ? (s.online === true ? '在线（已登录）' : ('离线：' + (s.reason || '未登录'))) + '（检测中…）'
+      : '检测中…';
+  } else if (s.online === true) txt = '在线（已登录）';
+  else if (s.online === false) txt = '离线：' + (s.reason || '未登录');
+  else txt = s.reason ? ('待确认：' + s.reason) : '未检测';
+  if (s.at) txt += '  ·  ' + new Date(s.at).toLocaleTimeString();
+  dot.title = txt;
 }
-setInterval(refreshStatus, 25000);
+
+let statusSeq = 0;
+let statusTimer = 0;
+function scheduleStatus(delay) {
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { refreshStatus(); }, delay || 0);
+}
+
+async function refreshStatus() {
+  if (!state.malls.length) { state.mallStatus.clear(); return; }
+  const seq = ++statusSeq;
+  const list = state.malls.slice();
+
+  for (const m of list) {
+    const prev = state.mallStatus.get(m.id) || { online: null, reason: '未检测', at: 0 };
+    state.mallStatus.set(m.id, { ...prev, checking: true });
+    paintMallStatus(m.id);
+  }
+
+  await Promise.all(list.map(async (m) => {
+    let r = null, err = null;
+    try {
+      r = await window.pdd.pingMall(m.id);
+    } catch (e) {
+      err = e;
+    }
+    if (seq !== statusSeq) return; // 已有更新的一轮，丢弃这一轮的旧结果
+
+    const prev = state.mallStatus.get(m.id) || { online: null, reason: '' };
+    let online = null;
+    let reason = '';
+    if (err) {
+      reason = '检测异常：' + ((err && err.message) || err);
+    } else if (r && typeof r.online === 'boolean') {
+      online = r.online;
+      reason = r.reason || '';
+    } else {
+      reason = '接口没有返回结果';
+    }
+
+    // 页面导航 / 加载 / 未就绪属于「暂时测不到」，不是真的离线，
+    // 不能把健康店铺误报成红色。之前测到在线就保持绿色。
+    if (online === false && /未就绪|加载|超时|navigat|destroyed|Render frame|context/i.test(String(reason))) {
+      reason = '检测暂不可用（' + reason + '）';
+      online = prev.online === true ? true : null;
+    }
+
+    state.mallStatus.set(m.id, { online, reason, at: Date.now(), checking: false });
+    paintMallStatus(m.id);
+  }));
+}
+setInterval(() => { refreshStatus(); }, 25000);
 
 async function addMall() {
   const name = await askText({
@@ -357,27 +482,16 @@ async function addMall() {
     await refreshMalls(info.id);
     setTab('browser');
     logOk('店铺「' + name + '」已创建');
-    logInfo('在右侧浏览器里扫码登录，登录后点顶部「检测登录」');
+    logInfo('在右侧浏览器里扫码登录，登录后左侧指示灯会变绿');
   } catch (e) {
     logErr('创建失败：' + (e && e.message ? e.message : e));
   }
 }
 $('#btnAddMall').addEventListener('click', addMall);
 
-$('#chkView').addEventListener('change', (e) => {
-  state.visible = e.target.checked;
-  scheduleSync();
-});
 $('#btnReload').addEventListener('click', async () => {
   await window.pdd.reload();
   logInfo('已刷新页面');
-});
-$('#btnPing').addEventListener('click', async () => {
-  logInfo('检测登录态 ...');
-  const r = await window.pdd.ping();
-  if (r && r.ok && r.login) logOk('登录有效');
-  else if (r && r.__blocked) logWarn(r.error);
-  else logErr('未登录：' + JSON.stringify(r && (r.error || r.detail || r)));
 });
 
 // ------------------------------------------------------------------ 商品列表
@@ -468,6 +582,28 @@ async function refreshPool() {
   tbl.style.display = 'table';
   tb.innerHTML = '';
   for (const it of items) {
+    // 骨架预分配状态：采集时就算了「能不能上架、用哪个骨架」
+    const plans = it.skeletonPlans || null;
+    let skelCell = '<span style="color:#5c6a7e">未分配</span>';
+    if (plans && plans.length) {
+      const ok = plans.filter((p) => p.ready);
+      if (ok.length) {
+        const first = ok[0];
+        skelCell = '<span style="color:#3ddc84" title="' +
+          esc(ok.map((p) => p.mallName + '：' + p.count + ' 个候选').join(' / ')) +
+          '">✓ ' + esc(first.mallName || '') + ' 可上</span>' +
+          (ok.length > 1 ? ' <span style="color:#5c6a7e">+' + (ok.length - 1) + '</span>' : '');
+      } else if (plans.every((p) => p.allCooling)) {
+        skelCell = '<span style="color:#ffb454" title="' +
+          esc(plans.map((p) => p.mallName + '：' + p.advice).join('\n')) +
+          '">⏳ 骨架冷却中</span>';
+      } else {
+        skelCell = '<span style="color:#ff8080" title="' +
+          esc(plans.map((p) => p.mallName + '：' + p.advice).join('\n')) +
+          '">✗ 无同类骨架</span>';
+      }
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td><input type="checkbox" data-sel="' + esc(it.id) + '"' +
@@ -478,6 +614,7 @@ async function refreshPool() {
       '<td class="price">' + money(it.price) + '</td>' +
       '<td>' + (it.skus == null ? '-' : it.skus) + '</td>' +
       '<td>' + (it.images == null ? '-' : it.images) + '</td>' +
+      '<td class="skel">' + skelCell + '</td>' +
       '<td>' +
         '<button class="btn mini" data-act="chk" title="检测标题/价格/主图/规格">检测</button> ' +
         '<button class="btn mini" data-act="wm" title="给主图加水印，输出到本地">水印</button> ' +
@@ -491,7 +628,13 @@ async function refreshPool() {
     });
     tr.querySelector('[data-act="chk"]').addEventListener('click', () => openInspect(it));
     tr.querySelector('[data-act="wm"]').addEventListener('click', () => openWatermark(it));
-    tr.querySelector('[data-act="pub"]').addEventListener('click', () => publishFromPool(it));
+    tr.querySelector('[data-act="pub"]').addEventListener('click', () => {
+      if (!plans) {
+        // 老条目没有预分配，点了上架先补算一次（不阻塞，出错也不影响上架）
+        window.pdd.skeletonPreassign(it.id).then(() => refreshPool()).catch(() => {});
+      }
+      publishFromPool(it);
+    });
     tr.querySelector('[data-act="del"]').addEventListener('click', async () => {
       await window.pdd.poolRemove(it.id);
       state.poolSel.delete(it.id);
@@ -1116,7 +1259,7 @@ function renderFinance(data, month) {
     const m = (s.months || []).find((x) => x.month === cur);
     const tr = document.createElement('tr');
     if (s.error) {
-      tr.innerHTML = '<td>' + esc(s.mallName) + '</td><td colspan="6" style="color:#ef5b5b">' + esc(s.error) + '</td>';
+      tr.innerHTML = '<td>' + esc(s.mallName) + '</td><td colspan="7" style="color:#ef5b5b">' + esc(s.error) + '</td>';
     } else {
       tr.innerHTML =
         '<td>' + esc(s.mallName) + '</td>' +
@@ -1130,10 +1273,101 @@ function renderFinance(data, month) {
     sb.appendChild(tr);
   }
 
-  // 月度趋势
+  // 日账单（核心视图：逐日收支与余额，点行展开当日逐笔分类）
+  const dsec = $('#finDailySec');
+  const db = $('#finDailyBody');
+  const dnote = $('#finDailyNote');
+  const dailyRows = [];
+  for (const s of data.stores) {
+    for (const day of (Array.isArray(s.days) ? s.days : [])) dailyRows.push({ mall: s.mallName, day });
+  }
+  if (dailyRows.length) {
+    dsec.style.display = 'block';
+    db.innerHTML = '';
+    // 日期倒序（同日保持店铺顺序）
+    dailyRows.sort((a, b) => (a.day.date < b.day.date ? 1 : -1));
+    for (const { mall, day } of dailyRows) {
+      let inc = 0, exp = 0, n = 0;
+      for (const row of (day.rows || [])) {
+        const amt = row.amount || 0;
+        if (amt >= 0) inc += amt; else exp += amt;
+        n += 1;
+      }
+      const net = inc + exp;
+      const tr = document.createElement('tr');
+      tr.className = 'fin-day-hd';
+      tr.innerHTML =
+        '<td style="color:#7d8aa3">' + esc(mall) + '</td>' +
+        '<td>' + esc(day.date || '') + '</td>' +
+        '<td class="r income">' + fmtYuan(inc) + '</td>' +
+        '<td class="r expense">' + fmtYuan(exp) + '</td>' +
+        '<td class="r ' + (net >= 0 ? 'income' : 'expense') + '">' + fmtYuan(net) + '</td>' +
+        '<td class="r">' + fmtYuan(day.beginBalance) + '</td>' +
+        '<td class="r">' + fmtYuan(day.endBalance) + '</td>' +
+        '<td class="r fin-day-caret">▸ ' + n + ' 笔</td>';
+      // 展开明细行（整行点击切换）
+      const sub = document.createElement('tr');
+      sub.className = 'fin-day-sub';
+      sub.style.display = 'none';
+      const subTd = document.createElement('td');
+      subTd.colSpan = 8;
+      const rows = day.rows || [];
+      if (rows.length) {
+        let html = '<table class="fin-table fin-day-detail"><thead><tr>' +
+          '<th>入账时间</th><th>商户订单号</th><th>类型</th>' +
+          '<th class="r">金额</th><th>备注</th></tr></thead><tbody>';
+        for (const r of rows) {
+          const dot = '<span class="cat-dot" style="background:' + (r.color || '#b0b8c8') + '"></span>';
+          html +=
+            '<tr><td>' + esc(r.time || '') + '</td>' +
+            '<td>' + esc(r.orderSn || '') + '</td>' +
+            '<td>' + dot + '<span class="cat-name">' + esc(r.label || r.bizType || '—') + '</span></td>' +
+            '<td class="r ' + ((r.amount || 0) >= 0 ? 'income' : 'expense') + '">' + fmtYuan(r.amount) + '</td>' +
+            '<td style="color:#7d8aa3">' + esc(r.remark || '—') + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        subTd.innerHTML = html;
+      } else {
+        subTd.innerHTML = '<div style="color:#7d8aa3;padding:4px 2px">无明细</div>';
+      }
+      sub.appendChild(subTd);
+      tr.addEventListener('click', () => {
+        const open = sub.style.display === 'none';
+        sub.style.display = open ? '' : 'none';
+        const c = tr.querySelector('.fin-day-caret');
+        if (c) c.textContent = (open ? '▾ ' : '▸ ') + n + ' 笔';
+      });
+      db.appendChild(tr);
+      db.appendChild(sub);
+    }
+  } else {
+    dsec.style.display = 'none';
+  }
+
+  // 月度趋势：优先由日账单逐笔派生（日账单优先原则），缺失时回退月度汇总
   const mb = $('#finMonthBody');
   mb.innerHTML = '';
-  const months = Object.values(agg.months || {}).sort((a, b) => (a.month < b.month ? 1 : -1)).slice(0, 12);
+  const mnote = $('#finMonthNote');
+  const aggMonths = Object.values(agg.months || {}).sort((a, b) => (a.month < b.month ? 1 : -1));
+  let months = aggMonths.slice(0, 12);
+  if (dailyRows.length) {
+    const byMon = new Map();
+    for (const { day } of dailyRows) {
+      for (const row of (day.rows || [])) {
+        const ym = String(row.time || day.date || '').slice(0, 7);
+        if (!ym) continue;
+        if (!byMon.has(ym)) byMon.set(ym, { month: ym, income: 0, expense: 0, profit: 0 });
+        const b = byMon.get(ym);
+        const amt = row.amount || 0;
+        if (amt >= 0) b.income += amt; else b.expense += amt;
+      }
+    }
+    months = [...byMon.values()].sort((a, b) => (a.month < b.month ? 1 : -1));
+    for (const m of months) m.profit = m.income + m.expense;
+    mnote.textContent = '由日账单派生（最近 30 天窗口，跨月时为窗口内合计）';
+  } else {
+    mnote.textContent = '来自月度汇总';
+  }
   const maxAbs = Math.max(1, ...months.map((m) => Math.abs(m.income || 0)));
   for (const m of months) {
     const pct = Math.round((Math.abs(m.income || 0) / maxAbs) * 100);
@@ -1143,7 +1377,7 @@ function renderFinance(data, month) {
       '<td class="r income">' + fmtYuan(m.income) + '</td>' +
       '<td class="r expense">' + fmtYuan(m.expense) + '</td>' +
       '<td class="r ' + ((m.profit || 0) >= 0 ? 'income' : 'expense') + '">' + fmtYuan(m.profit) + '</td>' +
-      '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span></td>';
+      '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span>' + pct + '%</td>';
     mb.appendChild(tr);
   }
 
@@ -1170,21 +1404,27 @@ function renderFinance(data, month) {
     rsec.style.display = 'none';
   }
 
-  // 资金去向（有明细才显示）
-  const allDetail = [];
-  for (const s of data.stores) if (Array.isArray(s.detail)) allDetail.push.apply(allDetail, s.detail);
+  // 资金去向（有明细才显示）——按 main.js 已归类的 group 汇总，与日账单同一套分类
   const catSec = $('#finCatSec');
-  if (allDetail.length) {
-    const CAT_LABEL = {
-      '0020002': '交易退款', '0050002': '服务支出', '0070001': '保证金转账',
-      '0010001': '订单货款', '0030001': '提现', '0040001': '技术服务费',
-    };
+  const allCats = [];
+  for (const s of data.stores) {
+    if (Array.isArray(s.days)) {
+      for (const day of s.days) for (const row of (day.rows || [])) allCats.push(row);
+    } else if (Array.isArray(s.detail)) {
+      // 旧数据兜底：按业务描述 code 猜分组
+      for (const d of s.detail) {
+        const parts = String(d.desc || '').split('|');
+        const code = (parts[0] || '').trim();
+        const name = (parts[1] || '').trim() || d.bizType || '其他';
+        allCats.push({ code, group: code ? name.split('-')[0] : '其他', color: '#b0b8c8', amount: d.amount });
+      }
+    }
+  }
+  if (allCats.length) {
     const buckets = new Map();
-    for (const d of allDetail) {
-      const code = String(d.desc || '').split('|')[0].trim();
-      const name = (String(d.desc || '').split('|')[1] || '').trim() || d.bizType || '其他';
-      const key = CAT_LABEL[code] || name.split('-')[0] || '其他';
-      if (!buckets.has(key)) buckets.set(key, { name: key, amount: 0, count: 0 });
+    for (const d of allCats) {
+      const key = d.group || '其他';
+      if (!buckets.has(key)) buckets.set(key, { name: key, amount: 0, count: 0, color: d.color || '#b0b8c8' });
       const b = buckets.get(key);
       b.amount += d.amount || 0;
       b.count += 1;
@@ -1196,8 +1436,9 @@ function renderFinance(data, month) {
     for (const c of arr) {
       const pct = Math.round((Math.abs(c.amount) / totalAbs) * 100);
       const tr = document.createElement('tr');
+      const dot = '<span class="cat-dot" style="background:' + c.color + '"></span>';
       tr.innerHTML =
-        '<td>' + esc(c.name) + '</td>' +
+        '<td>' + dot + '<span class="cat-name">' + esc(c.name) + '</span></td>' +
         '<td class="r ' + (c.amount >= 0 ? 'income' : 'expense') + '">' + fmtYuan(c.amount) + '</td>' +
         '<td class="r">' + c.count + '</td>' +
         '<td><span class="fin-bar-pct" style="width:' + pct + 'px"></span>' + pct + '%</td>';
@@ -1212,14 +1453,14 @@ function renderFinance(data, month) {
   const sel = $('#finMonth');
   const curVal = sel.value || data.month;
   sel.innerHTML = '';
-  for (const m of months) {
+  for (const m of aggMonths) {
     const o = document.createElement('option');
     o.value = m.month;
     o.textContent = m.month;
     sel.appendChild(o);
   }
-  if (months.some((m) => m.month === curVal)) sel.value = curVal;
-  else if (months.length) sel.value = months[0].month;
+  if (aggMonths.some((m) => m.month === curVal)) sel.value = curVal;
+  else if (aggMonths.length) sel.value = aggMonths[0].month;
 }
 
 let financeBusy = false;
@@ -1234,7 +1475,7 @@ async function collectFinance(withDetail) {
   $('#finSub').textContent = '正在逐个店铺读取资金数据，请勿切换页签…';
   logInfo('开始采集资金数据' + (withDetail ? '（含明细）' : '') + ' ...');
   try {
-    const r = await window.pdd.financeCollect({ withDetail: !!withDetail, maxPages: 8 });
+    const r = await window.pdd.financeCollect({ withDetail: !!withDetail, maxPages: 20 });
     if (r && r.ok) {
       state.finance = r;
       renderFinance(r);
@@ -1294,6 +1535,54 @@ $('#btnFinRestrict') && $('#btnFinRestrict').addEventListener('click', async () 
 $('#finMonth') && $('#finMonth').addEventListener('change', (e) => {
   if (state.finance) renderFinance(state.finance, e.target.value);
 });
+
+// ------------------------------------------------------------------ 深色 / 浅色主题
+// 主题直接切换，不做整页颜色过渡（软渲染下容易看起来一块块跳）。
+// 只在主题按钮内部做一个小圆圈扩散，视觉有反馈但不会影响页面内容。
+const THEME_KEY = 'pdd.theme';
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+function updateThemeButton() {
+  const btn = $('#btnTheme');
+  if (!btn) return;
+  const light = currentTheme() === 'light';
+  btn.title = light ? '切换到深色模式' : '切换到浅色模式';
+  btn.setAttribute('aria-label', btn.title);
+  const label = btn.querySelector('.theme-label');
+  if (label) label.textContent = light ? '深色' : '浅色';
+}
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, theme); } catch (_) { /* ignore */ }
+  updateThemeButton();
+}
+function switchTheme(theme, originEl) {
+  if (theme === currentTheme()) return;
+  applyTheme(theme);
+  const btn = originEl || $('#btnTheme') || document.body;
+  const reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (!reduce && btn && btn.classList) {
+    btn.classList.remove('ripple');
+    void btn.offsetWidth;
+    btn.classList.add('ripple');
+    setTimeout(() => btn.classList.remove('ripple'), 480);
+  }
+}
+updateThemeButton();
+$('#btnTheme') && $('#btnTheme').addEventListener('click', (e) => {
+  switchTheme(currentTheme() === 'light' ? 'dark' : 'light', e.currentTarget);
+});
+
+// 自绘窗口按钮
+function winAction(action) {
+  if (window.pdd && typeof window.pdd.windowAction === 'function') {
+    window.pdd.windowAction(action);
+  }
+}
+$('#btnWinMin') && $('#btnWinMin').addEventListener('click', () => winAction('minimize'));
+$('#btnWinMax') && $('#btnWinMax').addEventListener('click', () => winAction('maximize'));
+$('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction('close'));
 
 // ------------------------------------------------------------------ 启动
 (async () => {
