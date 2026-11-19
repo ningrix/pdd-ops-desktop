@@ -48,13 +48,69 @@ function findDevice() {
 const ADB = findAdb();
 const DEV = findDevice();
 
+/** MuMu 的管理 CLI，用来在模拟器没开时自动拉起 */
+function findMumuCli() {
+  const cands = [
+    'D:\\Program Files\\Netease\\MuMu\\nx_main\\mumu-cli.exe',
+    'C:\\Program Files\\Netease\\MuMu\\nx_main\\mumu-cli.exe',
+  ];
+  for (const c of cands) if (fs.existsSync(c)) return c;
+  // 从 adb 路径反推
+  const i = ADB.indexOf('\\nx_device\\');
+  if (i > 0) {
+    const p = ADB.slice(0, i) + '\\nx_main\\mumu-cli.exe';
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function adb(args, opts) {
   const o = Object.assign({ encoding: 'utf8', timeout: 90000 }, opts || {});
+  if (o.quiet) { o.stdio = 'ignore'; delete o.encoding; }
   try { return execFileSync(ADB, ['-s', DEV].concat(args), o) || ''; }
   catch (e) { return '__ERR__' + String((e && (e.stderr || e.message)) || e).slice(0, 300); }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function deviceReady() {
+  const devs = String(adb(['devices'], { timeout: 15000 })).trim();
+  // adb devices 里出现 "<serial>\tdevice" 才算真就绪
+  return new RegExp('^' + DEV.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+device$', 'm').test(devs);
+}
+
+/**
+ * 确保模拟器在线。
+ * 隔天再跑时模拟器通常已经关了，这里自动用 mumu-cli 拉起并等开机，
+ * 省得用户每次手动开。
+ */
+async function ensureDevice(log) {
+  const say = log || (() => {});
+  adb(['connect', DEV], { timeout: 15000 });
+  if (deviceReady()) return { ok: true, started: false };
+
+  const cli = findMumuCli();
+  if (!cli) return { ok: false, error: '模拟器没连上，也找不到 mumu-cli 来自动启动。请手动打开 MuMu 模拟器' };
+
+  say('模拟器未运行，正在启动…');
+  try {
+    execFileSync(cli, ['control', '--vmindex', '0', 'launch'],
+      { encoding: 'utf8', timeout: 60000, stdio: 'ignore' });
+  } catch (e) {
+    return { ok: false, error: '启动模拟器失败：' + String((e && e.message) || e).slice(0, 160) };
+  }
+
+  // 等开机，最长 120 秒
+  for (let i = 0; i < 24; i++) {
+    await sleep(5000);
+    adb(['connect', DEV], { timeout: 10000 });
+    if (deviceReady()) {
+      await sleep(4000);   // 让桌面起来
+      return { ok: true, started: true, waitedMs: (i + 1) * 5000 };
+    }
+  }
+  return { ok: false, error: '模拟器启动后 120 秒内仍未就绪' };
+}
 
 /** 人类式点击：微滑代替 tap（有按下时长），坐标带抖动 */
 async function humanTap(x, y) {
@@ -279,7 +335,14 @@ function parseSku(nodes) {
 async function openProduct(gid) {
   const schemeUrl = `pinduoduo://com.xunmeng.pinduoduo/goods.html?goods_id=${gid}`;
   adb(['shell', 'am', 'force-stop', 'com.xunmeng.pinduoduo']);
-  await sleep(1200);
+  await sleep(1500);
+
+  // 先正常启动到首页，再发深链。
+  // 原因：拼多多冷启动会恢复「上一次打开的页面」，直接发深链时
+  // 上次的商品页可能先渲染出来，导致读到上一个商品的标题和价格（实测踩过）。
+  adb(['shell', 'monkey', '-p', 'com.xunmeng.pinduoduo', '-c', 'android.intent.category.LAUNCHER', '1'], { quiet: true });
+  await sleep(6000);
+
   adb(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', schemeUrl]);
 
   let nodes = [];
@@ -354,9 +417,14 @@ async function openSpecSheetSafe() {
  */
 async function collect(goodsIdOrUrl, opts) {
   const deep = !!(opts && opts.deep);
+  const onLog = (opts && opts.onLog) || (() => {});
   const mm = String(goodsIdOrUrl).match(/(\d{8,})/);
   const gid = mm ? mm[1] : null;
   if (!gid) throw new Error('给一个 goods_id 或包含 goods_id 的链接');
+
+  // 模拟器可能在休眠/关闭，先确保在线
+  const dev = await ensureDevice(onLog);
+  if (!dev.ok) return { ok: false, goodsId: gid, error: dev.error, notes: [dev.error] };
 
   const result = {
     ok: false,
@@ -370,6 +438,29 @@ async function collect(goodsIdOrUrl, opts) {
 
   const opened = await openProduct(gid);
   result.waitedMs = opened.waitedMs;
+
+  // 关键防呆：App 掉登录时会停在 LoginActivity，那里的文字（登录通知、地址等）
+  // 会被误当成商品标题。必须先确认当前是商品页，否则数据全部作废。
+  const focus = String(adb(['shell', 'dumpsys', 'window'], { timeout: 20000 })).match(/mCurrentFocus=Window\{[^}]*\}\s*([^\s\/]+)\/([^\s}]+)/);
+  const act = focus ? focus[2] : '';
+  if (/LoginActivity|login\./i.test(act)) {
+    result.ok = false;
+    result.error = '拼多多需要重新登录（App 停在登录页）。请在模拟器里登录一次，或直接忽略 App 数据只采网页';
+    result.notes.push(result.error);
+    return result;
+  }
+
+  // 未登录的另一副面孔：商品页显示「商品已售罄，推荐以下相似商品」。
+  // 这时页面里全是推荐商品，读到的标题/价格都是别人的 —— 必须判掉。
+  {
+    const head = opened.nodes.slice(0, 24).map((n) => n.text).join(' ');
+    if (/商品已售罄|已售罄|推荐以下相似商品|已下架/.test(head)) {
+      result.ok = false;
+      result.error = '拼多多未登录（页面显示「商品已售罄」）。请在模拟器里登录一次，或忽略 App 数据只采网页';
+      result.notes.push(result.error);
+      return result;
+    }
+  }
   Object.assign(result, {
     title: opened.detail.title,
     price: opened.detail.price,
@@ -382,7 +473,16 @@ async function collect(goodsIdOrUrl, opts) {
   if (mall) result.mallName = mall.text;
 
   if (!result.title) {
-    result.notes.push(`等了 ${result.waitedMs}ms 仍未读到标题，页面可能没加载完或深链未生效`);
+    result.ok = false;
+    result.error = `等了 ${result.waitedMs}ms 仍未读到标题，页面可能没加载完或深链未生效`;
+    result.notes.push(result.error);
+    return result;
+  }
+  // 登录通知 / 地址 / 活动文案 混进标题时判为可疑，宁可不用这条数据
+  if (/登录|收货地址|地址信息|月\d+日于|通知|已签收|去拼单|立即领取/.test(result.title)) {
+    result.ok = false;
+    result.error = 'App 读到的不是商品页（疑似停在登录页或通知页），这条 App 数据不可用';
+    result.notes.push(result.error + '：' + result.title.slice(0, 30));
     return result;
   }
 
@@ -477,4 +577,4 @@ if (require.main === module) {
   main().catch((e) => { console.error('失败:', e && e.message); process.exit(1); });
 }
 
-module.exports = { collect, parseNodes, parseDetail, parseSku, detectSkuSheet, ADB, DEV };
+module.exports = { collect, ensureDevice, parseNodes, parseDetail, parseSku, detectSkuSheet, ADB, DEV };

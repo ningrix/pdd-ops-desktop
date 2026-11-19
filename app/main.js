@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 const TRACE_FILE = path.join(os.tmpdir(), 'pdd-trace.log');
+const MALL_ZOOM = 0.7; // 店铺后台视图默认缩放：页面内容更紧凑，一屏看更多
 function trace(m) {
   try {
     fs.appendFileSync(TRACE_FILE, new Date().toISOString().slice(11, 23) + ' ' + m + '\n');
@@ -159,8 +160,11 @@ function createMall(name, forcedId) {
     const ua = view.webContents.getUserAgent().replace(/\sElectron\/[\d.]+/i, '');
     view.webContents.setUserAgent(ua);
   } catch (_) { /* ignore */ }
+  try { view.webContents.setZoomFactor(MALL_ZOOM); } catch (_) { /* ignore */ }
 
   view.webContents.on('did-finish-load', () => {
+    // 不同子域（mms / cashier）会重置 zoom，每次加载完成都重新压回 80%
+    try { view.webContents.setZoomFactor(MALL_ZOOM); } catch (_) { /* ignore */ }
     log('info', '[' + name + '] 加载完成: ' + view.webContents.getURL().slice(0, 90));
   });
   view.webContents.on('did-navigate', (_e, url) => {
@@ -337,10 +341,11 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f1420',
     title: '拼多多上货中台',
+    icon: path.join(__dirname, 'assets', 'icons', 'app-256.png'),
     // 隐藏系统标题栏，由 renderer 的 .topbar 兼任（消除白色横条 + 品牌重复）
     // 约束：height 必须等于 style.css 的 --topbar-h；color 必须等于 --topbar-bg
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#18213a', symbolColor: '#c9d4e6', height: 46 },
+    titleBarOverlay: { color: '#18213a', symbolColor: '#c9d4e6', height: 38 },
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1146,12 +1151,14 @@ ipcMain.handle('collector:read', async () => {
 });
 
 /**
- * 一键采集：App 拿价格/规格 + 网页拿主图/详情图/属性，合并后返回。
+ * 一键采集：网页（标题/主图/详情图/属性）+ App（价格/颜色/尺码），合并后返回。
  *
  * 两个来源分工的原因：
  *   · 网页端价格和规格是服务端打码的（实测任何 UA / 设备模拟都一样）
  *   · App 里的商品图在缓存里，导不出来
- * 所以必须两边一起用。网页那半段失败不算失败，只是没图。
+ *
+ * 容错：两边互为备份。App 不可用（模拟器没开、掉登录）时只用网页数据照样能采；
+ * 网页不可用时只用 App 数据。两个都失败才报错。
  */
 ipcMain.handle('collect:full', async (e, { target, deep }) => {
   const t = String(target || '').trim();
@@ -1159,22 +1166,84 @@ ipcMain.handle('collect:full', async (e, { target, deep }) => {
   const gid = (t.match(/(\d{8,})/) || [])[1];
   if (!gid) return { ok: false, error: '链接或ID里找不到商品编号（需要 8 位以上数字）' };
 
-  // ---------- 1. App：价格 / 颜色 / 尺码 ----------
-  const appR = await collectFromApp(gid, !!deep);
-  if (!appR || !appR.ok) return appR || { ok: false, error: 'App 采集失败' };
-  const data = appR.data;
-  const notes = (data.notes || []).slice();
-
-  // ---------- 2. 网页：主图 / 详情图 / 属性 ----------
+  const url = 'https://mobile.yangkeduo.com/goods.html?goods_id=' + gid;
+  const notes = [];
+  let app = null;
   let web = null;
+
+  // ---------- 1. App：价格 / 颜色 / 尺码（失败不阻塞） ----------
   try {
-    web = await collectFromWeb(data.url || ('https://mobile.yangkeduo.com/goods.html?goods_id=' + gid));
+    const r = await collectFromApp(gid, !!deep);
+    if (r && r.ok) app = r.data;
+    else notes.push('App 那半段没成功：' + ((r && r.error) || '未知'));
   } catch (ex) {
-    notes.push('网页补图失败：' + errText(ex));
+    notes.push('App 那半段异常：' + errText(ex));
   }
 
-  if (web && web.ok) {
-    // 网页的主图 + 详情图合并，去重
+  // ---------- 2. 网页：标题 / 主图 / 详情图 / 属性 ----------
+  try {
+    web = await collectFromWeb(url);
+    if (!web || !web.ok) {
+      notes.push('网页那半段没成功：' + ((web && (web.notes || [])[0]) || '读取失败'));
+      web = null;
+    }
+  } catch (ex) {
+    notes.push('网页那半段异常：' + errText(ex));
+    web = null;
+  }
+
+  // App 数据校验：和网页标题对不上说明读到了别的商品（冷启动恢复旧页面）
+  if (app && web && app.title && web.title) {
+    const norm = (s) => String(s).replace(/[\s\p{P}]/gu, '').slice(0, 12);
+    const a = norm(app.title);
+    const b = norm(web.title);
+    let same = a === b;
+    if (!same) {
+      // 前 8 个字有交集也算同一个商品（标题可能有细微差异）
+      let hit = 0;
+      for (const ch of a) if (b.indexOf(ch) >= 0) hit++;
+      same = hit >= Math.min(8, Math.ceil(a.length * 0.7));
+    }
+    if (!same) {
+      notes.push('App 读到的商品和网页不一致（' + String(app.title).slice(0, 14) +
+                 ' ≠ ' + String(web.title).slice(0, 14) + '），已丢弃 App 数据');
+      app = null;
+    }
+  }
+
+  if (!app && !web) {
+    return {
+      ok: false,
+      error: notes[0] || '两边都没采到数据',
+      notes,
+    };
+  }
+
+  // ---------- 3. 合并 ----------
+  const data = {
+    ok: true,
+    goodsId: gid,
+    url,
+    // 标题优先用网页端：它是按 goods_id 直接打开的，最权威；App 可能停在别的页面
+    title: (web && web.title) || (app && app.title) || null,
+    price: (app && app.price) || null,
+    marketPrice: (app && app.marketPrice) || null,
+    sold: (app && app.sold) || null,
+    mallName: (app && app.mallName) || null,
+    colors: (app && app.colors) || [],
+    sizes: (app && app.sizes) || [],
+    prices: (app && app.prices) || [],
+    skuCount: (app && app.skuCount) || 0,
+    gallery: [],
+    detailGallery: [],
+    property: [],
+    catNames: [],
+    catId: null,
+    sources: { app: !!app, web: !!web },
+    notes,
+  };
+
+  if (web) {
     const imgs = [];
     const seen = new Set();
     for (const u of [].concat(web.gallery || [], web.detailGallery || [])) {
@@ -1185,15 +1254,16 @@ ipcMain.handle('collect:full', async (e, { target, deep }) => {
     data.gallery = imgs.slice(0, 20);
     data.detailGallery = (web.detailGallery || []).slice(0, 30);
     data.property = web.property || [];
-    data.catNames = web.cats || data.catNames || [];
+    data.catNames = web.cats || [];
     data.catId = web.catId || null;
-    if (!data.title && web.title) data.title = web.title;
-    if (!data.price && web.price) data.price = web.price;
-    notes.push('主图 ' + (data.gallery || []).length + ' 张来自网页端');
-  } else {
-    notes.push('没取到图片（网页端未登录或读取失败），可以稍后单独补');
   }
 
+  if (!app) {
+    notes.push('这次没有价格和颜色/尺码（App 那半段没跑通）。价格上架时自己定，颜色尺码可以手动补');
+  }
+  if (!web) {
+    notes.push('这次没有图片（网页那半段没跑通），可以稍后单独补');
+  }
   data.notes = notes;
   return { ok: true, data };
 });
@@ -1613,7 +1683,7 @@ async function gotoCashierBills(mall) {
 }
 
 ipcMain.handle('finance:collect', async (_e, opts) => {
-  const o = Object.assign({ withDetail: false, maxPages: 8 }, opts || {});
+  const o = Object.assign({ withDetail: false, maxPages: 20 }, opts || {});
   const list = Array.from(malls.values());
   if (!list.length) return { ok: false, error: '还没有店铺' };
 
@@ -1653,8 +1723,17 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       const mon = await runInMallView(mall, cashierOps.readMonthSummary(), 40000);
       if (mon && mon.ok) item.months = mon.months;
 
-      // ④ 可选：读货款明细（分类要用）
+      // ④ 可选：读货款明细（分类要用）+ 日汇总逐日（余额权威来源）
       if (o.withDetail) {
+        // ④a 先切「日汇总」，设最近 30 天范围（明细页/日汇总页共用同一个日期筛选）
+        const dt = await runInMallView(mall, cashierOps.clickDailyTab(), 30000);
+        if (dt && dt.ok) {
+          const rg = await runInMallView(mall, cashierOps.setRange30d(), 20000);
+          const ds = await runInMallView(mall, cashierOps.readDailySummary(), 20000);
+          if (ds && ds.ok && ds.days && ds.days.length) item.daily = ds.days;
+        }
+
+        // ④b 切「货款明细」逐页读（分类明细，按入账时间归到对应日）
         const tab = await runInMallView(mall, cashierOps.clickDetailTab(), 30000);
         if (tab && tab.ok) {
           const all = [];
@@ -1669,6 +1748,30 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
             await sleep(1800);
           }
           item.detail = all;
+
+          // 按入账时间（天）+ 业务描述 code 归组：日账单分类明细
+          const byDay = {};
+          for (const row of all) {
+            const day = (row.time || '').slice(0, 10);
+            if (!day) continue;
+            if (!byDay[day]) byDay[day] = { date: day, rows: [] };
+            const desc = row.desc || '';
+            const code = (desc.split('|')[0] || '').trim();
+            const cat = cashierOps.catOf(code);
+            byDay[day].rows.push({
+              time: row.time, orderSn: row.orderSn,
+              code, label: cat.label, group: cat.group, color: cat.color,
+              bizType: row.bizType, amount: row.amount, remark: row.remark, desc,
+            });
+          }
+          // 把 ④a 的日汇总余额合并进来（明细没有余额列，期末余额唯一来源）
+          if (item.daily) {
+            for (const d of item.daily) {
+              if (byDay[d.date]) byDay[d.date].beginBalance = d.beginBalance;
+              if (byDay[d.date]) byDay[d.date].endBalance = d.endBalance;
+            }
+          }
+          item.days = Object.keys(byDay).sort().map(k => byDay[k]);
         }
       }
     } catch (e) {
