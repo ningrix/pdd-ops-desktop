@@ -29,7 +29,10 @@ trace('switches applied');
 //   · Partitions 目录建不了 → 登录态不落盘 → 每次都要重新扫码
 // 因此把所有数据放到应用自己目录下，绕开这个限制，同时实现"绿色便携"。
 const DATA_DIR = path.join(__dirname, 'userdata');
+const FINANCE_DIR = path.join(DATA_DIR, 'finance');
+const FINANCE_SNAPSHOT_DIR = path.join(FINANCE_DIR, 'snapshots');
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* ignore */ }
+try { fs.mkdirSync(FINANCE_SNAPSHOT_DIR, { recursive: true }); } catch (_) { /* ignore */ }
 app.setPath('userData', DATA_DIR);
 try { app.setPath('sessionData', DATA_DIR); } catch (_) { /* ignore */ }
 trace('userData -> ' + DATA_DIR);
@@ -85,6 +88,80 @@ function saveMalls() {
   } catch (e) {
     lastSaveError = String((e && e.message) || e);
     trace('saveMalls FAIL: ' + lastSaveError);
+  }
+}
+
+// ---------------------------------------------------------------- 资金快照
+function financeDay(ts) {
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function financeDataDate(stores) {
+  const dates = [];
+  for (const s of (stores || [])) {
+    for (const d of (s.daily || [])) if (d && d.date) dates.push(String(d.date).slice(0, 10));
+    for (const d of (s.days || [])) if (d && d.date) dates.push(String(d.date).slice(0, 10));
+  }
+  return dates.length ? dates.sort().pop() : null;
+}
+
+function saveFinanceSnapshot(data) {
+  try {
+    const at = Number(data.at) || Date.now();
+    const day = financeDay(at);
+    const dataDate = financeDataDate(data.stores || []);
+    const payload = {
+      version: 1,
+      collectedAt: at,
+      dataDate,
+      month: data.month || new Date(at).toISOString().slice(0, 7),
+      aggregate: data.aggregate || null,
+      stores: data.stores || [],
+    };
+    const snapshotFile = path.join(FINANCE_SNAPSHOT_DIR, 'snapshot-' + day + '.json');
+    fs.writeFileSync(snapshotFile, JSON.stringify(payload, null, 2), 'utf8');
+    const index = {
+      version: 1,
+      lastCollectedAt: at,
+      dataDate,
+      dataMonth: data.month || new Date(at).toISOString().slice(0, 7),
+      storeCount: (data.stores || []).length,
+      okCount: (data.stores || []).filter((s) => !s.error).length,
+      file: path.basename(snapshotFile),
+      stores: (data.stores || []).map((s) => ({
+        mallId: s.mallId,
+        mallName: s.mallName,
+        account: s.account || null,
+        error: s.error || null,
+        balance: s.balance ? {
+          cash: s.balance.cash,
+          cashAvailable: s.balance.cashAvailable,
+          market: s.balance.market,
+          deposit: s.balance.deposit,
+        } : null,
+      })),
+    };
+    fs.writeFileSync(path.join(FINANCE_DIR, 'index.json'), JSON.stringify(index, null, 2), 'utf8');
+    return { ok: true, file: snapshotFile, index };
+  } catch (e) {
+    trace('saveFinanceSnapshot FAIL: ' + ((e && e.message) || e));
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+function readFinanceSnapshot() {
+  try {
+    const indexFile = path.join(FINANCE_DIR, 'index.json');
+    if (!fs.existsSync(indexFile)) return { ok: false, error: '还没有资金快照' };
+    const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    const file = path.join(FINANCE_SNAPSHOT_DIR, index.file || '');
+    if (!index.file || !fs.existsSync(file)) return { ok: false, index, error: '快照文件不存在' };
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return { ok: true, index, data };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
   }
 }
 
@@ -520,7 +597,7 @@ ipcMain.handle('pool:detail', (_e, id) => pool.get(id));
 /**
  * 从采集箱上架到指定店铺（跨店）—— 业务实现，IPC 与批量队列共用
  */
-async function poolPublishImpl({ id, mallId, stock, factor }) {
+async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
   const it = pool.get(id);
   if (!it) return { ok: false, error: '采集箱里没有这一条' };
 
@@ -931,6 +1008,29 @@ async function poolPublishImpl({ id, mallId, stock, factor }) {
   }
 
   await sleep(1500);
+
+  // dryRun：把草稿填好就停，不提交。
+  // 用途：验收时先确认标题/图/价格/规格都对，再决定要不要真上架。
+  // 不传这个参数时行为完全不变（照旧提交）。
+  if (dryRun) {
+    steps.push('dryRun：已停在提交前，草稿在目标店草稿箱');
+    return {
+      ok: true,
+      dryRun: true,
+      steps,
+      result: {
+        goods_id: draft.goods_id,
+        commit_id: useCommit,
+        title: it.title,
+        from: it.sourceMallName,
+        to: target.name,
+        skus: (body && body.skus) ? body.skus.length : null,
+        galleries: (body && body.galleries) ? body.galleries.length : null,
+        groupPrice: body ? body.group_price : null,
+        marketPrice: body ? body.market_price : null,
+      },
+    };
+  }
 
   const sub = await runInMall((o) => o.submitDraft(draft.goods_id, useCommit));
   steps.push('提交: ' + ((sub && sub.ok) ? 'ok' : JSON.stringify(sub && sub.detail)));
@@ -1827,9 +1927,8 @@ ipcMain.handle('bill:openFolder', () => {
 const cashierOps = require('./lib/cashier');
 
 /** 在指定店铺视图上执行一段注入脚本 */
-async function runInMallView(mall, js, timeoutMs) {
+async function runInWebContents(wc, js, timeoutMs) {
   return withPlatform('cashier', async () => {
-    const wc = mall.view.webContents;
     const deadline = Date.now() + (timeoutMs || 30000);
     while (Date.now() < deadline) {
       try {
@@ -1844,9 +1943,35 @@ async function runInMallView(mall, js, timeoutMs) {
   }, (timeoutMs || 30000) + 10000);
 }
 
-/** 把某个店铺导航到 cashier 的资金中心（走 mms 的 ticket 跳转） */
-async function gotoCashierFinance(mall) {
-  const wc = mall.view.webContents;
+async function runInMallView(mall, js, timeoutMs) {
+  return runInWebContents(mall.view.webContents, js, timeoutMs);
+}
+
+/** 资金采集专用隐藏窗口：与店铺共享 partition，但不碰用户当前页面 */
+function createHiddenMallWindow(mall) {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1200,
+    height: 800,
+    skipTaskbar: true,
+    webPreferences: {
+      partition: mall.partition,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+  try {
+    const ua = win.webContents.getUserAgent().replace(/\sElectron\/[\d.]+/i, '');
+    win.webContents.setUserAgent(ua);
+    win.webContents.setAudioMuted(true);
+  } catch (_) { /* ignore */ }
+  return win;
+}
+
+/** 把某个 webContents 导航到 cashier 的资金中心（走 mms 的 ticket 跳转） */
+async function gotoCashierFinance(wc) {
   const r = await withPlatform('gotoCashier', async () => {
     try {
       await wc.loadURL('https://mms.pinduoduo.com/cashier/finance/balance');
@@ -1864,8 +1989,7 @@ async function gotoCashierFinance(mall) {
   return r;
 }
 
-async function gotoCashierBills(mall) {
-  const wc = mall.view.webContents;
+async function gotoCashierBills(wc) {
   return withPlatform('gotoBills', async () => {
     try { await wc.loadURL('https://cashier.pinduoduo.com/main/bills?__app_code=113'); } catch (_) {}
     for (let i = 0; i < 30; i++) {
@@ -1886,21 +2010,23 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
   const results = [];
   for (const mall of list) {
     const item = { mallId: mall.id, mallName: mall.name };
+    let temp = null;
     try {
-      activeId = mall.id;
-      attachView();
-      await sleep(1500);
+      // 用独立隐藏窗口采集，不劫持用户当前商品编辑页（布丁2 的 goods_add beforeunload 会拦截 loadURL）
+      temp = createHiddenMallWindow(mall);
+      const wc = temp.webContents;
+      await sleep(500);
 
       // ① 资金中心 → 读余额和账号
-      const nav = await gotoCashierFinance(mall);
+      const nav = await gotoCashierFinance(wc);
       if (!nav.ok) {
         item.error = '打不开资金中心（' + (nav.url || '超时') + '）';
         results.push(item);
         continue;
       }
-      const acc = await runInMallView(mall, cashierOps.readAccount(), 20000);
+      const acc = await runInWebContents(wc, cashierOps.readAccount(), 20000);
       item.account = (acc && acc.account) || null;
-      const bal = await runInMallView(mall, cashierOps.readBalance(), 20000);
+      const bal = await runInWebContents(wc, cashierOps.readBalance(), 20000);
       item.balance = bal && bal.ok ? bal : null;
       // 账号名兜底：从余额页原文里再抠一次（readAccount 有时赶在渲染前）
       if (!item.account && bal && bal._raw) {
@@ -1910,36 +2036,36 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
 
 
       // ③ 对账中心 → 月汇总
-      const b2 = await gotoCashierBills(mall);
+      const b2 = await gotoCashierBills(wc);
       if (!b2.ok) {
         item.error = '打不开对账中心';
         results.push(item);
         continue;
       }
-      const mon = await runInMallView(mall, cashierOps.readMonthSummary(), 40000);
+      const mon = await runInWebContents(wc, cashierOps.readMonthSummary(), 40000);
       if (mon && mon.ok) item.months = mon.months;
 
       // ④ 可选：读货款明细（分类要用）+ 日汇总逐日（余额权威来源）
       if (o.withDetail) {
         // ④a 先切「日汇总」，设最近 30 天范围（明细页/日汇总页共用同一个日期筛选）
-        const dt = await runInMallView(mall, cashierOps.clickDailyTab(), 30000);
+        const dt = await runInWebContents(wc, cashierOps.clickDailyTab(), 30000);
         if (dt && dt.ok) {
-          const rg = await runInMallView(mall, cashierOps.setRange30d(), 20000);
-          const ds = await runInMallView(mall, cashierOps.readDailySummary(), 20000);
+          const rg = await runInWebContents(wc, cashierOps.setRange30d(), 20000);
+          const ds = await runInWebContents(wc, cashierOps.readDailySummary(), 20000);
           if (ds && ds.ok && ds.days && ds.days.length) item.daily = ds.days;
         }
 
         // ④b 切「货款明细」逐页读（分类明细，按入账时间归到对应日）
-        const tab = await runInMallView(mall, cashierOps.clickDetailTab(), 30000);
+        const tab = await runInWebContents(wc, cashierOps.clickDetailTab(), 30000);
         if (tab && tab.ok) {
           const all = [];
           for (let p = 0; p < o.maxPages; p++) {
-            const pg = await runInMallView(mall, cashierOps.readDetailPage(), 25000);
+            const pg = await runInWebContents(wc, cashierOps.readDetailPage(), 25000);
             if (!pg || !pg.ok) break;
             if (!pg.rows || !pg.rows.length) break;
             all.push.apply(all, pg.rows);
             if (pg.total && all.length >= pg.total) break;
-            const nx = await runInMallView(mall, cashierOps.clickNextPage(), 15000);
+            const nx = await runInWebContents(wc, cashierOps.clickNextPage(), 15000);
             if (!nx || !nx.ok) break;
             await sleep(1800);
           }
@@ -1972,9 +2098,13 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       }
     } catch (e) {
       item.error = String((e && e.message) || e);
+    } finally {
+      if (temp) {
+        try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ }
+      }
     }
     results.push(item);
-    await sleep(1200);
+    await sleep(300);
   }
 
   // 汇总
@@ -1997,8 +2127,15 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
     }
   }
 
-  return { ok: true, at: Date.now(), month: curMonth, aggregate: agg, stores: results };
+  const result = { ok: true, at: Date.now(), month: curMonth, aggregate: agg, stores: results };
+  const saved = saveFinanceSnapshot(result);
+  result.snapshot = saved.ok ? saved.index : null;
+  if (!saved.ok) result.snapshotError = saved.error || '快照保存失败';
+  return result;
 });
+
+/** 读取上次保存的资金快照（应用重启后仍可展示） */
+ipcMain.handle('finance:last', () => readFinanceSnapshot());
 
 // ---------------------------------------------------------------- 尺码表模板
 const SIZE_TPL_FILE = path.join(__dirname, 'data', 'size-templates.json');
