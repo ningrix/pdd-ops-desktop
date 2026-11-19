@@ -584,24 +584,25 @@ async function refreshPool() {
   for (const it of items) {
     // 骨架预分配状态：采集时就算了「能不能上架、用哪个骨架」
     const plans = it.skeletonPlans || null;
-    let skelCell = '<span style="color:#5c6a7e">未分配</span>';
+    let skelCell = '<span style="color:#5c6a7e" title="这条商品还没算过。点上架会自动补算">— 未算</span>';
     if (plans && plans.length) {
       const ok = plans.filter((p) => p.ready);
+      const detail = plans.map((p) => {
+        const head = (p.mallName || '店铺') + '：';
+        if (p.ready) return head + p.count + ' 个骨架可用';
+        if (p.allCooling) return head + '骨架都在冷却期，要等';
+        if (!p.count) return head + '没有同类目的商品';
+        return head + (p.advice || '不可用');
+      }).join('\n');
       if (ok.length) {
-        const first = ok[0];
-        skelCell = '<span style="color:#3ddc84" title="' +
-          esc(ok.map((p) => p.mallName + '：' + p.count + ' 个候选').join(' / ')) +
-          '">✓ ' + esc(first.mallName || '') + ' 可上</span>' +
-          (ok.length > 1 ? ' <span style="color:#5c6a7e">+' + (ok.length - 1) + '</span>' : '');
+        skelCell = '<span style="color:#3ddc84" title="' + esc(detail) + '">✓ 可上</span>';
       } else if (plans.every((p) => p.allCooling)) {
-        skelCell = '<span style="color:#ffb454" title="' +
-          esc(plans.map((p) => p.mallName + '：' + p.advice).join('\n')) +
-          '">⏳ 骨架冷却中</span>';
+        skelCell = '<span style="color:#ffb454" title="' + esc(detail) + '">⏳ 冷却中</span>';
       } else {
-        skelCell = '<span style="color:#ff8080" title="' +
-          esc(plans.map((p) => p.mallName + '：' + p.advice).join('\n')) +
-          '">✗ 无同类骨架</span>';
+        skelCell = '<span style="color:#ff8080" title="' + esc(detail) + '">✗ 缺同类</span>';
       }
+    } else if (it.skeletonAdvice) {
+      skelCell = '<span style="color:#ff8080" title="' + esc(it.skeletonAdvice) + '">✗ 无类目</span>';
     }
 
     const tr = document.createElement('tr');
