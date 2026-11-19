@@ -1043,52 +1043,92 @@ ipcMain.handle('shell:openPath', (_e, p) => {
   }
 });
 
+/** 从启动参数里取调试端口（restart-app.ps1 传 --remote-debugging-port=N） */
+function debugPort() {
+  const a = process.argv.find((x) => /^--remote-debugging-port=/.test(x));
+  const n = a ? Number(a.split('=')[1]) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 /**
  * 把本地文件塞进页面的 <input type="file">。
  *
- * 为什么必须用调试器：出于安全，页面的 JS **不能**给 file input 赋值
- * （`el.files = ...` 会被忽略，也没有其它 API）。只有 CDP 的
- * `DOM.setFileInputFiles` 能设置真实文件路径，浏览器随后按正常流程上传。
+ * 为什么最终用 Playwright 而不是自己拼 CDP：
  *
- * 这是「空白新建商品」能自动化的关键一步：先把源商品的图下载到本地，
- * 再用这个接口喂给发布页的上传控件。
+ * 实测了三种做法，都在同一个干净页面、同一批图（6 张有效 JPEG）上对比：
+ *   ① CDP `DOM.setFileInputFiles`                → 上传计数始终 (0/10)
+ *   ② 页面里 DataTransfer + new File + 派发事件  → 赋值成功（el.files.length=6），计数仍 (0/10)
+ *   ③ Playwright `locator.setInputFiles(路径)`   → 计数变成 (6/10)，并真的发出了
+ *      file.pinduoduo.com 的上传请求
+ *
+ * ② 的 File 对象尺寸/类型都正确，说明不是文件问题；差别在于 Playwright 派发事件的方式
+ * （composed: true 等细节）以及它自己定位元素的方式。继续猜不如直接用能跑通的那个。
+ *
+ * 依赖说明：playwright-core 是纯 JS，不需要编译器，也不会下载浏览器
+ * （用 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 安装）；这里只用 connectOverCDP 连本应用自己的调试端口。
  */
 async function setFileInputFiles(wc, selector, filePaths) {
+  const sel = selector || 'input[type=file]';
   const files = (Array.isArray(filePaths) ? filePaths : []).filter((p) => p && fs.existsSync(p));
   if (!files.length) return { ok: false, error: '没有可用的本地文件' };
 
-  const dbg = wc.debugger;
-  let attached = false;
+  const port = debugPort();
+  if (!port) {
+    return { ok: false, error: '应用启动时没开调试端口（--remote-debugging-port），无法自动上传图片' };
+  }
+  let chromium;
   try {
-    if (!dbg.isAttached()) { dbg.attach('1.3'); attached = true; }
+    // Playwright 连上后会在系统临时目录里建 playwright-artifacts-* ，
+    // 但本环境下 %TEMP% 不可写（EPERM，和当年 %APPDATA% 是同一类问题）。
+    // Node 的 os.tmpdir() 读的是这几个环境变量，指到应用自己的数据目录即可。
+    const tmp = path.join(DATA_DIR, 'tmp');
+    try { fs.mkdirSync(tmp, { recursive: true }); } catch (_) { /* ignore */ }
+    process.env.TEMP = tmp;
+    process.env.TMP = tmp;
+    process.env.TMPDIR = tmp;
+
+    chromium = require('playwright-core').chromium;
   } catch (e) {
-    return { ok: false, error: '调试器附加失败: ' + e.message };
+    return { ok: false, error: '没装 playwright-core，无法自动上传图片' };
   }
 
+  // 给目标 webContents 打一个唯一标记，用来在 Playwright 里认出是哪一个页面
+  // （两个店铺视图可能同时停在同一个 URL，只靠 URL 会认错）
+  const marker = 'up_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   try {
-    await dbg.sendCommand('DOM.enable');
-    const doc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
-    const rootId = doc && doc.root && doc.root.nodeId;
-    if (!rootId) return { ok: false, error: '拿不到 document 根节点' };
-
-    let nodeId = null;
-    if (selector) {
-      const q = await dbg.sendCommand('DOM.querySelector', { nodeId: rootId, selector });
-      nodeId = q && q.nodeId;
-    }
-    if (!nodeId) {
-      // 退回：按 type=file 找第一个
-      const q2 = await dbg.sendCommand('DOM.querySelector', { nodeId: rootId, selector: 'input[type=file]' });
-      nodeId = q2 && q2.nodeId;
-    }
-    if (!nodeId) return { ok: false, error: '页面上找不到 file input' };
-
-    await dbg.sendCommand('DOM.setFileInputFiles', { nodeId, files });
-    return { ok: true, count: files.length, files: files.map((p) => path.basename(p)) };
+    await wc.executeJavaScript('window.__pddUpMarker = ' + JSON.stringify(marker) + '; 1', true);
   } catch (e) {
-    return { ok: false, error: 'setFileInputFiles 失败: ' + ((e && e.message) || e) };
+    return { ok: false, error: '标记目标页面失败：' + ((e && e.message) || e) };
+  }
+
+  let browser = null;
+  try {
+    browser = await chromium.connectOverCDP('http://127.0.0.1:' + port);
+
+    let target = null;
+    for (const c of browser.contexts()) {
+      for (const p of c.pages()) {
+        try {
+          const hit = await p.evaluate((m) => window.__pddUpMarker === m, marker);
+          if (hit) { target = p; break; }
+        } catch (_) { /* 跨域页面 evaluate 会抛，忽略 */ }
+      }
+      if (target) break;
+    }
+    if (!target) return { ok: false, error: '在 Playwright 里找不到对应的页面' };
+
+    // 等控件可交互（页面刚渲染完时 file input 可能还没挂上）
+    const loc = target.locator(sel).first();
+    await loc.waitFor({ state: 'attached', timeout: 20000 });
+    await loc.setInputFiles(files, { timeout: 40000 });
+
+    // 清掉标记
+    try { await target.evaluate(() => { try { delete window.__pddUpMarker; } catch (e) {} }); } catch (_) {}
+
+    return { ok: true, count: files.length, via: 'playwright', files: files.map((p) => path.basename(p)) };
+  } catch (e) {
+    return { ok: false, error: '上传失败：' + ((e && e.message) || e) };
   } finally {
-    if (attached) { try { dbg.detach(); } catch (_) { /* ignore */ } }
+    if (browser) { try { await browser.close(); } catch (_) { /* 只是断开连接，不关应用 */ } }
   }
 }
 
