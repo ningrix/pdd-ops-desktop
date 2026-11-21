@@ -23,6 +23,7 @@ const state = {
   appealScenes: [],
   appealTemplates: [],
   rtTab: 'list',
+  triage: null,
   riskData: null,
   // 店铺在线状态缓存：id -> { online: true|false|null, reason, at, checking }
   // 列表重绘时先按缓存画，避免每次 refreshMalls 都把灯闪回灰色
@@ -2010,9 +2011,6 @@ function renderReturns(data) {
         '<div class="rt-sign rt-sign-' + signCls + '"' +
           (r.traceNode ? ' title="' + esc((r.traceNode || '') + (r.traceTime ? ' · ' + r.traceTime : '')) + '"' : '') + '>' +
           esc(r.signedText || '未知') +
-          (r.signed === true && r.returnSn
-            ? '<span class="rt-track">' + esc((r.carrier ? r.carrier + ' ' : '') + r.returnSn) + '</span>'
-            : '') +
         '</div></td>' +
       '<td><input class="rt-sn' + (r.returnSn ? '' : ' empty') + '" value="' + esc(r.returnSn || '') + '" placeholder="填退货单号" ' +
         'data-order-sn="' + esc(r.orderSn) + '" /></td>' +
@@ -2118,14 +2116,10 @@ function renderTemplates() {
     for (const t of shown) {
       const card = document.createElement('div');
       card.className = 'tpl-card';
-      const stat = t.uses
-        ? '用 ' + t.uses + ' 次 · 成功 ' + (t.won || 0) + ' · 失败 ' + (t.lost || 0)
-        : '未用过';
       card.innerHTML =
         '<div class="tpl-card-h">'
           + '<span class="tpl-title" title="' + esc(t.title) + '">' + esc(t.title) + '</span>'
           + '<span class="tpl-kind ' + esc(t.kind || 'reject') + '">' + esc(TPL_KIND_TEXT[t.kind] || '驳回') + '</span>'
-          + '<span class="tpl-stat">' + esc(stat) + '</span>'
         + '</div>'
         + '<div class="tpl-body" data-body>' + esc(t.body || '') + '</div>'
         + ((t.evidence || []).length
@@ -2135,9 +2129,6 @@ function renderTemplates() {
           : '')
         + '<div class="tpl-actions">'
           + '<button class="btn primary" data-act="copy">复制正文</button>'
-          + '<button class="btn" data-act="copyev">复制清单</button>'
-          + '<button class="btn" data-act="won">记成功</button>'
-          + '<button class="btn" data-act="lost">记失败</button>'
           + '<button class="btn" data-act="edit">编辑</button>'
           + '<button class="btn ghost" data-act="del">删除</button>'
         + '</div>';
@@ -2193,25 +2184,12 @@ async function copyText(text) {
 }
 
 async function onTplAction(act, t) {
-  if (act === 'copy' || act === 'copyev') {
-    const text = act === 'copy'
-      ? String(t.body || '')
-      : (t.evidence || []).map((e, i) => (i + 1) + '. ' + e).join('\n');
+  if (act === 'copy') {
+    const text = String(t.body || '');
     if (!text.trim()) { logWarn('这条没有内容可复制'); return; }
     const ok = await copyText(text);
-    if (ok) {
-      logOk('已复制' + (act === 'copy' ? '正文' : '举证清单') + '：' + String(t.title || '').slice(0, 20));
-      if (act === 'copy') window.pdd.appealTemplateMark && window.pdd.appealTemplateMark({ id: t.id, result: 'used' });
-    } else {
-      logErr('复制失败，请手动选中文本复制');
-    }
-    return;
-  }
-  if (act === 'won' || act === 'lost') {
-    if (!window.pdd.appealTemplateMark) return;
-    const r = await window.pdd.appealTemplateMark({ id: t.id, result: act === 'won' ? 'won' : 'lost' });
-    if (r && r.ok) { logOk('已记录：' + (act === 'won' ? '成功' : '失败')); await loadAppealTemplates(); }
-    else logErr('记录失败：' + ((r && r.error) || '未知'));
+    if (ok) logOk('已复制正文：' + String(t.title || '').slice(0, 20));
+    else logErr('复制失败，请手动选中文本复制');
     return;
   }
   if (act === 'edit') { openTplDialog(t); return; }
@@ -2272,10 +2250,158 @@ function openTplDialog(tpl) {
 function setRtTab(name) {
   state.rtTab = name;
   $$('.rt-tab').forEach((b) => b.classList.toggle('active', b.dataset.rt === name));
-  const list = $('#rtViewList');
-  const tpl = $('#rtViewTpl');
-  if (list) list.style.display = name === 'list' ? '' : 'none';
-  if (tpl) tpl.style.display = name === 'tpl' ? '' : 'none';
+  const map = { list: '#rtViewList', triage: '#rtViewTriage', tpl: '#rtViewTpl' };
+  for (const [k, sel] of Object.entries(map)) {
+    const el = $(sel);
+    if (el) el.style.display = k === name ? '' : 'none';
+  }
+  // 三个 Tab 的内容不能同时留在 DOM：加起来会顶破预算（实测 1260 > 1200）。
+  // 切走时清空、切回时按 state 重建。
+  if (name !== 'triage') {
+    const tb = $('#triageBody');
+    if (tb) tb.innerHTML = '';
+  } else if (state.triage) {
+    renderTriage(state.triage);
+  }
+  if (name !== 'tpl') {
+    const tl = $('#rtTplList');
+    if (tl) tl.innerHTML = '';
+  } else if ((state.appealTemplates || []).length) {
+    renderTemplates();
+  }
+  if (name !== 'list' && state.returns) {
+    const rb = $('#finReturnBody');
+    if (rb) rb.innerHTML = '';
+  } else if (name === 'list' && state.returns) {
+    renderReturns(state.returns);
+  }
+}
+
+// ------------------------------------------------------------------ 待处理分诊
+const ADVICE_TEXT = {
+  urgent: '先处理', check: '核对后同意', wait_trace: '等物流',
+  chase: '催寄', agree: '建议同意', evidence: '需举证',
+  refund_only: '仅退款', normal: '按流程', unknown: '待确认',
+};
+
+function fmtCountdown(sec) {
+  if (sec == null) return '—';
+  if (sec <= 0) return '已到期';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return d + '天' + h + '时';
+  if (h > 0) return h + '时' + m + '分';
+  return m + '分';
+}
+
+function renderTriage(data) {
+  const body = $('#triageBody');
+  const sec = $('#triageSec');
+  const empty = $('#triageEmpty');
+  const note = $('#rtTriageNote');
+  if (!body || !sec) return;
+  const rows = (data && data.rows) || [];
+  if (note) {
+    const when = data && data.at
+      ? (data.fromCache ? '上次分诊 ' : '分诊于 ') + financeStamp(data.at)
+      : '还没分诊';
+    note.textContent = rows.length ? (rows.length + ' 单 · ' + when) : when;
+  }
+  if (!rows.length) {
+    sec.style.display = 'none';
+    body.innerHTML = '';
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  sec.style.display = 'block';
+  body.innerHTML = '';
+  // 一单 ≈ 20 节点，全量渲染会顶破 DOM 预算；先渲染 20 条，多的提示用上限调小
+  const TRIAGE_PAGE = 20;
+  const shown = rows.slice(0, TRIAGE_PAGE);
+  for (const r of shown) {
+    const tr = document.createElement('tr');
+    const thumb = r.thumbUrl
+      ? '<img class="order-thumb" loading="lazy" src="' + esc(r.thumbUrl) + '" alt="" />'
+      : '<span class="order-thumb order-thumb-empty">' + esc(String(r.goodsName || '?').slice(0, 1)) + '</span>';
+    const urgent = r.countdownSec != null && r.countdownSec <= 86400;
+    tr.innerHTML =
+      '<td><div class="order-product">' + thumb +
+        '<div style="min-width:0"><div class="order-name" title="' + esc(r.goodsName || '') + '">' +
+          esc(String(r.goodsName || '—').slice(0, 16)) + '</div>' +
+          '<div class="fin-sub">' + esc(r.orderSn) + (r.days == null ? '' : ' · ' + r.days + ' 天前') + '</div>' +
+        '</div></div></td>' +
+      '<td class="fin-store" title="' + esc(r.mallName || '') + '">' + esc(r.mallName || '—') + '</td>' +
+      '<td class="rt-type">' + esc(r.typeName || '—') + '</td>' +
+      '<td class="r expense">' + fmtYuan(r.refundAmount) + '</td>' +
+      '<td><div class="fin-sub" style="margin:0">' + esc(r.statusText || (r.detailOk ? '—' : '未读')) + '</div>' +
+        (r.reason ? '<div class="fin-sub">' + esc(r.reason) + '</div>' : '') + '</td>' +
+      '<td class="r ' + (urgent ? 'expense' : '') + '">' + fmtCountdown(r.countdownSec) + '</td>' +
+      '<td><span class="triage-badge lv-' + esc(r.adviceLevel || 'wait') + '">' +
+        esc(ADVICE_TEXT[r.advice] || r.adviceText || '—') + '</span>' +
+        '<div class="fin-sub">' + esc(r.adviceText || '') + '</div></td>' +
+      '<td class="r rt-check-cell"><button class="btn" data-open="' + esc(r.orderSn) + '" ' +
+        'data-asid="' + esc(r.afterSalesId || '') + '" data-mall="' + esc(r.mallId || '') + '" ' +
+        'title="在店铺视图打开这单售后详情">详情</button></td>';
+    body.appendChild(tr);
+  }
+  body.querySelectorAll('[data-open]').forEach((b) => {
+    b.addEventListener('click', () => openAftersaleDetail(b.dataset.mall, b.dataset.asid, b.dataset.open));
+  });
+}
+
+let triageBusy = false;
+async function runTriage() {
+  if (triageBusy) { logWarn('正在分诊，请稍候'); return; }
+  const btn = $('#btnTriageRun');
+  if (!btn) return;
+  const limit = Number(($('#rtTriageLimit') && $('#rtTriageLimit').value) || 15);
+  triageBusy = true;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '分诊中…';
+  if ($('#rtTriageNote')) $('#rtTriageNote').textContent = '正在逐单读详情，约 ' + Math.ceil(limit * 8 / 60) + ' 分钟…';
+  logInfo('开始售后分诊，本次读 ' + limit + ' 单 ...');
+  try {
+    const r = await window.pdd.aftersaleTriage({ maxItems: limit });
+    if (!r || !r.ok) { logErr('分诊失败：' + ((r && r.error) || '未知')); return; }
+    state.triage = r;
+    renderTriage(r);
+    const urgent = (r.rows || []).filter((x) => x.adviceLevel === 'urgent').length;
+    logOk('分诊完成：' + r.total + ' 单' + (urgent ? '，其中 ' + urgent + ' 单 24 小时内到期' : ''));
+  } catch (e) {
+    logErr('分诊异常：' + (e && e.message ? e.message : e));
+  } finally {
+    triageBusy = false; btn.disabled = false; btn.textContent = old;
+  }
+}
+
+async function loadTriageLast() {
+  if (!window.pdd.aftersaleTriageLast) return;
+  try {
+    const r = await window.pdd.aftersaleTriageLast();
+    if (r && r.ok && r.rows && r.rows.length) { state.triage = r; renderTriage(r); }
+  } catch (_) { /* ignore */ }
+}
+
+/** 在店铺视图打开这单售后详情（用户自己看、自己点） */
+async function openAftersaleDetail(mallId, afterSalesId, orderSn) {
+  if (!afterSalesId) { logWarn('这单没有售后编码，打不开详情'); return; }
+  if (!window.pdd.aftersaleDetail) return;
+  logInfo('打开售后详情 ' + orderSn + ' ...');
+  try {
+    const r = await window.pdd.aftersaleDetail({ mallId, afterSalesId, orderSn });
+    if (r && r.ok) {
+      logOk('已读取详情：' + (r.data && r.data.statusText ? r.data.statusText : '成功'));
+    } else {
+      logWarn('详情读取失败：' + ((r && r.error) || '未知'));
+    }
+  } catch (e) {
+    logErr('详情异常：' + (e && e.message ? e.message : e));
+  }
+  // 无论读没读到，都把用户送到后台那单，让 ta 自己操作
+  await window.pdd.appealOpenWorkbench().catch(() => {});
+  setTab('browser');
 }
 
 async function openAftersaleWorkbench() {
@@ -2438,6 +2564,7 @@ $$('.rt-tab').forEach((b) => b.addEventListener('click', () => setRtTab(b.datase
 $('#btnAftersaleOpen') && $('#btnAftersaleOpen').addEventListener('click', () => openAftersaleWorkbench());
 $('#btnTplNew') && $('#btnTplNew').addEventListener('click', () => openTplDialog(null));
 $('#rtTplSearch') && $('#rtTplSearch').addEventListener('input', () => renderTemplates());
+$('#btnTriageRun') && $('#btnTriageRun').addEventListener('click', () => runTriage());
 $('#btnReturnTrace') && $('#btnReturnTrace').addEventListener('click', async () => {
   const btn = $('#btnReturnTrace');
   const old = btn.textContent;
@@ -2665,6 +2792,9 @@ $('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction
   await loadRiskLast();
   await loadAppealScenes();
   await loadAppealTemplates();
+  await loadTriageLast();
+  // 三个子页签的内容不同时留在 DOM（否则 1260 节点超预算），启动后按当前页签清一遍
+  setRtTab(state.rtTab || 'list');
   setTab('goods');
   if (!state.malls.length) logInfo('第一步：点左上「＋ 添加店铺」，在右侧浏览器里扫码登录');
 })();

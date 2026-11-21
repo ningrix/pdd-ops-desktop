@@ -93,6 +93,7 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
 /* b) 完成勾：stroke 描画（dashoffset 从周长到 0），收尾弹簧一下 */
 .ring-check { width:64px; height:64px; cursor:pointer; }
 .ring-check svg { width:64px; height:64px; overflow:visible; }
+.ring-check .trkc { fill:none; stroke:var(--panel2); stroke-width:2; }
 .ring-check .rc { fill:none; stroke:var(--income); stroke-width:2; stroke-linecap:round;
                   stroke-dasharray:57; stroke-dashoffset:57; }
 .ring-check .ck { fill:none; stroke:var(--income); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
@@ -117,8 +118,9 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
 .coll-ic.busy .rg { opacity:1; animation:rot 1s linear infinite, drawring 600ms var(--ease-decel) forwards; }
 .coll-ic.ok .rg { animation:none; opacity:0; }
 .coll-ic .ck2 { fill:none; stroke:var(--income); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
-                stroke-dasharray:22; stroke-dashoffset:22; }
-.coll-ic.ok .ck2 { animation:draw 300ms var(--ease-decel) forwards, pop var(--m-spring) var(--ease-spring) 300ms; }
+                stroke-dasharray:22; stroke-dashoffset:22; opacity:0;
+                transition:opacity var(--m-fast) var(--ease-std); }
+.coll-ic.ok .ck2 { opacity:1; animation:draw 300ms var(--ease-decel) forwards, pop var(--m-spring) var(--ease-spring) 300ms; }
 @keyframes rot { to { transform:rotate(360deg); } }
 @keyframes drawring { to { stroke-dashoffset:0; } }
 
@@ -127,8 +129,9 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
 .del-x { width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--panel2);
          color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
          transition:color var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std),
-                    background var(--m-fast) var(--ease-std); }
+                    background var(--m-fast) var(--ease-std), opacity var(--m-fast) var(--ease-std); }
 .del-x:hover { color:#ff9d9d; border-color:rgba(239,91,91,.45); }
+.del-x.hidden { opacity:.3; pointer-events:none; }
 .del-x svg { width:15px; height:15px; }
 .del-confirm { height:30px; display:inline-flex; align-items:center; gap:6px; padding:0; max-width:0; border-radius:8px;
                border:1px solid transparent; background:transparent; color:var(--warn);
@@ -136,9 +139,9 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
                transition:max-width var(--m-base) var(--ease-decel), padding var(--m-base) var(--ease-decel),
                           opacity var(--m-base) var(--ease-decel), border-color var(--m-base) var(--ease-std),
                           background var(--m-base) var(--ease-std); }
-.del-wrap { display:inline-grid; grid-template-rows:1fr; grid-template-columns:1fr; }
 .del-confirm .tx { white-space:nowrap; }
-.del-confirm.arm { max-width:180px; padding:0 12px; border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.12); }
+.del-confirm.arm { max-width:200px; padding:0 12px; border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.12); }
+.del-confirm.done { max-width:150px; border-color:rgba(62,207,142,.4); background:rgba(62,207,142,.12); color:var(--income); }
 .del-x.armed { color:var(--warn); border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.12); }
 @keyframes shake { 25%{transform:translateX(-2px)} 50%{transform:translateX(2px)} 75%{transform:translateX(-1px)} }
 .del-x.shake { animation:shake 240ms var(--ease-std); }
@@ -157,7 +160,7 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
       </button>
       <span style="color:var(--muted);font-size:12px">主题切换：光线收拢 + 月亮旋入——升级方案，替换现行 btnTheme 的两张图硬切</span>
       <span class="ring-check" id="ringCheck" title="点击：描画完成勾">
-        <svg viewBox="0 0 24 24"><circle class="rc" cx="12" cy="12" r="9"/><path class="ck" d="m8 12.5 3 3 5-6"/></svg>
+        <svg viewBox="0 0 24 24"><circle class="trkc" cx="12" cy="12" r="9"/><circle class="rc" cx="12" cy="12" r="9"/><path class="ck" d="m8 12.5 3 3 5-6"/></svg>
       </span>
       <span style="color:var(--muted);font-size:12px">售后退货页的「已完成」勾：圆环描画 + 对勾跟进 + 弹簧收尾</span>
       <span class="coll-ic" id="collDemo" title="点击：下载箭头 → 旋转环 → 勾">
@@ -170,7 +173,7 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
       <span style="color:var(--muted);font-size:12px">采集动作的三段图标叙事</span>
       <span class="delslot">
         <button class="del-x" id="delX" title="点击：进入确认态"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-        <span class="del-confirm" id="delConfirm"><span class="tx">确认移除？3 秒后自动取消</span></span>
+        <span class="del-confirm" id="delConfirm" title="点击确认移除（演示）"><span class="tx" id="delTx">确认移除？3 秒取消</span></span>
       </span>
       <span style="color:var(--muted);font-size:12px">删除两段式（政治经济学：破坏类动作加一道闸）</span>
     </div>
@@ -190,7 +193,9 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
 .stg-list.go li { opacity:1; transform:none; transition-delay:calc(var(--i) * 40ms); }
 .stg-list li .num { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
 .stg-list li .nm { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.stg-list li img { width:26px; height:26px; border-radius:5px; object-fit:cover; background:var(--panel2); }
+.stg-list li .th-ic { width:26px; height:26px; border-radius:5px; background:var(--panel2); border:1px solid var(--line);
+                      display:inline-flex; align-items:center; justify-content:center; font-style:normal;
+                      font-size:11px; color:var(--muted); flex:none; }
 
 /* 骨架屏 → 内容 渐隐渐显 */
 .skel-stage { position:relative; width:320px; min-height:96px; border:1px solid var(--line); border-radius:10px;
@@ -215,11 +220,11 @@ body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif
   <div class="sec-h"><b>三 · 渐隐渐显 + 丝滑滑入</b><span>列表错峰入场（每行 40ms 递进，总时长封顶）；骨架屏与内容交叉淡化</span></div>
   <div class="board">
     <ul class="stg-list go" id="stgDemo">
-      <li style="--i:0"><img alt="" /><span class="nm">蒲田鼎级高货Lulu泡芙五格羽绒服…</span><span class="num">357.95</span></li>
-      <li style="--i:1"><img alt="" /><span class="nm">爆款1U1U LU璐家四格鸭绒泡芙款…</span><span class="num">328.68</span></li>
-      <li style="--i:2"><img alt="" /><span class="nm">ex3BOA越野跑鞋 免系带机能登山鞋…</span><span class="num">262.48</span></li>
-      <li style="--i:3"><img alt="" /><span class="nm">lu鸭绒羽绒服五格露泡多巴胺女士…</span><span class="num">142.86</span></li>
-      <li style="--i:4"><img alt="" /><span class="nm">跨境26小太阳5000gt蓬松同款…</span><span class="num">88.92</span></li>
+      <li style="--i:0"><i class="th-ic">蒲</i><span class="nm">蒲田鼎级高货Lulu泡芙五格羽绒服…</span><span class="num">357.95</span></li>
+      <li style="--i:1"><i class="th-ic">爆</i><span class="nm">爆款1U1U LU璐家四格鸭绒泡芙款…</span><span class="num">328.68</span></li>
+      <li style="--i:2"><i class="th-ic">e</i><span class="nm">ex3BOA越野跑鞋 免系带机能登山鞋…</span><span class="num">262.48</span></li>
+      <li style="--i:3"><i class="th-ic">l</i><span class="nm">lu鸭绒羽绒服五格露泡多巴胺女士…</span><span class="num">142.86</span></li>
+      <li style="--i:4"><i class="th-ic">跨</i><span class="nm">跨境26小太阳5000gt蓬松同款…</span><span class="num">88.92</span></li>
     </ul>
     <div class="row" style="margin-top:12px">
       <button class="btn-m" id="stgReplay">重播入场（错峰 40ms × 5 行 = 200ms 总预算）</button>
@@ -348,18 +353,35 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(function () { coll.classList.remove('busy'); coll.classList.add('ok'); }, 1400);
     setTimeout(function () { coll.classList.remove('ok'); collBusy = false; }, 3000);
   });
-  /* 两段式删除 */
-  var delX = $('delX'), delCf = $('delConfirm'), delTimer = null;
+  /* 两段式删除：idle → armed(× 或 3 秒超时可取消) → removed(点击确认条) → idle */
+  var delX = $('delX'), delCf = $('delConfirm'), delTx = $('delTx');
+  var delTimer = null, delState = 'idle';
+  var DEL_ARM_TXT = '确认移除？3 秒取消';
+  function disarm() {
+    clearTimeout(delTimer); delState = 'idle';
+    delX.classList.remove('armed'); delCf.classList.remove('arm', 'done');
+    delX.classList.remove('hidden');
+    delTx.textContent = DEL_ARM_TXT;
+  }
   delX.addEventListener('click', function () {
-    if (!delX.classList.contains('armed')) {
+    if (delState === 'removed') return;
+    if (delState === 'idle') {
+      delState = 'armed';
       delX.classList.add('armed', 'shake'); delCf.classList.add('arm');
-      delTimer = setTimeout(function () { disarm(); }, 3000);
+      delTimer = setTimeout(disarm, 3000);
     } else {
-      clearTimeout(delTimer); disarm();
+      disarm();
       delX.classList.remove('shake'); void delX.offsetWidth; delX.classList.add('shake');
     }
   });
-  function disarm() { delX.classList.remove('armed'); delCf.classList.remove('arm'); }
+  delCf.addEventListener('click', function () {
+    if (delState !== 'armed') return;
+    clearTimeout(delTimer); delState = 'removed';
+    delCf.classList.remove('arm'); delCf.classList.add('done');
+    delTx.textContent = '✓ 已移除（演示 · 1.4 秒还原）';
+    delX.classList.add('hidden');
+    setTimeout(disarm, 1400);
+  });
   /* stagger 重播 */
   var stg = $('stgDemo');
   $('stgReplay').addEventListener('click', function () {

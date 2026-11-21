@@ -373,6 +373,7 @@
         </div>
         <div class="rt-tabs">
           <button class="rt-tab active" data-rt="list">退货跟进</button>
+          <button class="rt-tab" data-rt="triage">待处理分诊</button>
           <button class="rt-tab" data-rt="tpl">申诉文案</button>
         </div>
 
@@ -396,6 +397,38 @@
               <tbody id="finReturnBody"></tbody>
             </table>
             <button class="fin-order-more" id="finReturnMore" style="display:none"></button>
+          </div>
+        </div>
+
+        <div class="fin-body rt-view" id="rtViewTriage" style="display:none">
+          <div class="rt-toolbar">
+            <span class="fin-sub" id="rtTriageNote">还没分诊</span>
+            <span class="spacer"></span>
+            <label class="rt-filter">本次读
+              <select id="rtTriageLimit" class="rt-select">
+                <option value="8">8 单</option>
+                <option value="15" selected>15 单</option>
+                <option value="30">30 单</option>
+              </select>
+            </label>
+            <button class="btn primary" id="btnTriageRun">开始分诊</button>
+          </div>
+          <div class="rt-tpl-hint">
+            逐单打开售后详情读倒计时与状态，按紧迫度排序给建议动作。只读，不点任何按钮。
+          </div>
+          <div class="big-empty" id="triageEmpty">
+            <div class="be-icon">🧭</div>
+            <p>还没分诊</p>
+            <p class="be-sub">点「开始分诊」逐单读详情；读 15 单约 2 分钟</p>
+          </div>
+          <div id="triageSec" style="display:none">
+            <table class="fin-table">
+              <thead><tr>
+                <th>商品</th><th>店铺</th><th>类型</th><th class="r">退款</th>
+                <th>状态</th><th class="r">倒计时</th><th>建议</th><th class="rt-col-check"></th>
+              </tr></thead>
+              <tbody id="triageBody"></tbody>
+            </table>
           </div>
         </div>
 

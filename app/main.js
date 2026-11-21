@@ -2085,6 +2085,7 @@ ipcMain.handle('bill:openFolder', () => {
 // ---------------------------------------------------------------- 资金复盘
 const cashierOps = require('./lib/cashier');
 const ordersOps = require('./lib/orders');
+const aftersaleDetail = require('./lib/aftersale-detail');
 const financeCore = require('./lib/finance-core');
 
 /** 在指定店铺视图上执行一段注入脚本 */
@@ -2535,7 +2536,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'return_not_received', kind: 'reject',
     title: '驳回：退货单号无物流轨迹',
-    body: '订单 {orderSn}，买家填写退货单号 {returnSn}，但该单号在物流方查询无任何揽收记录。\n'
+    body: '买家填写退货单号 {returnSn}，但该单号在物流方查询无任何揽收记录。\n'
       + '按平台售后规则，退货退款需以实际退回商品为退款前提；当前仅有单号、无揽收与运输轨迹，退货事实尚未成立。\n'
       + '我方已按约发货并签收（发货单号见订单物流），履约完成。\n'
       + '请求：驳回本次退款申请；买家可在补充有效物流凭证后重新申请。',
@@ -2544,7 +2545,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'return_swapped', kind: 'reject',
     title: '驳回：退回空包 / 商品被调包',
-    body: '订单 {orderSn} 退货签收后开箱核验，包裹内{空包/非本店商品/明显使用痕迹}，与买家申请退款的商品不一致。\n'
+    body: '退货签收后开箱核验，包裹内{空包/非本店商品/明显使用痕迹}，与买家申请退款的商品不一致。\n'
       + '我方发货有打包视频与称重记录，可证明发出商品与订单一致。\n'
       + '请求：驳回本次退款；如需进一步核查，可调取退货开箱视频与称重对比。',
     evidence: ['退货开箱视频（一镜到底，含面单特写）', '退货包裹称重照片/称重记录', '发货打包视频或发货称重记录', '商品对比照片（发出 vs 退回）'],
@@ -2552,7 +2553,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'size_dispute', kind: 'reject',
     title: '驳回：尺码不符（商品页已标注尺码表）',
-    body: '订单 {orderSn}，买家申请原因为尺码不合适。\n'
+    body: '买家申请原因为尺码不合适。\n'
       + '商品详情页已提供尺码对照表（含衣长/胸围/建议身高体重），买家下单规格为所选尺码，属自主选择。\n'
       + '尺码不符不属于商品质量问题，且商品已签收使用。\n'
       + '请求：驳回本次退款申请；如买家坚持，建议走七天无理由退货并由买家承担退回运费。',
@@ -2561,7 +2562,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'quality', kind: 'evidence',
     title: '举证：商品质量异议（附检测与对比）',
-    body: '订单 {orderSn}，买家主张商品存在质量问题。\n'
+    body: '买家主张商品存在质量问题。\n'
       + '该批次商品进货凭证与质检报告齐全，同批次其他订单无同类反馈。\n'
       + '买家提供的照片{未见所述问题/无法判断为商品本身问题}。\n'
       + '请求：按凭证核定责任；如需进一步核验，我方可提供完整进货链路与检测报告。',
@@ -2570,7 +2571,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'logistics_damage', kind: 'evidence',
     title: '举证：物流破损（派件前已报备）',
-    body: '订单 {orderSn}，买家反馈外包装破损。\n'
+    body: '买家反馈外包装破损。\n'
       + '该包裹在我方交寄时包装完好（有交寄照片/打包视频），破损发生在运输环节。\n'
       + '我方已在发现异常时向快递方报备，报备单号见附件。\n'
       + '请求：责任按运输环节认定；我方可配合买家向快递方索赔。',
@@ -2579,7 +2580,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'arbitration', kind: 'appeal',
     title: '申诉：平台判责与事实不符',
-    body: '订单 {orderSn}，平台判定退款 {amount} 元。\n'
+    body: '平台判定退款 {amount} 元。\n'
       + '该判定与以下事实不符：{具体指出是「事实认定」「适用理由」还是「规则依据」哪一项对不上}。\n'
       + '我方履约证据：{发货凭证 / 签收记录 / 沟通记录}。\n'
       + '请求：复核本次判责并撤销退款；相关凭证已随附。',
@@ -2588,7 +2589,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'malicious_order', kind: 'appeal',
     title: '申诉：异常订单不发货（恶意下单）',
-    body: '订单 {orderSn}，买家{下单后即申请退款 / 收货信息异常 / 历史多单异常退款}，存在非正常消费目的迹象。\n'
+    body: '买家{下单后即申请退款 / 收货信息异常 / 历史多单异常退款}，存在非正常消费目的迹象。\n'
       + '该订单如发货将产生实际物流成本与货损风险。\n'
       + '请求：按「异常订单不发货」通过申诉，本单无需发货且不计入店铺销量。',
     evidence: ['买家下单与申请退款时间线截图', '该买家历史订单异常记录（如有）', '收货信息异常截图'],
@@ -2596,7 +2597,7 @@ const APPEAL_BUILTIN = [
   {
     scene: 'generic', kind: 'reject',
     title: '通用驳回骨架',
-    body: '订单 {orderSn}，退款金额 {amount} 元。\n'
+    body: '退款金额 {amount} 元。\n'
       + '买家主张：{原样摘录买家申请原因}。\n'
       + '该主张不成立，理由：{对应规则条款或事实}。\n'
       + '我方履约证据：{列 1~3 项}。\n'
@@ -2631,7 +2632,18 @@ function loadAppealTemplates() {
       return seed;
     }
     const arr = JSON.parse(fs.readFileSync(APPEAL_TEMPLATES_FILE, 'utf8'));
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // 迁移：内置骨架的开头不再带「订单 {orderSn}，」——粘贴到申诉框时订单号由页面自带，
+    // 文案里再写一遍既啰嗦又容易贴错单号。只动内置模板，用户自己写的不碰。
+    let changed = false;
+    for (const t of arr) {
+      if (!t || !t.builtin) continue;
+      const b = String(t.body || '');
+      const nb = b.replace(/^订单 \{orderSn\}[，,、]?\s*/, '');
+      if (nb !== b) { t.body = nb; t.updatedAt = Date.now(); changed = true; }
+    }
+    if (changed) writeJsonAtomic(APPEAL_TEMPLATES_FILE, arr);
+    return arr;
   } catch (e) {
     trace('loadAppealTemplates FAIL: ' + ((e && e.message) || e));
     return seedAppealTemplates();
@@ -2641,6 +2653,131 @@ function loadAppealTemplates() {
 function saveAppealTemplates(arr) {
   writeJsonAtomic(APPEAL_TEMPLATES_FILE, arr);
 }
+
+/**
+ * 读一张售后单详情（隐藏窗口 + 深链），返回解析后的字段。
+ * 只读，不点任何业务按钮。
+ */
+async function readAftersaleDetail(mallId, afterSalesId, orderSn) {
+  const mall = malls.get(mallId);
+  if (!mall) return { ok: false, error: '店铺不存在' };
+  let temp = null;
+  try {
+    temp = createHiddenMallWindow(mall);
+    try { temp.setPosition(-10000, -10000); temp.showInactive(); } catch (_) { /* ignore */ }
+    const wc = temp.webContents;
+    const url = 'https://mms.pinduoduo.com/aftersales-ssr/detail?id=' +
+      encodeURIComponent(String(afterSalesId)) + '&orderSn=' + encodeURIComponent(String(orderSn));
+    try { await wc.loadURL(url); } catch (_) { /* 跳转中断是常态 */ }
+    let text = '';
+    for (let k = 0; k < 14; k++) {
+      await sleep(900);
+      try {
+        text = await wc.executeJavaScript(
+          "(document.body.innerText||'').replace(/\\s+/g,' ')", true);
+      } catch (_) { text = ''; }
+      if (text && text.indexOf('售后编码') >= 0) break;
+    }
+    if (!text || text.indexOf('售后编码') < 0) {
+      return { ok: false, error: '详情页没加载出来（登录态或页面改版）' };
+    }
+    const d = aftersaleDetail.parseDetail(text);
+    return { ok: true, data: d, at: Date.now() };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  } finally {
+    if (temp) { try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ } }
+  }
+}
+
+ipcMain.handle('aftersale:detail', async (_e, p) => {
+  const { mallId, afterSalesId, orderSn } = p || {};
+  if (!mallId || !afterSalesId || !orderSn) return { ok: false, error: '缺少参数' };
+  return readAftersaleDetail(mallId, afterSalesId, orderSn);
+});
+
+/**
+ * 分诊：逐单读在途/待处理售后详情，算建议动作，落盘。
+ * 只在用户点「分诊」时跑，不自动轮询。
+ */
+ipcMain.handle('aftersale:triage', async (_e, opts) => {
+  const o = Object.assign({ maxItems: 15, mallId: null }, opts || {});
+  const snap = readFinanceOrders();
+  if (!snap.ok || !snap.data) return { ok: false, error: '还没有订单数据，先点「商品贡献」读取' };
+  const nowSec = Math.floor(Date.now() / 1000);
+  const targets = [];
+  for (const s of (snap.data.stores || [])) {
+    if (o.mallId && s.mallId !== o.mallId) continue;
+    for (const a of (s.afterSales || [])) {
+      if (!a.id || !a.orderSn) continue;
+      // 只看还需要处理的：10 待消费者寄货 / 11 待商家确认收货
+      if (a.status !== 10 && a.status !== 11) continue;
+      targets.push({
+        mallId: s.mallId, mallName: s.mallName, afterSalesId: String(a.id),
+        orderSn: a.orderSn, goodsName: a.goodsName || '', thumbUrl: a.thumbUrl || '',
+        typeName: a.typeName || '', platformStatus: a.status,
+        refundAmount: Number(a.refundAmount) || 0,
+        days: a.createdAt ? Math.max(0, Math.floor((nowSec - Number(a.createdAt)) / 86400)) : null,
+        needReturn: /退货/.test(String(a.typeName || '')),
+      });
+    }
+  }
+  const limit = Math.min(targets.length, Math.max(1, Number(o.maxItems) || 15));
+  const traces = loadReturnTraces();
+  const rows = [];
+  for (let i = 0; i < limit; i++) {
+    const t = targets[i];
+    const r = await readAftersaleDetail(t.mallId, t.afterSalesId, t.orderSn);
+    const d = (r && r.ok && r.data) || {};
+    const tr = traces[t.orderSn] || null;
+    const ctx = Object.assign({}, t, { signed: tr ? tr.signed : null });
+    const adv = aftersaleDetail.triage(d, ctx);
+    rows.push(Object.assign({}, t, {
+      detailOk: !!(r && r.ok),
+      detailError: (r && r.error) || null,
+      statusText: d.statusText || '',
+      reason: d.reason || '',
+      countdownSec: d.countdownSec == null ? null : d.countdownSec,
+      signedDeadlineHours: d.signedDeadlineHours == null ? null : d.signedDeadlineHours,
+      protectLeft: d.protectLeft == null ? null : d.protectLeft,
+      hasChatImages: !!d.hasChatImages,
+      returnSn: d.returnSn || '',
+      shipCarrier: d.shipCarrier || '',
+      advice: adv.code,
+      adviceText: adv.text,
+      adviceLevel: adv.level,
+    }));
+    await sleep(250);
+  }
+  // 没读到的单也要露出来，否则用户以为它们不存在
+  for (let i = limit; i < targets.length; i++) {
+    const t = targets[i];
+    rows.push(Object.assign({}, t, {
+      detailOk: false, detailError: '本次未读取（超出上限）',
+      advice: 'unknown', adviceText: '未读，下次再分诊', adviceLevel: 'wait',
+    }));
+  }
+  rows.sort((a, b) => {
+    const ka = a.countdownSec == null ? Infinity : a.countdownSec;
+    const kb = b.countdownSec == null ? Infinity : b.countdownSec;
+    return ka - kb;
+  });
+  const out = { ok: true, at: Date.now(), total: rows.length, read: limit, rows };
+  try {
+    writeJsonAtomic(path.join(DATA_DIR, 'aftersale', 'triage.json'), out);
+  } catch (_) { /* ignore */ }
+  return out;
+});
+
+ipcMain.handle('aftersale:triageLast', () => {
+  try {
+    const f = path.join(DATA_DIR, 'aftersale', 'triage.json');
+    if (!fs.existsSync(f)) return { ok: false, error: '还没有分诊记录' };
+    return Object.assign({ ok: true, fromCache: true }, JSON.parse(fs.readFileSync(f, 'utf8')));
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
 
 ipcMain.handle('appeal:scenes', () => ({ ok: true, items: APPEAL_SCENES }));
 

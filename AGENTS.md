@@ -89,6 +89,7 @@
 | `app/lib/orders.js` | 订单/售后接口注入脚本：`recentOrderList`（订单分页）、`afterSales/queryList`（售后单）。走 `window.__mms.fetch.sync` | 可改 |
 | `app/lib/cashier.js` | 资金中心注入脚本。**只能读 DOM 表格**：cashier 是独立域，接口带 Anti-Content 动态签名，回放无效 | 可改 |
 | `app/lib/finance-core.js` | 资金纯计算层：订单分页的终止/`orderSn` 去重/截断判定。零依赖，可离线断言（`work\test-finance.mjs`） | 可改 |
+| `app/lib/aftersale-detail.js` | 售后详情页文本解析 + 分诊建议（`parseDetail` / `triage`）。纯函数零依赖，可离线断言（`work\test-aftersale-detail.mjs`，20 条） | 可改 |
 | `app/lib/aftersale/` | B 线售后对账的设计实现（`triage` / `reconcile` / `appeal` / `model` + `fixtures`）。**尚未接进 IPC 与界面**，是设计稿落地 | 可改 |
 | `app/lib/inspect.js` | 商品检测·规则层（纯 Node 零依赖，不读图） | 可改 |
 | `app/lib/imgtool.js` | imgtool 的 Node 封装：spawn Python、下载图、失败分类 | 可改 |
@@ -213,6 +214,10 @@
 | 异常单申诉表单 | 实测 | `/orders/appeals/badOrder`。三种类型：异常订单不发货 / 延后发货 / 物流拦截并取消。字段：申诉类型 + 申诉原因（下拉）+ **凭证图片（最多 5 张，单张 ≤5M）** + 申诉描述。审核工作日 10:00–21:00，周期 24h。**所以申诉产出形态是「文本 + 图片清单」，不是纯文本** |
 | 平台自带售后自动化 | 实测 | 侧栏有「售后小助手」（`/aftersales/aftersale_auto/home`）与「逾期自动同意退款」（站内信实测出现过「因逾期未处理已自动同意退款」）。我们的助手**不抢这些动作**，只做分诊 + 文案 + 倒计时 |
 | 售后入口清单 | 实测（首页侧栏） | 售后工作台 `/aftersales/aftersale_list`、工单管理 `/aftersales/work_order/list`（待处理/2小时内将逾期/处理中/违规已处理）、商家举证 `/aftersales/merchant_appeal`（**重定向到 `/orders/list`**，非独立页）、极速退款 `/aftersales/speed_refund`、降退款督导 `/aftersales/supervisor`、拦截快递 `/orders/interceptExpress`、挽单工具 `/kit/retain-order` |
+| 售后详情读取耗时 | 实测（`aftersale:detail`） | 隐藏窗口 + 深链，**约 1.8~2 秒/单**（比 `finance:returnTrace` 的 7 秒快，因为它只等「售后编码」出现，不等「退货物流」）。分诊 8 单约 16 秒 |
+| 售后详情解析要点 | 实测（`lib/aftersale-detail.js`） | 倒计时原文「超过 5天10时33分32秒 则申请达成…」可解析成秒；「退货被签收则 N 小时内处理」可解析出 N；「本周剩余申请次数为 N 次」= 平台保护剩余。**售后状态必须只在「售后状态」标签之后匹配**，否则会先命中「售后类型：退货退款待商家处理」里的「待商家处理」 |
+| 退货状态标签口径 | 实现约定 | `needReturn = /退货/.test(typeName)`。未发货退款 / 仅退款 / 换货 → **无退货包裹**（本来就没有退货，谈不上签收）；退货退款已签收 → **已签收 · 注意查收** + 附退货物流（快递公司 + 单号）；需退货但无轨迹 → 未签收；已完成但没抓过物流 → **未抓签收**（不猜） |
+| 售后分诊优先级 | 实现约定（`triage()`） | ① 倒计时 ≤24h → 先处理；② 质量/破损/描述不符 → 需举证；③ 尺码/不喜欢/拍错 → 建议同意（驳回难赢，省复议额度）；④ 已签收 → 核对后同意；⑤ 需退货无轨迹 → 等物流；⑥ 待寄货 ≥3 天 → 催寄；⑦ 无退货包裹 → 按仅退款规则。**主观原因优先于物流状态**：驳回本来就赢不了，不该因为「没轨迹」而拖着
 
 ---
 
@@ -325,6 +330,21 @@ AppealTemplate {
   createdAt, updatedAt, lastUsedAt
 }
 // 文案库只产出文本，绝不自动提交。渲染层每组默认只渲染 3 条（一条 ≈80 DOM 节点）。
+
+// 售后分诊（app/userdata/aftersale/triage.json）—— 已实现
+TriageRow {
+  mallId, mallName, afterSalesId, orderSn, goodsName, thumbUrl,
+  typeName, platformStatus,          // 10 待消费者寄货 / 11 待商家确认收货
+  refundAmount, days, needReturn,
+  detailOk, detailError,             // 详情读没读到
+  statusText, reason,                // 从详情页解析
+  countdownSec,                      // 「超过 X 天X时X分X秒 则申请达成」→ 秒
+  signedDeadlineHours,               // 「退货被签收则 N 小时内处理」
+  protectLeft, hasChatImages, returnSn, shipCarrier,
+  advice, adviceText, adviceLevel    // urgent | act | wait | skip
+}
+// 按 countdownSec 升序（null 排最后）。未读到的单也出行，advice=unknown，不藏。
+// 三页签内容不同时留在 DOM：全渲染实测 1260 节点超预算，切走即清空、切回按 state 重建。
 ```
 
 三条铁律：

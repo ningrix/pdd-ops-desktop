@@ -61,7 +61,15 @@ def main():
         dom = {}
 
     data = ev("""(async () => {
-      const raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      // 窗口被遮挡或最小化时 requestAnimationFrame 不触发、setTimeout 还会被节流到秒级，
+      // 两者都会让整段 evaluate 挂死。不可见时直接跳过等待，只做节点/规则数这类静态检查。
+      const raf2 = () => new Promise(r => {
+        if (document.visibilityState !== 'visible') return r();
+        let done = false;
+        const fin = () => { if (!done) { done = true; r(); } };
+        requestAnimationFrame(() => requestAnimationFrame(fin));
+        setTimeout(fin, 120);
+      });
       // 每项测两遍取最小值：调度抖动只会让某一次变慢，不会让它变快，
       // 所以最小值比平均值更接近代码真实成本（实测同一份代码在 33ms 与 116ms 之间漂）。
       const measure = async (fn) => {
