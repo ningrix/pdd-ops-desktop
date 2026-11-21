@@ -13,7 +13,6 @@
 module.exports = function registerAftersale(ctx) {
   const {
     ipcMain, fs, path, DATA_DIR, APPEAL_DIR, APPEAL_TEMPLATES_FILE,
-    FINANCE_DIR, FINANCE_RETURNS_FILE,
     malls, currentMall, createHiddenMallWindow, withPlatform,
     sleep, trace, writeJsonAtomic,
     loadReturnTraces, readFinanceOrders, aftersaleDetail,
@@ -406,18 +405,6 @@ ipcMain.handle('appeal:openWorkbench', async () => {
     return { ok: false, error: '点了标签但没跳到售后列表，当前：' + wc.getURL() };
   }, 90000);
 });
-
-function loadReturnsManual() {  try {
-    if (!fs.existsSync(FINANCE_RETURNS_FILE)) return {};
-    const o = JSON.parse(fs.readFileSync(FINANCE_RETURNS_FILE, 'utf8'));
-    return o && typeof o === 'object' ? o : {};
-  } catch (_) { return {}; }
-}
-
-function saveReturnsManual(o) {
-  fs.mkdirSync(FINANCE_DIR, { recursive: true });
-  writeJsonAtomic(FINANCE_RETURNS_FILE, o);
-}
 
   return { APPEAL_SCENES, APPEAL_BUILTIN, loadAppealTemplates, saveAppealTemplates, readAftersaleDetail };
 };
