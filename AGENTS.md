@@ -81,7 +81,8 @@
 
 | 路径 | 职责 | 可改性 |
 | --- | --- | --- |
-| `app/main.js` | 窗口、店铺视图池、全部 IPC、改价抓包（CDP）、跨店上架编排、session flush | 需用户明示，**只做增量**，不动既有 IPC 签名 |
+| `app/main.js` | 窗口、店铺视图池、剩余 IPC、改价抓包（CDP）、跨店上架编排、session flush | 需用户明示，**只做增量**，不动既有 IPC 签名 |
+| `app/ipc/` | 按域拆出的 IPC 注册。每个文件导出 `register(ctx)`，**不 require electron**，依赖由 `main.js` 在 `app.whenReady` 前显式注入。已拆：`risk` / `aftersale`（含 appeal）/ `finance-extra`（退货清单·费用·成本） | 可改；**新增 IPC 一律写到这里的对应域，不要往 main.js 堆** |
 | `app/preload.js` | `contextBridge` 暴露 `window.pdd` | 需用户明示，新增只加不改 |
 | `app/lib/ops.js` | 注入拼多多页面执行的业务 JS（**已实测跑通**） | **禁止重构** |
 | `app/lib/pool.js` | 采集箱本地存储（增删查）；**读取时对 gallery 去重** | 可改 |
