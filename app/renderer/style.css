@@ -313,8 +313,8 @@ html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-moon { display: n
 .pane.active { display: block; }
 
 /* ---------------- 商品表 ---------------- */
-#pane-browser { background: #0b1018; }
-#pane-browser.browser-on .placeholder { visibility: hidden; }
+#pane-browser, #pane-print { background: #0b1018; }
+#pane-browser.browser-on .placeholder, #pane-print.browser-on .placeholder { visibility: hidden; }
 .placeholder {
   height: 100%; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 6px; color: var(--muted);
@@ -893,7 +893,7 @@ html[data-theme="light"] tbody td { border-bottom-color: #e8edf5; }
 html[data-theme="light"] tbody tr:hover { background: #f4f7fc; }
 html[data-theme="light"] tbody img { background: #e9eef7; }
 html[data-theme="light"] tbody .price { color: #b45309; }
-html[data-theme="light"] #pane-browser { background: #e8edf5; }
+html[data-theme="light"] #pane-browser, html[data-theme="light"] #pane-print { background: #e8edf5; }
 html[data-theme="light"] .result { color: #2b3a50; }
 html[data-theme="light"] .modal { background: #ffffff; box-shadow: 0 24px 60px rgba(33, 51, 84, .22); }
 html[data-theme="light"] .modal h4 { color: #17233a; }

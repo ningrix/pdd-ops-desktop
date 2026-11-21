@@ -619,16 +619,16 @@ document.addEventListener('DOMContentLoaded', function () {
       </div>
 
       <div>
-        <div class="ps-lb"><b>8.4 损失剔除流</b> · 心理账户 + 前景理论——把「退款拖累净额」演成过程：实收定锚 → 退款逐笔飞离 → 净额定格（退款金额为演示数据）</div>
+        <div class="ps-lb"><b>8.4 损失剔除流</b> · 心理账户 + 前景理论——把「退款吞掉成交额」演成过程：成交 GMV 定锚（推导值 = 净实收 + 退款合计）→ 退款逐笔飞离 → 净实收定格（退款金额为演示数据）</div>
         <div class="leak">
-          <div class="leak-line"><span class="k">实收</span><span class="v" id="lkGross">1,557.75</span></div>
+          <div class="leak-line"><span class="k">成交 GMV</span><span class="v" id="lkGross">8,612.00</span></div>
           <div class="leak-chips" id="leakChips">
             <span class="leak-chip" data-ref="2154.00"><span>订单退款 · 261112-…</span><span>−2,154.00</span></span>
             <span class="leak-chip" data-ref="2702.00"><span>订单退款 · 261109-…</span><span>−2,702.00</span></span>
             <span class="leak-chip" data-ref="2198.25"><span>订单退款 · 261108-…</span><span>−2,198.25</span></span>
           </div>
           <div class="leak-line"><span class="k">退款合计</span><span class="v loss" id="lkRef">−7,054.25</span></div>
-          <div class="leak-line"><span class="k">净额</span><span class="v loss" id="lkNet">—</span></div>
+          <div class="leak-line"><span class="k">净实收</span><span class="v income" id="lkNet">—</span></div>
         </div>
         <button class="btn-m" id="leakBtn" style="margin-top:10px">▶ 播放损失剔除流</button>
       </div>
@@ -720,26 +720,30 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  /* 8.4 损失剔除流：实收定锚 → 退款逐笔飞离 → 净额定格 */
+  /* 8.4 损失剔除流：成交 GMV（推导值=净实收+退款）定锚 → 退款逐笔飞离、GMV 滚动递减 → 净实收定格 */
   var leakBusy = false;
   g8('leakBtn').addEventListener('click', function () {
     if (leakBusy) return; leakBusy = true;
     var chips = [].slice.call(g8('leakChips').children);
     var gross = g8('lkGross'), net = g8('lkNet');
     chips.forEach(function (c) { c.classList.remove('in', 'out'); });
-    gross.textContent = fmt8(155775 / 100); net.textContent = '—';
+    gross.textContent = fmt8(861200 / 100); net.textContent = '—';
     if (reduced8) {
       chips.forEach(function (c) { c.classList.add('in', 'out'); });
-      net.textContent = '−5,496.50'; leakBusy = false; return;
+      net.textContent = '1,557.75'; leakBusy = false; return;
     }
-    var grossFen = 155775;
+    var grossFen = 861200;
     chips.forEach(function (c, i) {
       setTimeout(function () {
         c.classList.add('in');
-        setTimeout(function () { c.classList.add('out'); }, 420);
+        setTimeout(function () {
+          c.classList.add('out');
+          grossFen -= Math.round(parseFloat(c.getAttribute('data-ref')) * 100);
+          gross.textContent = fmt8(grossFen / 100);
+        }, 420);
       }, 200 + i * 260);
     });
-    setTimeout(function () { net.textContent = '−5,496.50'; leakBusy = false; }, 200 + chips.length * 260 + 500);
+    setTimeout(function () { net.textContent = '1,557.75'; leakBusy = false; }, 200 + chips.length * 260 + 500);
   });
 
   /* 8.5 分段进度：段完成勾描画，下一格立即点亮 */

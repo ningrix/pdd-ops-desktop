@@ -104,6 +104,23 @@ if (!gotLock) {
 const MMS_HOME = 'https://mms.pinduoduo.com/home/';
 const STORE_FILE = () => path.join(app.getPath('userData'), 'malls.json');
 
+/**
+ * 内嵌视图的 UA 处理。
+ *
+ * ⚠ 不要改成「写死干净 Chrome UA」：实测改 UA 会把已登录店铺踢下线
+ * （UA 参与平台会话指纹）。2026-11-22 试过一次，阿泽made 当场掉登录。
+ *
+ * 现状：只剥 Electron 字样。实测这个正则对主视图并不总生效，
+ * UA 里仍可能带 `pdd-ops-desktop/... Electron/...` —— 已知，先不动：
+ * 它不影响功能，而改它会掉登录。
+ */
+function stripElectronUA(wc) {
+  try {
+    const ua = wc.getUserAgent().replace(/\sElectron\/[\d.]+/i, '');
+    wc.setUserAgent(ua);
+  } catch (_) { /* ignore */ }
+}
+
 let mainWindow = null;
 /** @type {Map<string, {id:string,name:string,view:WebContentsView,partition:string}>} */
 const malls = new Map();
@@ -387,8 +404,7 @@ function createMall(name, forcedId) {
   trace('view created');
 
   try {
-    const ua = view.webContents.getUserAgent().replace(/\sElectron\/[\d.]+/i, '');
-    view.webContents.setUserAgent(ua);
+    stripElectronUA(view.webContents);
   } catch (_) { /* ignore */ }
   try { view.webContents.setZoomFactor(MALL_ZOOM); } catch (_) { /* ignore */ }
 
@@ -2128,8 +2144,7 @@ function createHiddenMallWindow(mall) {
     },
   });
   try {
-    const ua = win.webContents.getUserAgent().replace(/\sElectron\/[\d.]+/i, '');
-    win.webContents.setUserAgent(ua);
+    stripElectronUA(win.webContents);
     win.webContents.setAudioMuted(true);
   } catch (_) { /* ignore */ }
   return win;

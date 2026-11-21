@@ -3,11 +3,18 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
+// 打单中心直接落到「打单发货 · 待发货」列表；回店铺后台时切回首页。
+const PRINT_LIST_URL = 'https://mms.pinduoduo.com/print/order/list';
+const MMS_HOME_URL = 'https://mms.pinduoduo.com/home/';
+
 const state = {
   malls: [],
   activeId: null,
   visible: true,
   tab: 'goods',
+  // 视图当前停在哪个 URL。店铺后台与打单中心共用一个 WebContentsView，
+  // 靠这个值判断切页签时要不要重新导航。
+  viewUrl: null,
   goods: [],
   pool: [],
   poolSel: new Set(),
@@ -157,8 +164,9 @@ function syncBounds() {
     return;
   }
   let el = null;
-  if (state.tab === 'browser' && state.malls.length) el = $('#pane-browser');
-  else if (state.tab === 'collect') {
+  if ((state.tab === 'browser' || state.tab === 'print') && state.malls.length) {
+    el = state.tab === 'print' ? ($('#pane-print') || $('#pane-browser')) : $('#pane-browser');
+  } else if (state.tab === 'collect') {
     // 采集页的浏览器默认收起；只有点了「买家账号登录」才显示
     const cv = $('#collectView');
     if (cv && cv.style.display !== 'none') el = cv;
@@ -193,7 +201,18 @@ function setTab(name) {
   $$('[data-tab]').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $$('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   const pb = $('#pane-browser');
+  const pp = $('#pane-print');
   if (pb) pb.classList.toggle('browser-on', name === 'browser' && !!state.malls.length);
+  if (pp) pp.classList.toggle('browser-on', name === 'print' && !!state.malls.length);
+  // 打单中心：进页签就把当前店铺视图切到「打单发货 · 待发货」
+  // 回店铺后台时切回首页，避免用户以为后台变成了打单页
+  if (name === 'print' && state.malls.length && state.viewUrl !== PRINT_LIST_URL) {
+    state.viewUrl = PRINT_LIST_URL;
+    window.pdd.navigate(PRINT_LIST_URL).catch(() => {});
+  } else if (name === 'browser' && prev === 'print' && state.viewUrl === PRINT_LIST_URL) {
+    state.viewUrl = MMS_HOME_URL;
+    window.pdd.navigate(MMS_HOME_URL).catch(() => {});
+  }
   // 切换采集会话 / 店铺后台 视图
   if (name === 'collect') {
     window.pdd.collectorShow(true).catch(() => {});
