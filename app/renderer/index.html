@@ -64,6 +64,14 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
         <span>资金复盘</span>
       </button>
+      <button class="nav-item" data-tab="returns">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 0 1 15.5-6.3L21 6"/><path d="M21 3v3.5h-3.5"/><path d="M21 14a9 9 0 0 1-15.5 6.3L3 18"/><path d="M3 21v-3.5h3.5"/></svg>
+        <span>售后退货</span>
+      </button>
+      <button class="nav-item" data-tab="risk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>商品检测</span>
+      </button>
       <button class="nav-item" data-tab="browser">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
         <span>店铺后台</span>
@@ -81,16 +89,7 @@
     </section>
 
     <section class="sec">
-      <div class="sec-head"><h3>② 选商品</h3></div>
-      <button id="btnList" class="btn primary block">读取本店在售商品</button>
-      <p class="hint">
-        读出来以后，在右边「商品列表」里<br />
-        点某一行的 <b>复制</b> 按钮就能开始。
-      </p>
-    </section>
-
-    <section class="sec">
-      <div class="sec-head"><h3>③ 最近一次的结果</h3></div>
+      <div class="sec-head"><h3>② 最近一次的结果</h3></div>
       <div id="lastCard" class="card empty">
         <div class="card-empty">还没有操作记录</div>
       </div>
@@ -129,13 +128,19 @@
   <main class="main">
     <div class="panes">
       <div class="pane active" id="pane-goods">
+        <div class="fin-bar">
+          <span class="fin-title">商品列表</span>
+          <span class="fin-sub" id="goodsNote">还没读取</span>
+          <span class="spacer"></span>
+          <button id="btnList" class="btn primary">读取本店在售商品</button>
+        </div>
         <div class="table-wrap">
           <div id="goodsEmpty" class="big-empty">
             <div class="be-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
             </div>
             <p>还没有读取商品</p>
-            <p class="be-sub">先点左边「读取本店在售商品」</p>
+            <p class="be-sub">点右上「读取本店在售商品」，读出后点某一行的「复制」即可开始</p>
           </div>
           <table id="goodsTable" style="display:none">
             <thead>
@@ -234,9 +239,9 @@
           <label class="mini-field">核对月份
             <select id="finMonth"></select>
           </label>
+          <button class="btn" id="btnFinCost" title="录入今天的拿货成本">＋ 拿货成本</button>
+          <button class="btn" id="btnFinOrders" title="读取近90天订单，按商品汇总贡献">商品贡献</button>
           <button class="btn primary" id="btnFinCollect">采集全部店铺</button>
-          <button class="btn ghost" id="btnFinDetail" title="多花 1~2 分钟，采集逐笔明细用于分类统计">采集明细</button>
-          <button class="btn ghost" id="btnFinRestrict" title="单独读取资金限制（货款为 0 的原因）">资金限制</button>
         </div>
 
         <div class="fin-body" id="finBody">
@@ -247,27 +252,61 @@
           </div>
 
           <div id="finContent" style="display:none">
-            <div class="fin-cards">
+            <div class="fin-cards fin-cash-cards">
               <div class="fin-card">
-                <div class="fc-label">收入</div>
-                <div class="fc-value income" id="fcIncome">0.00</div>
-                <div class="fc-sub" id="fcIncomeSub">—</div>
+                <div class="fc-label">最近到账</div>
+                <div class="fc-value income" id="fcLastIn">—</div>
+                <div class="fc-sub" id="fcLastInSub">采集明细后显示</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">支出</div>
-                <div class="fc-value expense" id="fcExpense">0.00</div>
-                <div class="fc-sub" id="fcExpenseSub">—</div>
+                <div class="fc-label">本月到账</div>
+                <div class="fc-value income" id="fcMonthIn">0.00</div>
+                <div class="fc-sub" id="fcMonthInSub">平台结算到货款账户</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">净收益</div>
-                <div class="fc-value" id="fcProfit">0.00</div>
-                <div class="fc-sub">收入 − 支出</div>
+                <div class="fc-label">今日拿货成本</div>
+                <div class="fc-value expense" id="fcCostToday">0.00</div>
+                <div class="fc-sub" id="fcCostTodaySub">本地录入 · 简单模式</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">账户余额合计</div>
-                <div class="fc-value" id="fcBalance">0.00</div>
-                <div class="fc-sub" id="fcBalanceSub">货款 + 营销</div>
+                <div class="fc-label">今日净现金流</div>
+                <div class="fc-value" id="fcNetCash">0.00</div>
+                <div class="fc-sub" id="fcNetCashSub">今日到账 − 今日拿货成本</div>
               </div>
+            </div>
+
+            <div class="fin-sec" id="finCostSec" style="display:none">
+              <div class="fin-sec-h">最近拿货成本</div>
+              <table class="fin-table">
+                <thead><tr>
+                  <th>日期</th><th>商品</th><th class="r">数量</th><th class="r">单价</th><th class="r">合计</th><th>供应商</th><th>备注</th>
+                </tr></thead>
+                <tbody id="finCostBody"></tbody>
+              </table>
+            </div>
+
+            <div class="fin-sec" id="finOrderSec" style="display:none">
+              <div class="fin-sec-h">
+                <span>商品贡献</span>
+                <span class="fin-sec-note" id="finOrderNote">近 90 天</span>
+              </div>
+              <div class="fin-fee-bar">
+                <label>平台费率 <input id="feePlatform" type="number" min="0" step="0.01" />%</label>
+                <label>推广 <input id="feePromo" type="number" min="0" step="0.01" /></label>
+                <label>快递 <input id="feeShip" type="number" min="0" step="0.01" /></label>
+                <label>包装 <input id="feePack" type="number" min="0" step="0.01" /></label>
+                <span class="fin-fee-avg">每单扣费 <b id="feeAvg">—</b> <span id="feeDetail"></span></span>
+              </div>
+              <table class="fin-table">
+                <thead><tr>
+                  <th>商品</th><th>店铺</th><th class="r">销量</th><th class="r">退货率</th>
+                  <th class="r">实收</th><th class="r">拿货成本</th><th class="r">毛利</th>
+                  <th class="r">扣费后</th>
+                </tr></thead>
+                <tbody id="finOrderBody"></tbody>
+                <tbody id="finOrderOtherBody" style="display:none"></tbody>
+              </table>
+              <button class="fin-order-more" id="finOrderMore" style="display:none">展开其他商品</button>
             </div>
 
             <div class="fin-sec">
@@ -285,7 +324,7 @@
             <div class="fin-sec" id="finDailySec" style="display:none">
               <div class="fin-sec-h">
                 <span>日账单</span>
-                <span class="fin-sec-note" id="finDailyNote">逐日收支与余额，点日期展开当日逐笔分类（最近 30 天）</span>
+                <span class="fin-sec-note" id="finDailyNote">点日期看逐笔</span>
               </div>
               <table class="fin-table">
                 <thead><tr>
@@ -300,7 +339,7 @@
 
             <div class="fin-sec">
               <div class="fin-sec-h">
-                <span>月度趋势（多店合计）</span>
+                <span>月度趋势</span>
                 <span class="fin-sec-note" id="finMonthNote"></span>
               </div>
               <table class="fin-table">
@@ -312,18 +351,8 @@
               </table>
             </div>
 
-            <div class="fin-sec" id="finRestrictSec" style="display:none">
-              <div class="fin-sec-h">资金限制（影响可提现金额）</div>
-              <table class="fin-table">
-                <thead><tr>
-                  <th>店铺</th><th>限制原因</th><th class="r">限制金额</th><th>解除条件</th>
-                </tr></thead>
-                <tbody id="finRestrictBody"></tbody>
-              </table>
-            </div>
-
             <div class="fin-sec" id="finCatSec" style="display:none">
-              <div class="fin-sec-h">资金去向（按业务类型）</div>
+              <div class="fin-sec-h">资金去向</div>
               <table class="fin-table">
                 <thead><tr>
                   <th>类型</th><th class="r">金额</th><th class="r">笔数</th><th>占比</th>
@@ -331,6 +360,81 @@
                 <tbody id="finCatBody"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-returns">
+        <div class="fin-bar">
+          <span class="fin-title">售后</span>
+          <span class="fin-sub" id="finReturnNote">还没读取</span>
+          <span class="spacer"></span>
+          <button class="btn" id="btnAftersaleOpen" title="在当前店铺视图里打开拼多多售后工作台">打开售后工作台</button>
+        </div>
+        <div class="rt-tabs">
+          <button class="rt-tab active" data-rt="list">退货跟进</button>
+          <button class="rt-tab" data-rt="tpl">申诉文案</button>
+        </div>
+
+        <div class="fin-body rt-view" id="rtViewList">
+          <div class="rt-toolbar">
+            <select id="rtMallFilter" class="rt-select"><option value="">全部店铺</option></select>
+            <label class="rt-filter"><input type="checkbox" id="rtWithin21" checked /> 仅 21 天内</label>
+            <button class="btn" id="btnReturnTrace" title="只在途售后能查：逐单打开售后详情读退货物流轨迹">抓签收</button>
+            <button class="btn" id="btnReturnRefresh">刷新</button>
+          </div>
+          <div class="big-empty" id="returnEmpty">
+            <div class="be-icon">↩</div>
+            <p>还没有退货单</p>
+            <p class="be-sub">点「商品贡献」读取订单后，售后在途单与已完成退款会自动出现在这里</p>
+          </div>
+          <div id="finReturnSec" style="display:none">
+            <table class="fin-table rt-table">
+              <thead><tr>
+                <th>商品</th><th>店铺</th><th>状态</th><th>退货单号</th><th>快递</th><th class="r">退款</th><th class="rt-col-check"></th>
+              </tr></thead>
+              <tbody id="finReturnBody"></tbody>
+            </table>
+            <button class="fin-order-more" id="finReturnMore" style="display:none"></button>
+          </div>
+        </div>
+
+        <div class="fin-body rt-view" id="rtViewTpl" style="display:none">
+          <div class="rt-toolbar">
+            <input class="rt-search" id="rtTplSearch" placeholder="搜标题 / 正文" />
+            <span class="spacer"></span>
+            <button class="btn primary" id="btnTplNew">＋ 新建文案</button>
+          </div>
+          <div class="rt-tpl-hint">
+            用法：选一条 → 复制正文 → 在后台申诉/驳回页粘贴 → 按举证清单逐项上传。文案库不自动提交。
+          </div>
+          <div id="rtTplList"></div>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-risk">
+        <div class="fin-bar">
+          <span class="fin-title">商品检测</span>
+          <span class="fin-sub" id="riskNote">还没检测</span>
+          <span class="spacer"></span>
+          <button class="btn primary" id="btnRiskRun">开始检测</button>
+        </div>
+        <div class="fin-body">
+          <div class="big-empty" id="riskEmpty">
+            <div class="be-icon">🛡</div>
+            <p>还没有检测结果</p>
+            <p class="be-sub">点右上「开始检测」，会逐个店铺读取商品判定</p>
+          </div>
+          <div id="riskSec" style="display:none">
+            <table class="fin-table risk-table">
+              <thead><tr>
+                <th style="width:46px">图</th>
+                <th style="width:132px">商品 ID</th>
+                <th>商品名</th>
+                <th>原因</th>
+              </tr></thead>
+              <tbody id="riskBody"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -411,6 +515,53 @@
     <div class="modal-actions">
       <button class="btn ghost" id="modalCancel">取消</button>
       <button class="btn primary" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拿货成本录入 -->
+<div class="modal-mask" id="costMask">
+  <div class="modal">
+    <h4>录入拿货成本</h4>
+    <label>日期 <input type="date" id="costDate" /></label>
+    <label>商品 <input type="text" id="costProduct" placeholder="商品名 / 款号" /></label>
+    <div class="cost-grid">
+      <label>数量 <input type="number" id="costQty" min="1" step="1" value="1" /></label>
+      <label>单价（元） <input type="number" id="costUnit" min="0" step="0.01" /></label>
+    </div>
+    <label>供应商 <input type="text" id="costSupplier" placeholder="可选" /></label>
+    <label>备注 <input type="text" id="costNote" placeholder="可选" /></label>
+    <p class="modal-err" id="costErr"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="costCancel">取消</button>
+      <button class="btn primary" id="costOk">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 申诉文案编辑 -->
+<div class="modal-mask" id="tplMask">
+  <div class="modal wide">
+    <h4 id="tplModalTitle">新建申诉文案</h4>
+    <div class="tpl-form">
+      <label>标题 <input type="text" id="tplTitle" placeholder="例如：驳回-退货单号无轨迹" /></label>
+      <div class="tpl-form-row">
+        <label>场景 <select id="tplScene"></select></label>
+        <label>用途
+          <select id="tplKind">
+            <option value="reject">驳回退款</option>
+            <option value="evidence">举证 / 留言</option>
+            <option value="appeal">维权申诉</option>
+          </select>
+        </label>
+      </div>
+      <label>正文 <textarea id="tplBody" rows="9" placeholder="可用占位符：{orderSn} {amount} {returnSn} {days}"></textarea></label>
+      <label>举证清单（一行一项）<textarea id="tplEvidence" rows="4" placeholder="每行一项，例如：&#10;退货单号在快递官网查询无记录的截图&#10;订单发货物流轨迹完整截图"></textarea></label>
+    </div>
+    <p class="modal-err" id="tplErr"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="tplCancel">取消</button>
+      <button class="btn primary" id="tplSave">保存</button>
     </div>
   </div>
 </div>

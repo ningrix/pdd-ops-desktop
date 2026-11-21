@@ -1,0 +1,260 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上货中台 · 组件样张（按钮与胶囊 · C 基调）</title>
+<style>
+/* ============ 页面级 ============ */
+:root { --pg-bg:#10141c; --pg-fg:#dfe6f2; --pg-muted:#8fa0b8; }
+* { box-sizing: border-box; }
+html, body { margin:0; background:var(--pg-bg); color:var(--pg-fg); }
+body { font: 13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif; padding:28px 0 60px; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+.intro h1 { font-size:18px; margin:0 0 6px; }
+.intro p { margin:4px 0; color:var(--pg-muted); font-size:12.5px; }
+.sec { margin: 0 0 34px; }
+.sec-h { display:flex; align-items:baseline; gap:12px; margin:0 2px 12px; }
+.sec-h b { font-size:15px; }
+.sec-h span { color:var(--pg-muted); font-size:12px; }
+.sec-n { margin:10px 2px 0; color:var(--pg-muted); font-size:12px; line-height:1.75; }
+.sec-n b { color:var(--pg-fg); }
+.board { background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:20px; }
+
+/* ============ 组件 token（C 基调 + 可访问性修正） ============ */
+.board {
+  --bg:#0e1420; --panel:#141c2c; --panel2:#1a2334; --line:#2a3650; --text:#e2e8f2; --muted:#8697b0;
+  --accent:#5a82ff;          /* 链接 / 焦点 / 着色底 */
+  --accent-strong:#3b5fd9;   /* 实心按钮底：白字对比 5.5:1（#5a82ff 只有 3.5:1，不过 AA） */
+  --income:#3ecf8e; --loss:#ef5b5b; --warn:#f5a623;
+  --r-lg:10px; --r-md:8px; --r-sm:6px;
+}
+</style>
+</head>
+<body>
+<div class="wrap intro">
+  <h1>组件样张 · 按钮与胶囊（方向 C 基调）</h1>
+  <p>同一套 token（方向 C），修正 C 的细节问题：实心主按钮对比度、圆角节奏（10/8/6）、8pt 尺寸阶梯、键盘焦点环、状态全覆盖。所有示例都是应用里的真实按钮与真实状态，无虚构。</p>
+</div>
+
+<style>
+/* ============ 按钮组件（尺寸阶梯 32/28/24，8pt 节奏） ============ */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px;
+       border-radius:var(--r-md); font:600 12.5px/1 "Microsoft YaHei UI","Microsoft YaHei",sans-serif;
+       border:1px solid transparent; cursor:pointer; user-select:none; white-space:nowrap;
+       transition:background .12s, border-color .12s, color .12s; }
+.btn svg { width:14px; height:14px; flex:none; }
+.btn.lg { height:32px; padding:0 16px; font-size:13px; }
+.btn.md { height:28px; padding:0 13px; }
+.btn.sm { height:24px; padding:0 10px; font-size:12px; }
+/* 主行动：实心。一屏一个（Hick） */
+.btn.pri { background:var(--accent-strong); color:#fff; }
+.btn.pri:hover { background:#4668e4; }
+.btn.pri:active { background:#3453c4; transform:translateY(1px); }
+/* 次行动：着色底（iOS tinted） */
+.btn.tint { background:rgba(90,130,255,.13); color:#a8baff; border-color:rgba(90,130,255,.30); }
+.btn.tint:hover { background:rgba(90,130,255,.20); }
+.btn.tint:active { background:rgba(90,130,255,.26); transform:translateY(1px); }
+/* 常规：描边 */
+.btn.sec { background:var(--panel2); color:var(--text); border-color:var(--line); }
+.btn.sec:hover { background:#223052; border-color:#3a4c6e; }
+.btn.sec:active { transform:translateY(1px); }
+/* 幽灵 */
+.btn.ghost { background:transparent; color:var(--muted); border-color:transparent; }
+.btn.ghost:hover { color:var(--text); background:rgba(255,255,255,.05); }
+/* 警示：描边红（不实心）——破坏类操作先「多想一秒」 */
+.btn.warn-o { background:transparent; color:#f09a9a; border-color:rgba(239,91,91,.45); }
+.btn.warn-o:hover { background:rgba(239,91,91,.12); color:#ffadad; }
+.btn.warn-o:active { background:rgba(239,91,91,.20); transform:translateY(1px); }
+/* 禁用 / 加载 */
+.btn:disabled { opacity:.42; cursor:not-allowed; transform:none; }
+.btn.loading { color:inherit; }
+.spin { width:13px; height:13px; border-radius:50%; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; animation:spin .8s linear infinite; }
+.tint .spin, .sec .spin { border-color:rgba(168,186,255,.35); border-top-color:#a8baff; }
+@keyframes spin { to { transform:rotate(360deg); } }
+/* 键盘焦点环（现行 style.css 把 outline 全摘了，这里补回可见但克制的环） */
+.btn:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(90,130,255,.55); }
+.row { display:flex; align-items:center; gap:10px; row-gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.lbl { width:76px; flex:none; font-size:11.5px; color:var(--muted); }
+</style>
+
+<div class="wrap">
+<!-- ============ 一、按钮 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>一 · 按钮</b><span>五个族 × 三档尺寸 × 状态全覆盖；全部对应应用里已有的真实动作</span></div>
+  <div class="board">
+    <div class="row"><span class="lbl">主行动 pri</span>
+      <button class="btn lg pri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>采集全部店铺</button>
+      <button class="btn md pri">读取本店在售商品</button>
+      <button class="btn sm pri">开始检测</button>
+    </div>
+    <div class="row"><span class="lbl">次行动 tint</span>
+      <button class="btn md tint">＋ 拿货成本</button>
+      <button class="btn md tint">商品贡献</button>
+      <button class="btn sm tint">检测</button>
+      <button class="btn sm tint">水印</button>
+    </div>
+    <div class="row"><span class="lbl">常规 sec</span>
+      <button class="btn md sec">核对月份 2026-11</button>
+      <button class="btn md sec">重试失败项</button>
+      <button class="btn sm sec">导出</button>
+    </div>
+    <div class="row"><span class="lbl">警示 warn-o</span>
+      <button class="btn md warn-o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>停止批量</button>
+      <button class="btn sm warn-o">清空记录</button>
+      <button class="btn sm warn-o">移除</button>
+    </div>
+    <div class="row"><span class="lbl">幽灵 ghost</span>
+      <button class="btn md ghost">展开 21 天前 / 未动销 59 个商品</button>
+      <button class="btn sm ghost">收起</button>
+      <button class="btn sm ghost">刷新</button>
+    </div>
+    <div class="row"><span class="lbl">加载 / 禁用</span>
+      <button class="btn md pri loading"><span class="spin"></span>采集中…</button>
+      <button class="btn md sec" disabled>上架（未选中商品）</button>
+      <button class="btn sm tint" disabled>水印</button>
+    </div>
+    <div class="row"><span class="lbl">图标按钮</span>
+      <button class="btn md sec" style="width:32px;padding:0" title="刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button class="btn md ghost" style="width:28px;padding:0" title="主题切换"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+      <button class="btn sm warn-o" style="width:24px;padding:0" title="移除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+  </div>
+  <div class="sec-n"><b>依据：</b>「警示」族用描边而非实心红——破坏/中断类操作先「多想一秒」（损失厌恶的反向应用：别把不可逆动作画得诱人）；「加载」态回应 Doherty 阈值（&lt;400ms 必须有反馈）；键盘焦点环补回现行 style.css 摘掉的 outline（HIG：键盘可达）。</div>
+</section>
+
+<style>
+/* ============ 胶囊组件（状态/结果/判定/信号/分段） ============ */
+.pill { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 11px;
+        border-radius:999px; font:500 11.5px/1 "Microsoft YaHei UI","Microsoft YaHei",sans-serif;
+        border:1px solid var(--line); background:var(--panel2); color:var(--muted); white-space:nowrap; }
+.pill svg { width:12px; height:12px; flex:none; }
+.pill .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none; }
+.pill.ok   { color:var(--income); border-color:rgba(62,207,142,.35); background:rgba(62,207,142,.10); }
+.pill.ok .dot { background:var(--income); box-shadow:0 0 6px rgba(62,207,142,.6); }
+.pill.err  { color:#ff9d9d; border-color:rgba(239,91,91,.40); background:rgba(239,91,91,.10); }
+.pill.err .dot { background:var(--loss); }
+.pill.warn { color:var(--warn); border-color:rgba(245,166,35,.35); background:rgba(245,166,35,.10); }
+.pill.warn .dot { background:var(--warn); }
+.pill.info { color:#a8baff; border-color:rgba(90,130,255,.35); background:rgba(90,130,255,.10); }
+.pill.off  { color:var(--muted); }
+/* 检测中：琥珀呼吸（现行 .st.checking 的胶囊化） */
+.pill.busy .dot { background:var(--warn); animation:breath 1.15s ease-out infinite; }
+@keyframes breath { 0%{box-shadow:0 0 0 0 rgba(245,166,35,.55)} 65%{box-shadow:0 0 0 6px rgba(245,166,35,0)} 100%{box-shadow:0 0 0 0 rgba(245,166,35,0)} }
+/* 可删除标签 */
+.pill.tag { padding-right:6px; }
+.pill.tag .x { width:15px; height:15px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:inherit; opacity:.7; cursor:pointer; }
+.pill.tag .x:hover { opacity:1; background:rgba(255,255,255,.12); }
+/* 分段胶囊（segmented）：底座 + 可选项 */
+.seg { display:inline-flex; gap:2px; padding:2px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); }
+.seg button { height:24px; padding:0 13px; border:none; border-radius:999px; background:transparent; color:var(--muted); font:500 11.5px/1 inherit; font-family:inherit; cursor:pointer; }
+.seg button:hover { color:var(--text); }
+.seg button.on { background:rgba(90,130,255,.20); color:#c3d2ff; }
+.seg button:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(90,130,255,.55); }
+/* 小徽标（日志数） */
+.badge { min-width:16px; height:16px; padding:0 5px; border-radius:8px; background:var(--accent-strong); color:#fff; font:600 10px/16px var(--pg-fg); font-family:inherit; text-align:center; display:inline-block; }
+</style>
+
+<!-- ============ 二、胶囊 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>二 · 胶囊</b><span>状态 / 结果 / 判定 / 信号标签 / 分段筛选——全部是应用里已存在的真实状态</span></div>
+  <div class="board">
+    <div class="row"><span class="lbl">店铺在线</span>
+      <span class="pill ok"><span class="dot"></span>在线（已登录）</span>
+      <span class="pill err"><span class="dot"></span>离线：未登录</span>
+      <span class="pill busy"><span class="dot"></span>检测中…</span>
+      <span class="pill off"><span class="dot"></span>未检测</span>
+    </div>
+    <div class="row"><span class="lbl">批量结果</span>
+      <span class="pill ok">成功 12</span>
+      <span class="pill warn">失败 3</span>
+      <span class="pill err">状态未知 1 · 去后台核对</span>
+      <span class="pill off">排队 4</span>
+      <span class="pill info">执行中…</span>
+    </div>
+    <div class="row"><span class="lbl">能否上架</span>
+      <span class="pill ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>可上</span>
+      <span class="pill warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2" stroke-linecap="round"/></svg>冷却中</span>
+      <span class="pill err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>缺同类</span>
+      <span class="pill off">未算</span>
+    </div>
+    <div class="row"><span class="lbl">信号 / 计数</span>
+      <span class="pill info">在途售后 27 单</span>
+      <span class="pill warn">商品检测 20/22 被判定</span>
+      <span class="pill off">账单平台费 7.96/单</span>
+      <span class="pill off">日志 <b class="badge">31</b></span>
+    </div>
+    <div class="row"><span class="lbl">可删除标签</span>
+      <span class="pill tag info">顺丰快递<span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+      <span class="pill tag off">中通快递<span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+    </div>
+    <div class="row"><span class="lbl">分段筛选</span>
+      <span class="seg" id="segDemo">
+        <button class="on">全部店铺</button><button>阿泽made</button><button>布丁2</button><button>阿泽高端made</button>
+      </span>
+    </div>
+  </div>
+  <div class="sec-n"><b>依据：</b>胶囊 = 让平台强加的状态一眼可分（信息不对称的反向操作：平台给的判定/处罚/频控，商户要 0.5 秒识别）；「状态未知」胶囊沿用 AGENTS §5 的语义——红色描边 + 行动指引，绝不与普通失败混色；呼吸动画只用在「检测中」一个地方（HIG：动效表达状态，不是装饰）；分段筛选用 iOS segmented control 心智，点击即筛选（本地即时反馈）。</div>
+</section>
+
+<!-- ============ 三、尺寸与状态矩阵 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>三 · 尺寸阶梯与状态矩阵</b><span>32 / 28 / 24 三档（8pt 节奏），五个状态全部成对给出</span></div>
+  <div class="board">
+    <div class="row"><span class="lbl">32 主行动</span>
+      <button class="btn lg pri">采集全部店铺</button>
+      <button class="btn lg pri loading"><span class="spin"></span>采集中…</button>
+      <button class="btn lg pri" disabled>采集全部店铺</button>
+    </div>
+    <div class="row"><span class="lbl">28 次行动</span>
+      <button class="btn md tint">＋ 拿货成本</button>
+      <button class="btn md sec">重试失败项</button>
+      <button class="btn md warn-o">停止批量</button>
+      <button class="btn md ghost" style="border:1px dashed var(--line)">占位</button>
+    </div>
+    <div class="row"><span class="lbl">24 行内</span>
+      <button class="btn sm sec">检测</button>
+      <button class="btn sm tint">水印</button>
+      <button class="btn sm warn-o">移除</button>
+      <button class="btn sm pri">上架</button>
+    </div>
+    <div class="row"><span class="lbl">焦点环</span>
+      <button class="btn md sec">用 Tab 键走一遍，看这圈环</button>
+      <span class="pill info" style="box-shadow:0 0 0 2px rgba(90,130,255,.55)">胶囊同样有焦点环</span>
+    </div>
+  </div>
+  <div class="sec-n"><b>软件工程：</b>每个组件 = 一组 token 组合（pri = accent-strong + 白字；tint = accent 13% + 30% 描边；状态色 = 语义色 10% 底 + 35% 描边 + 同色文字），三档尺寸只动 height/padding/font-size 三个变量。落进 style.css 时按同名类迁移，先 token 后组件，逐页跑对比度断言。</div>
+</section>
+
+<!-- ============ 四、浅色验证条 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>四 · 同一套组件的浅色验证</b><span>不是新方向——证明这些组件只靠 token 就能切到你们已有的深浅切换</span></div>
+  <div class="board" style="--bg:#f4f6fa; --panel:#ffffff; --panel2:#f0f4f9; --line:#dde5ee; --text:#1d2939; --muted:#5f6c80; --accent-strong:#2f5fd0; --income:#0f7a4d; --loss:#c0392b; --warn:#96601a;">
+    <div class="row">
+      <button class="btn md pri">采集全部店铺</button>
+      <button class="btn md tint">＋ 拿货成本</button>
+      <button class="btn md sec">重试失败项</button>
+      <button class="btn md warn-o">停止批量</button>
+      <span class="pill ok"><span class="dot"></span>在线（已登录）</span>
+      <span class="pill err">状态未知 1 · 去后台核对</span>
+      <span class="pill warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2" stroke-linecap="round"/></svg>冷却中</span>
+    </div>
+  </div>
+  <div class="sec-n">浅色语义色沿用已过 AA 的那组（#0f7a4d / #c0392b / #96601a）；实心主按钮底色换 #2f5fd0（白字对比 5.9:1）。切主题零组件改动，只换 :root 变量。</div>
+</section>
+</div>
+
+<script>
+  (function () {
+    var seg = document.getElementById('segDemo');
+    if (!seg) return;
+    seg.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      seg.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+    });
+  })();
+</script>
+</body>
+</html>

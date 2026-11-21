@@ -36,16 +36,35 @@ const wrap = (body) => `(async () => {${PRELUDE}${body}})()`;
 
 /** 环境自检 + 登录态 */
 function ping() {
-  return wrap(`
-    const lg = call('/janus/api/checkLogin', {});
-    return {
-      ok: !!lg.ok,
-      login: lg.ok ? !!(lg.data && lg.data.login) : false,
-      href: location.href,
-      hasMms: true,
-      detail: lg.ok ? undefined : lg.err
-    };
-  `);
+  return `(async () => {
+    const href = location.href;
+    const txt = (document.body.innerText || '').replace(/\\s+/g, ' ');
+    const mms = window.__mms && window.__mms.fetch && window.__mms.fetch.sync;
+    if (typeof mms === 'function') {
+      const lg = (() => {
+        try {
+          const r = mms('POST', location.origin + '/janus/api/checkLogin', {});
+          return { ok: true, data: (r && r.result !== undefined) ? r.result : r };
+        } catch (e) { return { ok: false, err: String((e && e.message) || e) }; }
+      })();
+      return {
+        ok: !!lg.ok,
+        login: lg.ok ? !!(lg.data && lg.data.login) : false,
+        href,
+        hasMms: true,
+        detail: lg.ok ? undefined : lg.err,
+      };
+    }
+    // cashier.pinduoduo.com 是独立子域，没有 __mms；用页面登录态文案判断。
+    if (/\\/login|passport|扫码登录|请登录/.test(href) || /扫码登录|请登录/.test(txt)) {
+      return { ok: true, login: false, href, hasMms: false, reason: '未登录' };
+    }
+    if (/cashier\\.pinduoduo\\.com/.test(location.hostname) &&
+        /返回商家后台/.test(txt) && /退出/.test(txt)) {
+      return { ok: true, login: true, href, hasMms: false };
+    }
+    return { ok: false, login: false, href, hasMms: false, error: '页面未就绪' };
+  })()`;
 }
 
 /** 列出在售商品 */

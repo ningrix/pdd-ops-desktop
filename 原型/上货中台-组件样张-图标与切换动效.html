@@ -1,0 +1,497 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上货中台 · 图标绘制与切换动效样张</title>
+<style>
+/* ============ 页面级 + 动效刻度（延续上一样张） ============ */
+:root { --pg-bg:#0b0f18; --pg-fg:#dfe6f2; --pg-muted:#8fa0b8; }
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--pg-bg); color:var(--pg-fg); }
+body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif; padding:28px 0 60px; }
+.wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+.intro h1 { font-size:18px; margin:0 0 6px; }
+.intro p { margin:4px 0; color:var(--pg-muted); font-size:12.5px; }
+.sec { margin:0 0 36px; }
+.sec-h { display:flex; align-items:baseline; gap:12px; margin:0 2px 12px; }
+.sec-h b { font-size:15px; }
+.sec-h span { color:var(--pg-muted); font-size:12px; }
+.sec-n { margin:10px 2px 0; color:var(--pg-muted); font-size:12px; line-height:1.75; }
+.sec-n b { color:var(--pg-fg); }
+.board { --bg:#0e1420; --panel:#141c2c; --panel2:#1a2334; --line:#2a3650; --text:#e2e8f2; --muted:#8697b0;
+         --accent:#5a82ff; --accent-strong:#3b5fd9; --income:#3ecf8e; --loss:#ef5b5b; --warn:#f5a623;
+         --m-fast:120ms; --m-base:220ms; --m-slow:280ms; --m-spring:420ms; --m-draw:500ms;
+         --ease-std:cubic-bezier(.4,0,.2,1); --ease-decel:cubic-bezier(0,0,.2,1);
+         --ease-accel:cubic-bezier(.3,0,.8,.15); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+         background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:20px; }
+.row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; }
+.no-motion *, .no-motion *::before, .no-motion *::after {
+  animation-duration:.01ms !important; transition-duration:.01ms !important; }
+.btn-m { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 14px;
+         border-radius:8px; border:1px solid var(--line); background:var(--panel2); color:var(--text);
+         font:600 12.5px/1 inherit; font-family:inherit; cursor:pointer;
+         transition:transform var(--m-fast) var(--ease-std), background var(--m-fast) var(--ease-std); }
+.btn-m:hover { background:#223052; }
+.btn-m:active { transform:scale(.96); }
+.btn-m.pri-m { background:var(--accent-strong); border-color:transparent; color:#fff; }
+</style>
+</head>
+<body>
+<div class="wrap intro">
+  <h1>图标绘制 · 形变动效 · 切换动效（动效刻度延续）</h1>
+  <p>新增三件事：<b>① 手绘 SVG 图标与状态形变</b>（图标不切换、要变形——连续性）<b>② 渐隐渐显 / 丝滑滑入 / 页签切换</b>（真实 app 建议用 View Transitions API，本 Chromium 直接可用）<b>③ 复杂编排</b>（金额滚动、进度环、一次「采集完成」的完整时间轴）。全部沿用四条动效刻度，全部支持减弱动态。</p>
+</div>
+
+<div class="wrap">
+<!-- ============ 一、图标绘制规范 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>一 · 图标绘制</b><span>24px 网格 · 1.7px 线宽 · 圆角端点 · currentColor——与应用现有图标同源同规格</span></div>
+  <div class="board">
+    <div class="ic-grid">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><i>资金</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg><i>商品</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><i>采集箱</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><i>会话</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 10a9 9 0 0 1 15.5-6.3L21 6"/><path d="M21 3v3.5h-3.5"/><path d="M21 14a9 9 0 0 1-15.5 6.3L3 18"/><path d="M3 21v-3.5h3.5"/></svg><i>售后</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><i>检测</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg><i>后台</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg><i>太阳</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M20 13.5A8.5 8.5 0 1 1 10.5 4 7 7 0 0 0 20 13.5z"/></svg><i>月亮</i></span>
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/></svg><i>完成</i></span>
+    </div>
+  </div>
+  <div class="sec-n"><b>规范：</b>线宽 1.7（悬停/激活态可加粗到 2.0 表达状态）、端点与拐角 round、所有图标共享同一 viewBox 与视觉重心；放大到 48px 检查线条匀称。这套就是应用 index.html 现有图标的延续——<b>先统一规格，才谈形变</b>（软件工程：图标是接口，形变要求两个状态共用同一坐标系）。</div>
+</section>
+
+<style>
+/* 图标格纸 */
+.ic-grid { display:flex; flex-wrap:wrap; gap:10px; }
+.ic { width:84px; display:flex; flex-direction:column; align-items:center; gap:5px; padding:10px 6px 8px;
+     border-radius:8px; background:
+     linear-gradient(rgba(42,54,80,.55) 1px, transparent 1px) 12px 12px / 24px 24px,
+     linear-gradient(90deg, rgba(42,54,80,.55) 1px, transparent 1px) 12px 12px / 24px 24px,
+     var(--panel); border:1px solid var(--line); }
+.ic svg { width:48px; height:48px; fill:none; stroke:var(--text); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.ic i { font-style:normal; font-size:10.5px; color:var(--muted); }
+
+/* ============ 二、图标形变 ============ */
+/* a) 太阳↔月亮：同一 svg 内两组元素交叉形变（现 btnTheme 是两张图 display 切换，升级为形变） */
+.theme-t { width:56px; height:56px; border-radius:12px; border:1px solid var(--line); background:var(--panel2);
+           cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+           transition:background var(--m-fast) var(--ease-std); }
+.theme-t:hover { background:#223052; }
+.theme-t svg { width:30px; height:30px; fill:none; stroke:var(--text); stroke-width:1.7; stroke-linecap:round; overflow:visible; }
+.theme-t .sun { transition:opacity var(--m-base) var(--ease-std), transform var(--m-base) var(--ease-std); transform-origin:12px 12px; }
+.theme-t .sun .ray { transform-origin:12px 12px; }
+.theme-t .moon { transition:opacity var(--m-base) var(--ease-std), transform var(--m-base) var(--ease-std); transform-origin:12px 12px;
+                 opacity:0; transform:rotate(-90deg) scale(.4); }
+.theme-t.night .sun { opacity:0; transform:scale(.4) rotate(90deg); }
+.theme-t.night .moon { opacity:1; transform:none; }
+.theme-t .lab { display:block; }
+
+/* b) 完成勾：stroke 描画（dashoffset 从周长到 0），收尾弹簧一下 */
+.ring-check { width:64px; height:64px; cursor:pointer; }
+.ring-check svg { width:64px; height:64px; overflow:visible; }
+.ring-check .rc { fill:none; stroke:var(--income); stroke-width:2; stroke-linecap:round;
+                  stroke-dasharray:57; stroke-dashoffset:57; }
+.ring-check .ck { fill:none; stroke:var(--income); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
+                  stroke-dasharray:22; stroke-dashoffset:22; }
+.ring-check.done .rc { animation:draw var(--m-draw) var(--ease-decel) forwards; }
+.ring-check.done .ck { animation:draw 300ms var(--ease-decel) 280ms forwards, pop var(--m-spring) var(--ease-spring) 560ms; }
+@keyframes draw { to { stroke-dashoffset:0; } }
+@keyframes pop { 50% { transform:scale(1.15); } 100% { transform:scale(1); } }
+.ring-check { transition:transform var(--m-fast) var(--ease-std); transform-origin:center; }
+.ring-check:hover { transform:scale(1.05); }
+
+/* c) 采集：下载箭头 → 旋转环 → 勾 */
+.coll-ic { width:56px; height:56px; display:inline-flex; align-items:center; justify-content:center;
+           border:1px solid var(--line); border-radius:12px; background:var(--panel2); cursor:pointer; }
+.coll-ic svg { width:30px; height:30px; overflow:visible; }
+.coll-ic .ar { fill:none; stroke:var(--text); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;
+               transition:transform var(--m-base) var(--ease-accel), opacity var(--m-base) var(--ease-accel); }
+.coll-ic .rg { fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round;
+               stroke-dasharray:52; stroke-dashoffset:26; opacity:0;
+               transform-origin:12px 12px; transition:opacity var(--m-fast) var(--ease-std); }
+.coll-ic.busy .ar { transform:translateY(10px); opacity:0; }
+.coll-ic.busy .rg { opacity:1; animation:rot 1s linear infinite, drawring 600ms var(--ease-decel) forwards; }
+.coll-ic.ok .rg { animation:none; opacity:0; }
+.coll-ic .ck2 { fill:none; stroke:var(--income); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
+                stroke-dasharray:22; stroke-dashoffset:22; }
+.coll-ic.ok .ck2 { animation:draw 300ms var(--ease-decel) forwards, pop var(--m-spring) var(--ease-spring) 300ms; }
+@keyframes rot { to { transform:rotate(360deg); } }
+@keyframes drawring { to { stroke-dashoffset:0; } }
+
+/* d) 两段式删除：× → 展开确认条（3 秒不确认自动回弹） */
+.delslot { display:inline-flex; align-items:center; }
+.del-x { width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--panel2);
+         color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+         transition:color var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std),
+                    background var(--m-fast) var(--ease-std); }
+.del-x:hover { color:#ff9d9d; border-color:rgba(239,91,91,.45); }
+.del-x svg { width:15px; height:15px; }
+.del-confirm { height:30px; display:inline-flex; align-items:center; gap:6px; padding:0; max-width:0; border-radius:8px;
+               border:1px solid transparent; background:transparent; color:var(--warn);
+               font-size:12px; cursor:pointer; overflow:hidden;
+               transition:max-width var(--m-base) var(--ease-decel), padding var(--m-base) var(--ease-decel),
+                          opacity var(--m-base) var(--ease-decel), border-color var(--m-base) var(--ease-std),
+                          background var(--m-base) var(--ease-std); }
+.del-wrap { display:inline-grid; grid-template-rows:1fr; grid-template-columns:1fr; }
+.del-confirm .tx { white-space:nowrap; }
+.del-confirm.arm { max-width:180px; padding:0 12px; border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.12); }
+.del-x.armed { color:var(--warn); border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.12); }
+@keyframes shake { 25%{transform:translateX(-2px)} 50%{transform:translateX(2px)} 75%{transform:translateX(-1px)} }
+.del-x.shake { animation:shake 240ms var(--ease-std); }
+</style>
+
+<!-- ============ 二、图标形变 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>二 · 图标形变</b><span>状态变化时图标不切换、要变形——元素的位置与含义保持连续（HIG：motion 传达变化）</span></div>
+  <div class="board">
+    <div class="row">
+      <button class="theme-t" id="themeDemo" title="点击：太阳↔月亮形变">
+        <svg viewBox="0 0 24 24">
+          <g class="sun"><circle cx="12" cy="12" r="4"/><g class="ray"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></g></g>
+          <g class="moon"><path d="M20 13.5A8.5 8.5 0 1 1 10.5 4 7 7 0 0 0 20 13.5z"/></g>
+        </svg>
+      </button>
+      <span style="color:var(--muted);font-size:12px">主题切换：光线收拢 + 月亮旋入——升级方案，替换现行 btnTheme 的两张图硬切</span>
+      <span class="ring-check" id="ringCheck" title="点击：描画完成勾">
+        <svg viewBox="0 0 24 24"><circle class="rc" cx="12" cy="12" r="9"/><path class="ck" d="m8 12.5 3 3 5-6"/></svg>
+      </span>
+      <span style="color:var(--muted);font-size:12px">售后退货页的「已完成」勾：圆环描画 + 对勾跟进 + 弹簧收尾</span>
+      <span class="coll-ic" id="collDemo" title="点击：下载箭头 → 旋转环 → 勾">
+        <svg viewBox="0 0 24 24">
+          <g class="ar"><path d="M12 4v10"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></g>
+          <circle class="rg" cx="12" cy="12" r="8.3"/>
+          <path class="ck2" d="m8 12.5 3 3 5-6"/>
+        </svg>
+      </span>
+      <span style="color:var(--muted);font-size:12px">采集动作的三段图标叙事</span>
+      <span class="delslot">
+        <button class="del-x" id="delX" title="点击：进入确认态"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <span class="del-confirm" id="delConfirm"><span class="tx">确认移除？3 秒后自动取消</span></span>
+      </span>
+      <span style="color:var(--muted);font-size:12px">删除两段式（政治经济学：破坏类动作加一道闸）</span>
+    </div>
+  </div>
+  <div class="sec-n"><b>实现：</b>形变全部发生在同一 SVG 内部（两组元素交叉过渡），不换图、不换元素——这就是「图标动效变化」与「换图」的区别。描画用 stroke-dasharray/dashoffset（SVG 笔画属性，不触发布局）。<b>社会心理学：</b>两段式删除利用了「行动前额外的 400ms 成本」筛选误触；3 秒回弹避免状态残留。</div>
+</section>
+
+<style>
+/* ============ 三、渐隐渐显 + 丝滑滑入（列表 stagger） ============ */
+.stg-list { width:100%; border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow:hidden; }
+.stg-list li { list-style:none; display:flex; align-items:center; gap:10px; padding:9px 14px;
+               border-bottom:1px solid rgba(255,255,255,.04); font-size:12.5px;
+               opacity:0; transform:translateX(-14px);
+               transition:opacity var(--m-base) var(--ease-decel), transform var(--m-base) var(--ease-decel);
+               transition-delay:0ms; }
+.stg-list li:last-child { border-bottom:none; }
+.stg-list.go li { opacity:1; transform:none; transition-delay:calc(var(--i) * 40ms); }
+.stg-list li .num { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+.stg-list li .nm { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stg-list li img { width:26px; height:26px; border-radius:5px; object-fit:cover; background:var(--panel2); }
+
+/* 骨架屏 → 内容 渐隐渐显 */
+.skel-stage { position:relative; width:320px; min-height:96px; border:1px solid var(--line); border-radius:10px;
+              background:var(--panel); overflow:hidden; }
+.skel { padding:14px 16px; display:flex; flex-direction:column; gap:9px;
+        transition:opacity 160ms var(--ease-accel); }
+.skel .bar { height:11px; border-radius:5px;
+             background:linear-gradient(90deg, rgba(255,255,255,.06) 25%, rgba(255,255,255,.13) 45%, rgba(255,255,255,.06) 65%) -80px 0 / 160px 100px;
+             animation:shimmer 1.2s linear infinite; }
+.skel .bar.b1 { width:70%; } .skel .bar.b2 { width:45%; } .skel .bar.b3 { width:58%; }
+@keyframes shimmer { to { background-position-x:240px; } }
+.skel-content { position:absolute; inset:0; padding:14px 16px; opacity:0; transform:translateX(12px);
+                transition:opacity var(--m-base) var(--ease-decel), transform var(--m-base) var(--ease-decel); }
+.skel-stage.ready .skel { opacity:0; }
+.skel-stage.ready .skel-content { opacity:1; transform:none; }
+.skel-content .t1 { font-size:13px; font-weight:600; }
+.skel-content .t2 { font-size:11.5px; color:var(--muted); margin-top:4px; }
+</style>
+
+<!-- ============ 三、渐隐渐显 + 丝滑滑入 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>三 · 渐隐渐显 + 丝滑滑入</b><span>列表错峰入场（每行 40ms 递进，总时长封顶）；骨架屏与内容交叉淡化</span></div>
+  <div class="board">
+    <ul class="stg-list go" id="stgDemo">
+      <li style="--i:0"><img alt="" /><span class="nm">蒲田鼎级高货Lulu泡芙五格羽绒服…</span><span class="num">357.95</span></li>
+      <li style="--i:1"><img alt="" /><span class="nm">爆款1U1U LU璐家四格鸭绒泡芙款…</span><span class="num">328.68</span></li>
+      <li style="--i:2"><img alt="" /><span class="nm">ex3BOA越野跑鞋 免系带机能登山鞋…</span><span class="num">262.48</span></li>
+      <li style="--i:3"><img alt="" /><span class="nm">lu鸭绒羽绒服五格露泡多巴胺女士…</span><span class="num">142.86</span></li>
+      <li style="--i:4"><img alt="" /><span class="nm">跨境26小太阳5000gt蓬松同款…</span><span class="num">88.92</span></li>
+    </ul>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-m" id="stgReplay">重播入场（错峰 40ms × 5 行 = 200ms 总预算）</button>
+      <div class="skel-stage" id="skelDemo">
+        <div class="skel"><div class="bar b1"></div><div class="bar b2"></div><div class="bar b3"></div></div>
+        <div class="skel-content"><div class="t1">本月到账 37,764.66</div><div class="t2">数据截至 2026-11-20 · 与上月对照见日账单</div></div>
+      </div>
+      <button class="btn-m" id="skelReplay">重播骨架 → 内容</button>
+    </div>
+  </div>
+  <div class="sec-n"><b>社会心理学：</b>错峰入场把「阅读顺序」直接排给了眼睛——排在前面的行天然获得第一眼注意力（序列位置效应）；40ms 步长是「能感知次序、又不觉得拖」的临界值，总时长封顶 300ms。<b>工程：</b>真实 app 里 renderPool / renderOrderContribution 渲染完给容器加 .go 即可，行内 style="--i:N" 由循环写入。</div>
+</section>
+
+<style>
+/* ============ 四、页签切换动效 ============ */
+.mini-tabs { display:flex; gap:4px; margin-bottom:0; }
+.mini-tabs button { height:30px; padding:0 16px; border:1px solid var(--line); border-bottom:none; background:var(--panel2);
+                   color:var(--muted); font:500 12px/1 inherit; font-family:inherit; cursor:pointer;
+                   border-radius:8px 8px 0 0; transition:color var(--m-fast) var(--ease-std), background var(--m-fast) var(--ease-std); }
+.mini-tabs button:hover { color:var(--text); }
+.mini-tabs button.on { background:var(--panel); color:var(--text); font-weight:600; }
+.mini-stage { position:relative; min-height:120px; border:1px solid var(--line); border-radius:0 10px 10px 10px;
+              background:var(--panel); overflow:hidden; }
+.mini-pane { position:absolute; inset:0; padding:14px 16px;
+             opacity:0; transform:translateX(26px); pointer-events:none;
+             transition:opacity var(--m-base) var(--ease-decel), transform var(--m-base) var(--ease-decel); }
+.mini-pane.cur { opacity:1; transform:none; pointer-events:auto; }
+.mini-stage.leaving .mini-pane.cur { opacity:0; transform:translateX(-26px);
+             transition:opacity 140ms var(--ease-accel), transform 140ms var(--ease-accel); }
+.mini-pane.p0 { transform:translateX(-26px); }
+.mini-pane h5 { margin:0 0 6px; font-size:12.5px; }
+.mini-pane p { margin:0; font-size:12px; color:var(--muted); }
+.mini-pane .big { font-size:24px; font-weight:600; color:var(--income); font-variant-numeric:tabular-nums; margin-top:8px; }
+</style>
+
+<!-- ============ 四、页签切换动效 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>四 · 页签切换动效</b><span>方向感知滑入：往右切 → 新页从右来；退场永远比进场快；真实 app 用 View Transitions API</span></div>
+  <div class="board">
+    <div class="mini-tabs" id="mtTabs">
+      <button class="on">现金流</button><button>商品贡献</button><button>日账单</button>
+    </div>
+    <div class="mini-stage" id="mtStage">
+      <div class="mini-pane cur"><h5>现金流</h5><p>今日到账 − 今日拿货成本</p><div class="big">—</div></div>
+      <div class="mini-pane"><h5>商品贡献</h5><p>近 90 天 · 退款订单不计获利</p><div class="big">+2,282.55</div></div>
+      <div class="mini-pane"><h5>日账单</h5><p>逐日收支与余额 · 点行看逐笔</p><div class="big">2026-11-19</div></div>
+    </div>
+  </div>
+  <div class="sec-n"><b>实现（两条路）：</b>① <b>真实 app 首选 View Transitions API</b>——本应用 Electron 40（Chromium ≈132 ≥ 111）原生支持：setTab 里一行 <b>document.startViewTransition(() => setTab(name))</b>，默认就是丝滑交叉淡化；再配 ::view-transition-old/new 伪元素自定义时长与滑动，免手写时序。② 本样张演示的手写版（方向感知：切换方向决定滑入方向，退场 140ms accel 恒快于进场 220ms decel）适用于不支持 VT 的兜底。<b>社会心理学：</b>方向感知建立空间地图——「向右 = 更后面」，用户不再需要记住页签顺序。</div>
+</section>
+
+<style>
+/* ============ 五、复杂动画：金额滚动 + 进度环 ============ */
+.money { display:flex; flex-direction:column; gap:10px; }
+.money .mc { width:230px; border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:12px 16px; }
+.money .mc .l { font-size:12px; color:var(--muted); margin-bottom:6px; }
+.money .mc .v { font-size:24px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--income); }
+.money .mc .v.exp { color:var(--loss); }
+.ring-wrap { display:flex; align-items:center; gap:14px; margin-left:18px; }
+.ring-svg { width:84px; height:84px; transform:rotate(-90deg); }
+.ring-svg .trk { fill:none; stroke:var(--panel2); stroke-width:7; }
+.ring-svg .val { fill:none; stroke:var(--accent); stroke-width:7; stroke-linecap:round;
+                 stroke-dasharray:163.4; stroke-dashoffset:163.4; }
+.ring-num { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+.ring-num small { display:block; font-size:11px; color:var(--muted); font-weight:400; margin-top:2px; }
+</style>
+
+<!-- ============ 五、复杂动画 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>五 · 复杂动画</b><span>金额滚动（新值进入时眼睛能「看见变化」）+ 采集进度环（目标梯度效应）</span></div>
+  <div class="board">
+    <div class="row" style="align-items:stretch">
+      <div class="money">
+        <div class="mc"><div class="l">最近到账（起始为 11-19 真实值，新值为演示数据）</div><div class="v" id="m1">9,005.85</div></div>
+        <div class="mc"><div class="l">本月到账</div><div class="v" id="m2">37,764.66</div></div>
+        <div class="mc"><div class="l">今日净现金流</div><div class="v exp" id="m3">-362.00</div></div>
+      </div>
+      <div class="ring-wrap">
+        <svg class="ring-svg" viewBox="0 0 60 60"><circle class="trk" cx="30" cy="30" r="26"/><circle class="val" id="ringVal" cx="30" cy="30" r="26"/></svg>
+        <div class="ring-num"><span id="ringPct">0%</span><small>采集进度<br>（模拟）</small></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-m pri-m" id="moneyBtn">模拟新一轮采集（金额滚动 500ms）</button>
+      <button class="btn-m" id="ringBtn">播放进度环</button>
+    </div>
+  </div>
+  <div class="sec-n"><b>社会心理学：</b>静态数字的跳变存在「变化盲视」——滚动能让人看见「变了多少、往哪个方向变」（500ms ease-std，tabular-nums 保证滚动中不抖宽）；进度环是<b>目标梯度效应</b>的标准载体——长任务（采集全部店铺）有可视化进度时，等待感显著下降。<b>社会心理学：</b>toast 先于数字出现（先告知、后展示），符合「结果优先于细节」的阅读预期；三段之间 100~200ms 的呼吸间隙防止感知过载。</div>
+</section>
+
+<!-- ============ 六、真实 app 接线表 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>六 · 真实 app 接线表</b><span>每个演示对应到现有函数 / 选择器，全部在无构建约束内落地</span></div>
+  <div class="board">
+    <table class="tok-table">
+      <tr><th>演示</th><th>真实落点</th><th>改动量</th></tr>
+      <tr><td>太阳↔月亮形变</td><td>index.html #btnTheme 的两个 svg → 合并为一个 svg 双组；applyTheme 只切 data-theme</td><td>小</td></tr>
+      <tr><td>完成勾描画</td><td>style.css .rt-check.done（现有 rt-pop 保留，前面加描画段）</td><td>小</td></tr>
+      <tr><td>页签切换 VT</td><td>app.js setTab —— document.startViewTransition 包裹；::view-transition CSS 两行；reduced-motion 或不支持时走原路径</td><td>小</td></tr>
+      <tr><td>列表 stagger</td><td>renderPool / renderOrderContribution 循环写 style="--i:N"，渲染后容器加 .go</td><td>小</td></tr>
+      <tr><td>金额滚动</td><td>renderFinance 的 fcLastIn / fcMonthIn 赋值处 → animateNumber(el, from, to)</td><td>小</td></tr>
+      <tr><td>采集进度环</td><td>collectFinance 的 finSub 文案处 → 加环形组件（进度来源：已完成店铺数/总店铺数）</td><td>中</td></tr>
+      <tr><td>两段式删除</td><td>poolBody 移除按钮（配合 window.confirm 缺陷整改，AGENTS §8）</td><td>中</td></tr>
+      <tr><td>骨架屏</td><td>finEmpty → 首次采集前的加载态</td><td>小</td></tr>
+    </table>
+    <div class="sec-n" style="margin-top:12px"><b>边界不变：</b>一切动效只走 transform/opacity/stroke-dashoffset；不碰 #pane-browser 祖先；玻璃只上非祖先层；<b>prefers-reduced-motion 时全部退化为瞬时切换或淡入淡出</b>（HIG Reduce Motion）。系统预算：同屏并发 ≤2 处、单次 ≤500ms（进度环除外，属长任务状态表达）。</div>
+  </div>
+</section>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function $(id) { return document.getElementById(id); }
+  /* 太阳↔月亮 */
+  $('themeDemo').addEventListener('click', function () { this.classList.toggle('night'); });
+  /* 完成勾：重置后重播 */
+  $('ringCheck').addEventListener('click', function () {
+    this.classList.remove('done'); void this.offsetWidth; this.classList.add('done');
+  });
+  /* 采集三段：箭头→环→勾 */
+  var coll = $('collDemo'), collBusy = false;
+  coll.addEventListener('click', function () {
+    if (collBusy) return; collBusy = true;
+    coll.classList.remove('ok'); coll.classList.add('busy');
+    setTimeout(function () { coll.classList.remove('busy'); coll.classList.add('ok'); }, 1400);
+    setTimeout(function () { coll.classList.remove('ok'); collBusy = false; }, 3000);
+  });
+  /* 两段式删除 */
+  var delX = $('delX'), delCf = $('delConfirm'), delTimer = null;
+  delX.addEventListener('click', function () {
+    if (!delX.classList.contains('armed')) {
+      delX.classList.add('armed', 'shake'); delCf.classList.add('arm');
+      delTimer = setTimeout(function () { disarm(); }, 3000);
+    } else {
+      clearTimeout(delTimer); disarm();
+      delX.classList.remove('shake'); void delX.offsetWidth; delX.classList.add('shake');
+    }
+  });
+  function disarm() { delX.classList.remove('armed'); delCf.classList.remove('arm'); }
+  /* stagger 重播 */
+  var stg = $('stgDemo');
+  $('stgReplay').addEventListener('click', function () {
+    stg.classList.remove('go'); void stg.offsetWidth; stg.classList.add('go');
+  });
+  /* 骨架 → 内容 */
+  var skel = $('skelDemo');
+  $('skelReplay').addEventListener('click', function () {
+    skel.classList.remove('ready'); void skel.offsetWidth;
+    setTimeout(function () { skel.classList.add('ready'); }, 900);
+  });
+  /* 页签切换（方向感知手写版） */
+  var mtTabs = $('mtTabs'), mtStage = $('mtStage');
+  var panes = [].slice.call(mtStage.querySelectorAll('.mini-pane'));
+  var cur = 0, leaving = false;
+  mtTabs.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var btns = [].slice.call(mtTabs.children);
+    var idx = btns.indexOf(b);
+    if (idx === cur || leaving) return;
+    btns.forEach(function (x) { x.classList.remove('on'); }); b.classList.add('on');
+    var out = panes[cur], inc = panes[idx];
+    inc.classList.remove('p0');
+    inc.style.transition = 'none';
+    inc.style.transform = 'translateX(' + (idx > cur ? 26 : -26) + 'px)';
+    inc.style.opacity = '0'; void inc.offsetWidth; inc.style.transition = '';
+    inc.style.transform = '';
+    inc.style.opacity = '';
+    leaving = true; mtStage.classList.add('leaving');
+    setTimeout(function () {
+      out.classList.remove('cur'); inc.classList.add('cur');
+      mtStage.classList.remove('leaving'); leaving = false;
+    }, 140);
+    cur = idx;
+  });
+  /* 金额滚动 */
+  function fmt(n) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function animateNumber(el, from, to, dur) {
+    if (reduced) { el.textContent = fmt(to); return; }
+    var t0 = performance.now();
+    function step(t) {
+      var k = Math.min(1, (t - t0) / dur);
+      var e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmt(from + (to - from) * e);
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var m1 = $('m1'), m2 = $('m2'), m3 = $('m3');
+  var m1v = 9005.85, m2v = 37764.66, m3v = -362;
+  $('moneyBtn').addEventListener('click', function () {
+    var n1 = m1v + 1200 + Math.random() * 2600;
+    var n2 = m2v + 1200 + Math.random() * 2600;
+    var n3 = -Math.abs(m3v) - Math.random() * 300;
+    animateNumber(m1, m1v, n1, 500); animateNumber(m2, m2v, n2, 500); animateNumber(m3, m3v, n3, 500);
+    m1v = n1; m2v = n2; m3v = n3;
+  });
+  /* 进度环 */
+  var C = 2 * Math.PI * 26, ring = $('ringVal'), pct = $('ringPct');
+  ring.style.strokeDasharray = C;
+  var ringBusy = false;
+  $('ringBtn').addEventListener('click', function () {
+    if (ringBusy) return; ringBusy = true;
+    var t0 = performance.now(), dur = 1600;
+    function step(t) {
+      var k = Math.min(1, (t - t0) / dur);
+      var e = 1 - Math.pow(1 - k, 2);
+      ring.style.strokeDashoffset = C * (1 - e);
+      pct.textContent = Math.round(e * 100) + '%';
+      if (k < 1) requestAnimationFrame(step); else ringBusy = false;
+    }
+    if (reduced) { ring.style.strokeDashoffset = 0; pct.textContent = '100%'; ringBusy = false; return; }
+    requestAnimationFrame(step);
+  });
+  /* 编排播放 */
+  var chToast = $('chToast'), chM = $('chM'), chList = $('chList');
+  $('chPlay').addEventListener('click', function () {
+    chToast.classList.remove('show'); chList.classList.remove('go');
+    void chToast.offsetWidth;
+    setTimeout(function () { chToast.classList.add('show'); }, 200);
+    setTimeout(function () { animateNumber(chM, m1v, m1v + 900, 500); m1v += 900; }, 500);
+    setTimeout(function () { chList.classList.add('go'); }, 600);
+  });
+});
+</script>
+
+<style>
+/* ============ 六、编排时间轴 ============ */
+.chor-stage { display:flex; align-items:flex-start; gap:16px; }
+.chor-list { flex:1; }
+.chor-note { width:250px; font-size:11.5px; color:var(--muted); line-height:1.8; border-left:2px solid var(--line); padding-left:12px; }
+.chor-note b { color:var(--text); display:block; margin-bottom:4px; }
+.toast-in { position:relative; height:30px; margin-bottom:10px; }
+.toast-in .tp { position:absolute; left:0; top:0; height:26px; display:inline-flex; align-items:center; gap:6px;
+  padding:0 12px; border-radius:999px; font-size:11.5px; color:var(--income);
+  background:rgba(62,207,142,.12); border:1px solid rgba(62,207,142,.4);
+  opacity:0; transform:translateY(-8px);
+  transition:opacity var(--m-slow) var(--ease-decel), transform var(--m-slow) var(--ease-decel); }
+.toast-in .tp.show { opacity:1; transform:none; }
+</style>
+
+<!-- ============ 七、编排时间轴 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>七 · 编排时间轴</b><span>一次「采集完成」的全部动效次序——连贯性 = 每一步都有先后理由</span></div>
+  <div class="board">
+    <div class="chor-stage">
+      <div class="chor-list">
+        <div class="toast-in"><span class="tp" id="chToast">✓ 采集完成 · 3/3 店铺成功</span></div>
+        <div class="money">
+          <div class="mc"><div class="l">最近到账</div><div class="v" id="chM">9,005.85</div></div>
+        </div>
+        <ul class="stg-list go" id="chList" style="margin-top:10px">
+          <li style="--i:0"><span class="nm">阿泽made · 订单与日汇总已入库</span></li>
+          <li style="--i:1"><span class="nm">布丁2 · 订单与日汇总已入库</span></li>
+          <li style="--i:2"><span class="nm">阿泽高端made · 订单与日汇总已入库</span></li>
+        </ul>
+      </div>
+      <div class="chor-note">
+        <b>时间轴（点右侧按钮播放）</b>
+        T+0ms 进度环收尾 →<br>
+        T+200ms toast 顶部滑入（280ms）→<br>
+        T+500ms 金额滚动（500ms）→<br>
+        T+600ms 列表逐行错峰（40ms × 3）→<br>
+        T+800ms 全部落定，静默。
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-m pri-m" id="chPlay">▶ 播放完整编排</button>
+      <span style="color:var(--muted);font-size:12px">同屏并发 ≤2 处；每一步都有先后理由：先告知结果（toast）→ 再展示金额变化 → 最后呈现明细</span>
+    </div>
+  </div>
+  <div class="sec-n"><b>政治经济学：</b>采集是商户向平台「取回自己的数据」——编排把这一过程演成看得见的次序，工具在为商户劳动，而不是黑箱。<b>社会心理学：</b>toast 先于数字出现（先告知、后展示），符合「结果优先于细节」的阅读预期；三段之间 100~200ms 的呼吸间隙防止感知过载。</div>
+</section>
+</body>
+</html>

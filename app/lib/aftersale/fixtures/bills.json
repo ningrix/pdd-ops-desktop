@@ -1,0 +1,77 @@
+[
+  {
+    "_case": "A：技术服务费扣了 77，退款后应退未退 → 差额 77",
+    "date": "2026-11-11",
+    "orderSn": "261110-0001",
+    "category": "base_tech_fee",
+    "amount": -77
+  },
+  {
+    "date": "2026-11-16",
+    "orderSn": "261110-0001",
+    "category": "refund",
+    "amount": -12800
+  },
+  {
+    "date": "2026-11-11",
+    "orderSn": "261110-0001",
+    "category": "freight_insurance",
+    "amount": -120
+  },
+
+  {
+    "_case": "B：扣 154、退 154，核销正常",
+    "date": "2026-11-07",
+    "orderSn": "261108-0002",
+    "category": "base_tech_fee",
+    "amount": -154
+  },
+  {
+    "date": "2026-11-11",
+    "orderSn": "261108-0002",
+    "category": "base_tech_fee",
+    "amount": 154
+  },
+  {
+    "date": "2026-11-11",
+    "orderSn": "261108-0002",
+    "category": "refund",
+    "amount": -25600
+  },
+  {
+    "date": "2026-11-11",
+    "orderSn": "261108-0002",
+    "category": "coupon_seller",
+    "amount": -500
+  },
+
+  {
+    "_case": "账单里有、售后单里没有 → 应进 unmatched，提示跨期或缺数据",
+    "date": "2026-11-09",
+    "orderSn": "261109-9999",
+    "category": "base_tech_fee",
+    "amount": -60
+  },
+  {
+    "date": "2026-11-12",
+    "orderSn": "261109-9999",
+    "category": "refund",
+    "amount": -10000
+  },
+
+  {
+    "_case": "推广费：日汇总，traceable=false，只能按天摊",
+    "date": "2026-11-15",
+    "orderSn": null,
+    "category": "ad_spend",
+    "amount": -38000,
+    "traceable": false
+  },
+  {
+    "date": "2026-11-16",
+    "orderSn": null,
+    "category": "ad_spend",
+    "amount": -42000,
+    "traceable": false
+  }
+]

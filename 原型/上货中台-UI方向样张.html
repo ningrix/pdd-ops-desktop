@@ -1,0 +1,309 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拼多多上货中台 · UI 方向样张（调研版）</title>
+<style>
+/* ============ 页面级 ============ */
+:root {
+  --pg-bg: #10141c; --pg-fg: #dfe6f2; --pg-muted: #8fa0b8;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); }
+body { font: 13px/1.6 "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif; padding: 28px 0 60px; }
+.intro { max-width: 1220px; margin: 0 auto 26px; padding: 0 20px; }
+.intro h1 { font-size: 18px; margin: 0 0 6px; }
+.intro p { margin: 4px 0; color: var(--pg-muted); font-size: 12.5px; }
+.variant { max-width: 1220px; margin: 0 auto 36px; padding: 0 20px; }
+.v-head { display: flex; align-items: baseline; gap: 12px; margin: 0 4px 10px; }
+.v-head b { font-size: 15px; }
+.v-head span { color: var(--pg-muted); font-size: 12px; }
+.v-notes { margin: 10px 4px 0; color: var(--pg-muted); font-size: 12px; line-height: 1.75; }
+.v-notes b { color: var(--pg-fg); }
+.mock { color: var(--text); border: 1px solid #232c3d; border-radius: 10px; overflow: hidden; }
+
+/* ============ 样张共享 tokens（方向 A 即基线） ============ */
+.mock { --bg:#0f1420; --panel:#151c2c; --panel2:#1c2536; --line:#263248; --text:#dbe4f3;
+        --muted:#7d8aa3; --accent:#4b7bec; --income:#3ecf8e; --loss:#ef5b5b; --warn:#f5a623;
+        --num: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; --row-h: 36px; --fs: 12.5px; }
+</style>
+</head>
+<body>
+<div class="intro">
+  <h1>拼多多上货中台 · UI 方向样张（4 个，调研版）</h1>
+  <p>同一屏（资金复盘）、同一份真实数据（2026-11-20 采集，无虚构指标）。每个方向的取舍都挂在调研依据上：苹果 HIG、前景理论 / 损失厌恶、平台-商户信息不对称、TDesign / Ant Design 的 token 体系。技术栈结论见 <b>research/UI方向调研_2026-11-21.md</b>。</p>
+  <p>全部样张遵守应用硬约束：无 ES module、布局无 transform / filter / backdrop-filter（不碰 #pane-browser containing block）、系统字体、软件渲染友好、离线可用（无运行时 CDN）。</p>
+</div>
+
+<template id="mock">
+<div class="mk-topbar">
+  <span class="mk-dot"></span><span class="mk-brand">拼多多上货中台</span><span class="mk-ver">v0.4</span>
+  <span class="mk-spacer"></span>
+  <span class="mk-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>刷新</span>
+  <span class="mk-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>导出</span>
+  <span class="mk-win">
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+  </span>
+</div>
+<div class="mk-body">
+  <aside class="mk-side">
+    <nav class="mk-nav">
+      <a href="#" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>资金复盘</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>商品列表</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>采集箱</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>采集会话</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10a9 9 0 0 1 15.5-6.3L21 6"/><path d="M21 3v3.5h-3.5"/><path d="M21 14a9 9 0 0 1-15.5 6.3L3 18"/><path d="M3 21v-3.5h3.5"/></svg>售后退货</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>商品检测</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>店铺后台</a>
+    </nav>
+    <div class="mk-sec">
+      <h4>店铺</h4>
+      <div class="mk-store act"><i></i>阿泽made</div>
+      <div class="mk-store"><i></i>布丁2</div>
+      <div class="mk-store"><i></i>阿泽高端made</div>
+    </div>
+    <div class="mk-dock"><span>日志</span><b>31</b><span>·</span><span>原始结果</span><span class="mk-spacer"></span><span>清空</span></div>
+  </aside>
+  <main class="mk-main">
+    <div class="mk-pagebar">
+      <span class="t">资金复盘</span>
+      <span class="s">上次采集 2026-11-20 15:52 ｜ 数据截至 2026-11-20</span>
+      <span class="mk-spacer"></span>
+      <span class="btn">核对月份 2026-11</span>
+      <span class="btn">＋ 拿货成本</span>
+      <span class="btn">商品贡献</span>
+      <span class="btn pri">采集全部店铺</span>
+    </div>
+    <div class="mk-main-pad">
+      <div class="mk-chips">
+        <span class="chip ok">3/3 店铺在线</span>
+        <span class="chip">在途售后 27 单</span>
+        <span class="chip">账单平台费 7.96/单</span>
+        <span class="chip warn">商品检测 20/22 被判定</span>
+      </div>
+      <div class="mk-cards">
+        <div class="mk-card"><div class="l">最近到账</div><div class="v income">9,005.85</div><div class="s">2026-11-19</div></div>
+        <div class="mk-card"><div class="l">本月到账</div><div class="v income">37,764.66</div><div class="s">2026-11</div></div>
+        <div class="mk-card"><div class="l">今日拿货成本</div><div class="v">0.00</div><div class="s">0 笔</div></div>
+        <div class="mk-card"><div class="l">今日净现金流</div><div class="v muted">—</div><div class="s">今日无到账</div></div>
+      </div>
+      <div class="mk-fee">
+        <span class="lb">平台费率</span><span class="inp">0.60</span><span class="lb">%</span>
+        <span class="lb">推广</span><span class="inp">0.00</span>
+        <span class="lb">快递</span><span class="inp">10.00</span>
+        <span class="lb">包装</span><span class="inp">2.00</span>
+        <span class="mk-spacer"></span>
+        <span class="avg">每单扣费 <b>19.96</b> <i>平台 7.96 账单 · 推广 0.00 · 快递 10.00 · 包装 2.00</i></span>
+      </div>
+      <section class="mk-sec-f">
+        <div class="mk-sech"><span>商品贡献</span><i>近 90 天 · 退款订单不计获利 · 单价可直接改</i></div>
+        <table class="mk-table">
+          <thead><tr>
+            <th>商品</th><th>店铺</th><th class="r">销量</th><th class="r">退货率</th>
+            <th class="r">实收</th><th class="r">拿货成本</th><th class="r">毛利</th><th class="r">扣费后</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="p"><i class="th">蒲</i><div><b>蒲田鼎级高货Lulu泡芙五格羽绒服lemo…</b><u>ID 1027024234122</u></div></td><td>阿泽made</td><td class="r">5<i>总 26</i></td><td class="r loss">80.8%<i>退 21</i></td><td class="r income">1,557.75<i>−7,054.25</i></td><td class="r"><u>220.00</u><i>1,100.00</i></td><td class="r income">457.75<i>毛利 29.4%</i></td><td class="r income">357.95</td></tr>
+            <tr><td class="p"><i class="th">爆</i><div><b>爆款1U1U LU璐家四格鸭绒泡芙款800…</b><u>ID 1030556885674</u></div></td><td>布丁2</td><td class="r">4<i>总 4</i></td><td class="r">0.0%<i>退 0</i></td><td class="r income">1,288.52</td><td class="r"><u>220.00</u><i>880.00</i></td><td class="r income">408.52<i>毛利 31.7%</i></td><td class="r income">328.68</td></tr>
+            <tr><td class="p"><i class="th">e</i><div><b>ex3BOA越野跑鞋 免系带机能登山鞋…</b><u>ID 1018129926233</u></div></td><td>布丁2</td><td class="r">6<i>总 27</i></td><td class="r loss">77.8%<i>退 21</i></td><td class="r income">1,192.24<i>−4,375.49</i></td><td class="r"><u>135.00</u><i>810.00</i></td><td class="r income">382.24<i>毛利 32.1%</i></td><td class="r income">262.48</td></tr>
+            <tr><td class="p"><i class="th">l</i><div><b>lu鸭绒羽绒服五格露泡多巴胺女士puff…</b><u>ID 1028820098943</u></div></td><td>阿泽made</td><td class="r">3<i>总 5</i></td><td class="r warn">40.0%<i>退 2</i></td><td class="r income">862.74<i>−609.76</i></td><td class="r"><u>220.00</u><i>660.00</i></td><td class="r income">202.74<i>毛利 23.5%</i></td><td class="r income">142.86</td></tr>
+            <tr><td class="p"><i class="th">k</i><div><b>k系户外远征徒步运动低帮越野跑耐磨…</b><u>ID 1018380374233</u></div></td><td>布丁2</td><td class="r">4<i>总 13</i></td><td class="r loss">69.2%<i>退 9</i></td><td class="r income">696.50<i>−1,626.24</i></td><td class="r"><u>140.00</u><i>560.00</i></td><td class="r income">136.50<i>毛利 19.6%</i></td><td class="r income">56.66</td></tr>
+            <tr><td class="p"><i class="th">跨</i><div><b>跨境26小太阳5000gt蓬松同款超蓬羽绒服…</b><u>ID 1027014414315</u></div></td><td>阿泽made</td><td class="r">1<i>总 54</i></td><td class="r loss">98.1%<i>退 53</i></td><td class="r income">498.88<i>−30,100.89</i></td><td class="r"><u>390.00</u><i>390.00</i></td><td class="r income">108.88<i>毛利 21.8%</i></td><td class="r income">88.92</td></tr>
+          </tbody>
+        </table>
+        <div class="mk-more">展开 21 天前 / 未动销 59 个商品</div>
+      </section>
+    </div>
+  </main>
+</div>
+</template>
+<style>
+/* ============ 共享组件（四方向共用同一套选择器） ============ */
+.mk-body { display: flex; align-items: stretch; background: var(--bg); }
+.mk-side { width: 248px; flex: 0 0 248px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.mk-nav { padding: 8px 0 7px; border-bottom: 1px solid var(--line); }
+.mk-nav a { display: flex; align-items: center; gap: 8px; height: 31px; padding: 0 13px; color: var(--muted); font-size: 12.5px; text-decoration: none; border-left: 3px solid transparent; }
+.mk-nav a svg { width: 15px; height: 15px; }
+.mk-nav a.on { color: #fff; border-left-color: var(--accent); background: rgba(75,123,236,.10); }
+.mk-sec { padding: 10px 13px; border-bottom: 1px solid var(--line); }
+.mk-sec h4 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.mk-store { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border-radius: 7px; font-size: 13px; color: var(--text); }
+.mk-store i { width: 9px; height: 9px; border-radius: 50%; background: #34c759; flex: none; }
+.mk-store.act { background: rgba(75,123,236,.12); }
+.mk-dock { margin-top: auto; padding: 8px 13px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); display: flex; gap: 10px; }
+.mk-dock b { color: var(--accent); font-weight: 600; }
+.mk-main { flex: 1; min-width: 0; background: var(--bg); }
+.mk-pagebar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.mk-pagebar .t { font-size: 13px; font-weight: 600; }
+.mk-pagebar .s { font-size: 12px; color: var(--muted); }
+.mk-pagebar .btn { height: 28px; padding: 0 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--line); color: var(--text); display: inline-flex; align-items: center; white-space: nowrap; }
+.mk-pagebar .btn.pri { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.mk-main-pad { padding: 14px; }
+.mk-topbar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 0 0 14px; background: #18213a; border-bottom: 1px solid var(--line); color: #dbe4f3; }
+.mk-dot { width: 9px; height: 9px; border-radius: 50%; background: #34c759; box-shadow: 0 0 8px #34c759; }
+.mk-brand { font-weight: 600; font-size: 13.5px; }
+.mk-ver { font-size: 11px; color: var(--muted); }
+.mk-spacer { flex: 1; }
+.mk-btn { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; font-size: 12px; color: #dbe4f3; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; background: transparent; white-space: nowrap; }
+.mk-btn svg { width: 13px; height: 13px; }
+.mk-win { display: flex; height: 40px; margin-left: 6px; }
+.mk-win span { width: 44px; display: inline-flex; align-items: center; justify-content: center; color: #c9d4e6; }
+.mk-win svg { width: 14px; height: 14px; }
+.mk-chips { display: none; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.mk-chips .chip { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 11.5px; }
+.mk-chips .chip.ok { color: var(--income); }
+.mk-chips .chip.warn { color: var(--warn); }
+.mk-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 12px; }
+.mk-card { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
+.mk-card .l { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.mk-card .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mk-card .v.muted { color: var(--muted); }
+.mk-card .s { font-size: 11px; color: var(--muted); margin-top: 5px; }
+.mk-fee { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+.mk-fee .lb { color: var(--muted); }
+.mk-fee .inp { width: 58px; text-align: right; font-family: var(--num); font-variant-numeric: tabular-nums; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--text); font-size: 11px; }
+.mk-fee .avg { color: var(--text); }
+.mk-fee .avg b { color: var(--income); font-size: 13px; margin: 0 2px; }
+.mk-fee .avg i { font-style: normal; color: var(--muted); font-size: 11px; }
+.mk-sech { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 8px; }
+.mk-sech span { font-weight: 600; font-size: 12.5px; }
+.mk-sech i { font-style: normal; font-size: 11px; color: var(--muted); }
+.mk-table { width: 100%; border-collapse: collapse; font-size: var(--fs); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.mk-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; padding: 8px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.02); white-space: nowrap; }
+.mk-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--text); vertical-align: middle; }
+.mk-table tr:hover td { background: rgba(255,255,255,.03); }
+.mk-table th.r, .mk-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.mk-table td.r { font-family: var(--num); white-space: nowrap; }
+.mk-table td.r i { display: block; font-style: normal; font-size: 10px; color: var(--muted); margin-top: 1px; }
+.mk-table td.income { color: var(--income); }
+.mk-table td.loss { color: var(--loss); }
+.mk-table td.warn { color: var(--warn); }
+.mk-table td.p { max-width: 320px; }
+.mk-table td.p .th { display: inline-flex; width: 30px; height: 30px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); align-items: center; justify-content: center; font-style: normal; font-size: 12px; color: var(--muted); margin-right: 8px; vertical-align: middle; }
+.mk-table td.p div { display: inline-block; vertical-align: middle; }
+.mk-table td.p b { display: block; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12px; }
+.mk-table td.p u { text-decoration: none; font-size: 10px; color: var(--muted); }
+.mk-more { display: inline-block; margin-top: 8px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); color: var(--muted); font-size: 11px; }
+
+/* ============ 方向 A · 精修现行（基线 token 即 A，仅加两处层级修正） ============ */
+/* HIG deference：把 chrome 压暗压平，数字自己说话 */
+.dir-a .mk-pagebar .s { font-size: 11.5px; }
+.dir-a .mk-table td.r { font-size: 13px; }
+
+/* ============ 方向 B · 对账终端（高密度账本） ============ */
+/* 政治经济学：平台-商户信息不对称 → 把「平台拿走多少」逐笔记清楚，账本式的克制 */
+.dir-b { --bg:#0a0d13; --panel:#0e131c; --panel2:#121824; --line:#1b2331; --text:#c9d3e0; --muted:#5f6e85;
+         --accent:#3f6ad8; --income:#2fbf71; --loss:#e05252; --warn:#d99a2b;
+         --num: ui-monospace, "Cascadia Mono", Consolas, monospace; --row-h:30px; --fs:12px; }
+.dir-b .mk-side { width: 200px; flex: 0 0 200px; background: #0d1119; }
+.dir-b .mk-topbar { background: #0d1119; }
+.dir-b .mk-chips { display: flex; }
+.dir-b .mk-chips .chip { border-radius: 3px; font-family: var(--num); }
+.dir-b .mk-cards { display: flex; gap: 28px; padding: 12px 4px 10px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.dir-b .mk-card { background: transparent; border: none; border-radius: 0; padding: 0; }
+.dir-b .mk-card .l { font-size: 10px; letter-spacing: 1.5px; }
+.dir-b .mk-card .v { font-size: 18px; }
+.dir-b .mk-card .s { margin-top: 3px; font-size: 10.5px; }
+.dir-b .mk-fee { background: transparent; border: none; border-radius: 0; padding: 8px 2px; }
+.dir-b .mk-fee .inp { background: #0d1119; border-radius: 3px; }
+.dir-b .mk-table { border-radius: 0; background: transparent; }
+.dir-b .mk-table th { background: transparent; font-size: 10px; letter-spacing: 1px; padding: 6px 8px; }
+.dir-b .mk-table td { padding: 6px 8px; border-bottom-color: #121823; }
+.dir-b .mk-nav a { height: 30px; font-size: 12px; }
+.dir-b .mk-nav a.on { background: transparent; }
+.dir-b .mk-pagebar .btn, .dir-b .mk-more, .dir-b .mk-store, .dir-b .mk-fee .inp { border-radius: 3px; }
+.dir-b .mk-sech span { font-size: 11px; letter-spacing: 2px; }
+.dir-b .mk-sech i { font-size: 10px; }
+
+/* ============ 方向 C · 经营看板（参照点 + 聚合） ============ */
+/* 前景理论：参照点决定框架 → 首卡做「今日净现金流」并给状态；
+   递减敏感性 → 费用条聚合成一个大数，明细退后 */
+.dir-c { --bg:#0e1420; --panel:#141c2c; --panel2:#1a2334; --line:#2a3650; --text:#e2e8f2; --muted:#8697b0;
+         --accent:#5a82ff; --income:#3ecf8e; --loss:#ef5b5b; --warn:#f5a623;
+         --row-h:40px; --fs:12.5px; }
+.dir-c .mk-chips { display: flex; }
+.dir-c .mk-cards { gap: 14px; margin-bottom: 14px; }
+.dir-c .mk-card { padding: 14px 16px; }
+.dir-c .mk-card .v { font-size: 24px; }
+.dir-c .mk-card .s { font-size: 11.5px; margin-top: 6px; }
+.dir-c .mk-card:last-child { border-color: rgba(90,130,255,.35); background: linear-gradient(180deg, rgba(90,130,255,.10), rgba(90,130,255,.02)); }
+.dir-c .mk-card:last-child .l { color: #9db4dd; }
+.dir-c .mk-card:last-child .v { font-size: 26px; }
+.dir-c .mk-fee { padding: 10px 14px; }
+.dir-c .mk-fee .avg b { font-size: 15px; }
+.dir-c .mk-table { border-radius: 10px; }
+.dir-c .mk-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,.02); }
+.dir-c .mk-table td { padding: 10px 8px; }
+.dir-c .mk-nav a.on { background: rgba(90,130,255,.14); border-left-color: transparent; border-radius: 6px; margin: 0 8px; }
+.dir-c .mk-nav a.on svg { color: var(--accent); }
+.dir-c .mk-pagebar .btn { border-radius: 8px; }
+.dir-c .mk-more { border-radius: 8px; margin-top: 10px; }
+
+/* ============ 方向 D · 浅色工作台（HIG clarity 全量） ============ */
+.dir-d { --bg:#f4f6fa; --panel:#ffffff; --panel2:#f0f4f9; --line:#dde5ee; --text:#1d2939; --muted:#5f6c80;
+         --accent:#2f5fd0; --income:#0f7a4d; --loss:#c0392b; --warn:#96601a;
+         --row-h:38px; --fs:12.5px; }
+.dir-d .mk-topbar { background: #ffffff; color: #1d2939; border-bottom-color: #dde5ee; }
+.dir-d .mk-topbar .mk-btn { color: #1d2939; border-color: #d3dce8; }
+.dir-d .mk-win span { color: #3d4b60; }
+.dir-d .mk-side { background: #ffffff; }
+.dir-d .mk-nav a.on { color: #17233a; background: #e7efff; }
+.dir-d .mk-store.act { background: #e7efff; }
+.dir-d .mk-dock { border-top-color: #eef2f8; }
+.dir-d .mk-table { background: #ffffff; border-color: #e3e9f1; }
+.dir-d .mk-table th { background: #f7f9fd; border-bottom-color: #e3e9f1; }
+.dir-d .mk-table td { border-bottom-color: #eef2f8; }
+.dir-d .mk-table tr:hover td { background: #f2f6fc; }
+.dir-d .mk-fee { background: #f7f9fd; }
+.dir-d .mk-fee .inp { background: #ffffff; }
+.dir-d .mk-card { box-shadow: 0 1px 2px rgba(16,32,64,.05); }
+.dir-d .mk-main { background: #f4f6fa; }
+</style>
+
+<section class="variant" data-variant="A-精修现行">
+  <div class="v-head"><b>方向 A · 精修现行</b><span>演进路线 · CSS diff 最小，可直接并入 style.css</span></div>
+  <div class="mock dir-a" data-clone></div>
+  <div class="v-notes"><b>依据：</b>HIG「deference」——chrome 压平压暗，数字自己说话；改动只落在层级（主数字加粗、次级弱化、间距节奏 8/12/16 统一）。风险最低，四个方向里唯一可以一次合并的。</div>
+</section>
+
+<section class="variant" data-variant="B-对账终端">
+  <div class="v-head"><b>方向 B · 对账终端</b><span>高密度账本 · 等宽数字 · 零装饰</span></div>
+  <div class="mock dir-b" data-clone></div>
+  <div class="v-notes"><b>依据：</b>政治经济学——平台与商户的信息不对称是本工具的存在理由，界面立场是「逐笔记清楚平台拿走了什么」；账本式克制（无卡片、无圆角、网格线 1px、等宽数字）让对账成为默认心智。代价：观感冷硬，适合长时间扫数，不适合演示。</div>
+</section>
+
+<section class="variant" data-variant="C-经营看板">
+  <div class="v-head"><b>方向 C · 经营看板</b><span>参照点 + 聚合 · 大数字 · 健康摘要条</span></div>
+  <div class="mock dir-c" data-clone></div>
+  <div class="v-notes"><b>依据：</b>前景理论——参照点决定框架（末卡「今日净现金流」做强调位），损失聚合（费用聚成「每单扣费 19.96」一个大数，明细退后一档）；Hick 定律——顶部动作收敛为主/次两级。chips 摘要条把「在途售后 27、检测 20/22」这类需要行动的信号前置。</div>
+</section>
+
+<section class="variant" data-variant="D-浅色工作台">
+  <div class="v-head"><b>方向 D · 浅色工作台</b><span>HIG clarity 全量 · 含浅色顶栏（提案）</span></div>
+  <div class="mock dir-d" data-clone></div>
+  <div class="v-notes"><b>依据：</b>HIG「clarity」全量——白底、清晰边界、语义色用已过 AA 的浅色组（#0f7a4d / #c0392b / #96601a）。顶栏改浅色是提案：现行自绘窗口按钮本就不依赖 titleBarOverlay，改色只需动 .topbar 两个变量。适合白天长时使用与截屏汇报。</div>
+</section>
+
+<footer style="max-width:1220px;margin:0 auto;padding:0 20px">
+  <div class="v-head"><b>怎么选</b></div>
+  <div class="v-notes">
+    四个方向共用同一套 DOM 与 token 结构（换方向 = 改十几个变量 + 少量覆盖规则），可并行试、可混搭（例如 B 的表格密度 + C 的参照点卡）。
+    <br><b>A</b>：今天就能并，零风险。<b>B</b>：如果每天开着它对账，选这个。<b>C</b>：如果要看「生意健康度」做决策，选这个。<b>D</b>：浅色主题的完整答案。
+    <br>迁移路径（软件工程）：先合 token（:root 双层变量，命名对齐 TDesign 的 --td-* 两层式）→ 再合组件级覆盖 → 状态覆盖（空/载/错/密）逐页验收 → 每步跑对比度断言。
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var tpl = document.getElementById('mock');
+    document.querySelectorAll('[data-clone]').forEach(function (el) {
+      el.appendChild(tpl.content.cloneNode(true));
+    });
+  })();
+</script>
+</body>
+</html>

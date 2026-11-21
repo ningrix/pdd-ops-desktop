@@ -3,7 +3,7 @@
 > 本工作区的工程约定。**任何 agent 在动代码前必须读完。**
 > 与用户当次明示冲突时，以用户为准，事后回写本文档。
 >
-> 最后更新：2026-11-17 ｜ 对应应用版本：v0.3（采集箱 + 跨店上架 + 平台锁）
+> 最后更新：2026-11-21 ｜ 对应应用版本：v0.4（采集箱 + 跨店上架 + 资金复盘数据中心 + 平台锁）
 
 **关于定位方式**：本文档一律用**函数名 / 选择器**指位置，不写行号。`main.js` 曾在六小时内从 635 行涨到 1096 行，行号第二天就会失效。
 
@@ -16,7 +16,7 @@
 两条业务线，共享一个 Electron 桌面应用 `app/`：
 
 - **A 线 · 上货优化** —— 把商品采集进本地池，优化标题 / 价格 / 图片 / 属性，再上架到任意店铺。
-- **B 线 · 售后对账** —— 售后单分诊、一键申诉举证、拼多多账单核对。（未开工）
+- **B 线 · 售后对账** —— 售后单分诊、申诉举证、拼多多账单核对。（设计中：`app/lib/aftersale/` 有实现，未接 IPC；售后接口与后台入口已实测，见 §3 与 `research/售后助手_可行性调查_2026-11-22.md`）
 
 业务背景：拼多多鞋类 / 服装卖家。品类决定两个高频痛点——退货率高（尺码问题）、仅退款多。
 
@@ -86,6 +86,10 @@
 | `app/lib/ops.js` | 注入拼多多页面执行的业务 JS（**已实测跑通**） | **禁止重构** |
 | `app/lib/pool.js` | 采集箱本地存储（增删查）；**读取时对 gallery 去重** | 可改 |
 | `app/lib/batch.js` | 批量队列（串行 + 间隔 + 失败分类 + 断点续跑） | 可改 |
+| `app/lib/orders.js` | 订单/售后接口注入脚本：`recentOrderList`（订单分页）、`afterSales/queryList`（售后单）。走 `window.__mms.fetch.sync` | 可改 |
+| `app/lib/cashier.js` | 资金中心注入脚本。**只能读 DOM 表格**：cashier 是独立域，接口带 Anti-Content 动态签名，回放无效 | 可改 |
+| `app/lib/finance-core.js` | 资金纯计算层：订单分页的终止/`orderSn` 去重/截断判定。零依赖，可离线断言（`work\test-finance.mjs`） | 可改 |
+| `app/lib/aftersale/` | B 线售后对账的设计实现（`triage` / `reconcile` / `appeal` / `model` + `fixtures`）。**尚未接进 IPC 与界面**，是设计稿落地 | 可改 |
 | `app/lib/inspect.js` | 商品检测·规则层（纯 Node 零依赖，不读图） | 可改 |
 | `app/lib/imgtool.js` | imgtool 的 Node 封装：spawn Python、下载图、失败分类 | 可改 |
 | `tools/imgtool/` | Python 图像工具包（超分/水印/图像检测），见下 | 可改 |
@@ -93,7 +97,7 @@
 | `app/renderer/style.css` | 样式（无框架、无预处理器） | 可改，守 §1.1 |
 | `app/renderer/app.js` | 界面逻辑（单文件，全局 `$` / `state`） | 可改，守 §1.1 |
 | `app/data/size-templates.json` | 尺码表模板库（6 套） | 可改 |
-| `app/userdata/` | `malls.json`、`pool.json`、`Partitions/` 登录态 | **不得删除**，删了要重新扫码 |
+| `app/userdata/` | `malls.json`、`pool.json`、`Partitions/` 登录态；`finance\` 资金快照与账本；`risk\` 商品检测分包；`appeal\templates.json` 申诉文案库 | **不得删除**，删了要重新扫码 |
 | `tools/` | CDP 抓包与调试脚本（`cdp_capture.py`、`pdd.py`、`pdd_price.py`） | 可改 |
 | `work/` | 实验脚本与中间产物 | 任意，可丢弃 |
 | `research/` | 研究结论，**是事实来源** | 只追加不覆盖 |
@@ -186,6 +190,29 @@
 | 黑标技术服务费 | 同上 | 仅黑标商品，类目差异化费率（服饰 2.2%）；同单取最高费率不重复扣 |
 | 物流拦截机制 | 官方《物流拦截技术支持服务规则》`mms.pinduoduo.com/other/rule?id=1616` | 仅派件前有效；到驿站/已签收必失败；拦截成功自动退款；退回运费商家承担；拦截账户余额**不可提现** |
 | 错误码字典 | `app/renderer/app.js` 的 `runCopy` / `publishFromPool` | `600102` 已复制过 / `17000001` 满2件折扣 / `10000014` 尺码表 / `3000000` 参数不合法 / `600001` 编辑记录不存在 |
+| 订单列表接口 | 实测（`app/lib/orders.js`） | `POST /mangkhut/mms/recentOrderList`，body 用 `orderType` / `afterSaleType` / `groupStartTime` / `groupEndTime` / `pageNumber` / `pageSize` / `sortType`。返回 `{totalItemNum, pageItems, hasMore}`。**`pageSize>20` 报 `1000 单页数据量过大或非法`**。字段：`order_sn` / `order_time` / `goods_id` / `goods_name` / `spec` / `goods_number` / `goods_price` / `order_amount` / `after_sales_status` / `order_status_str` / `tracking_number` |
+| 订单筛选组合 | 实测 | `orderType=0 & afterSaleType=0` 才是「全部订单」（阿泽made 实测 180 单）。`orderType=2 & afterSaleType=1` 只给 12 单，会漏 |
+| 售后列表接口 | 实测（`app/lib/orders.js`） | `POST /mercury/mms/afterSales/queryList`，body 用 `pageSize` / `pageNumber` / `quickSearchType` / `orderByCreatedAtDesc`。返回**裸对象** `{total, list}`，**没有 `success`/`result` 外壳**（与订单接口不同）。字段：`afterSalesType` / `afterSalesTypeName` / `afterSalesStatus` / `refundAmount` / `orderSn` / `goodsName` / `goodsNumber` / `afterSalesReasonDesc` / `reverseTrackingNumber` / `reverseShippingId` |
+| 售后 `quickSearchType` 矩阵 | 实测（1~25 全扫） | 只有 `2` / `4` / `7` / `8` / `18` 有效，其余报 `2 参数校验失败`。且**只返回待处理售后**，拿不到已完成的历史退款单 |
+| 已完成退款怎么判 | 实测 | 售后接口取不到，只能看订单的 `order_status_str` 是否含「退款成功」。实测 181 单，与 `after_sales_status=5` 一一对应 |
+| 退货物流轨迹与签收 | 实测（`finance:returnTrace`） | **已完成售后也能查**。关键：`queryList` **不带 `quickSearchType`** 时返回全部售后（含 `afterSalesStatus=5` 已完成，阿泽made 实测 139 条，其中退货退款 83 条）；带 2/4/7/8/18 只是「待处理」筛选。拿到 `id` 后打开 `https://mms.pinduoduo.com/aftersales-ssr/detail?id=<afterSalesId>&orderSn=<orderSn>`，「物流轨迹 → 退货物流」区块含快递公司/退货单号/最新节点/签收措辞。**未发货退款、退款（非退货）本来就没有退货包裹，标「无需退货」，不算风险**。签收判据：已签收/已取件/已放入/已放在/已放至/已代收/代收点/本人签收/已投递/已送达/已妥投/经客户同意。实测 117 条退货退款：94 条有轨迹、32 条已签收、23 条无轨迹，约 7 秒/单 |
+| 资金中心只能读 DOM | 实测（`app/lib/cashier.js`） | `cashier.pinduoduo.com` 是独立域，接口带 Anti-Content 动态签名，**回放无效**。只能读页面表格里平台已算好的数 |
+| 资金采集不能劫持店铺视图 | 实测 | 布丁2 停在 `goods/goods_add` 编辑页时，`loadURL` 会被该页的 `beforeunload` 拦住（28 秒仍停在原页）。所以 `finance:collect` / `finance:orders` 都改用 `createHiddenMallWindow()` 独立隐藏窗口采集 |
+| 退货率口径 | 实测 + 代码约定 | **退货率 = 退货事件单数 ÷ 成交单数**。分子按 `orderSn` 去重（`returnEvents`，一单只记一次，不得把「退款/在途/仅退款」三个计数器相加）；分母 = 全部订单 − 已取消。退货事件 = 退款成功 ∪ 在途退货退款 ∪ 仅退款 |
+| 退款对获利的影响 | 实测 + 代码约定 | 退款 / 在途退货 / 取消 **不计实收、不计销量、不计拿货成本**（货退回可回收）；**仅退款计拿货成本**（货损）；换货正常计入并单独计数 |
+| 账单平台费口径 | 实测 | 资金明细里的「技术服务费 / 其他服务」是真实扣费。但明细目前只覆盖账单里出现的日期（实测只有当天），**不能把 1 天的每单均值外推到 90 天**：账单日期内用账单均值，其余日期回退 `实收 × 0.6%` 估算，两者分别累加 |
+| 商品检测接口 | 实测（`main.js` 的 `risk:goodsCheck`） | 打开发起店 `/kit/freebie`，再 `POST /bordeaux/mms/gift/query_event_goods_list`，body `{page, size}`。返回 `goods_display_info_list`；`can_enroll_event === 0` 即「被判定」。字段：`goods_id` / `goods_name` / `hd_thumb_url` / `quantity` / `cant_enroll_reason` |
+| 商品检测结果落盘 | 实现约定 | **按店铺分包**：`app/userdata/risk/store-<mallId>.json` 每店一个商品包（含 `thumb` 图片地址），`index.json` 记 `lastRunAt` 与各店 `flaggedCount`。某店本次读失败时**保留旧包并标 `stale`**，不冲成空 |
+| 售后三窗口 | research/申诉文案管理_调研_2026-11-21.md | 驳回申请 **36h** 内自主处理（2025-04 售后服务规则更新）；平台介入退款成功后 **48h** 维权申诉（客服考试题+黑猫被拒案例多源佐证；场景差异未确认，以页面提示为准）；处罚申诉走**站内信申诉链接**。`appeal.js` 只覆盖窗口②，驳回文案是最大缺口 |
+| 申诉权监管 | 《网络交易平台规则监督管理办法》2026-02-01 施行（[新华网全文](https://app.xinhuanet.com/news/article.html?articleId=1edebf752c62b29b4263c2895cf2eb88)），第十九条保障商家申诉权、禁止强制仅退款；2026-10 海淀首例限制申诉权执法案 | 商家申诉权有法可依；申诉文案可引用规则名称与条款号（截图须含规则名/公示日/生效日） |
+| 售后工作台路由有守卫 | 实测（`research/售后助手_可行性调查_2026-11-22.md`） | `loadURL('.../aftersales/aftersale_list')` 会被重定向到 `/aftersales/setup?tab=3`。必须先进 setup，再点「退款/售后」标签才落到列表。`?tab=N` 不是标签索引，别用 |
+| 售后单详情深链 | 实测 | `https://mms.pinduoduo.com/aftersales-ssr/detail?id=<afterSalesId>&orderSn=<orderSn>` 能直接打开指定单。**必须在对应店铺的 partition 里打开**，否则只有壳没有数据 |
+| 售后详情字段全集 | 实测（售后编码 23943351945178） | 售后编码 / 售后类型 / 退款金额 / 申请原因 / 发货物流公司+单号 / 退货快递单号 / 聊天图片 / 订单号+成团时间 / 退货包运费补偿 / 商品名+规格 / 共N件+共优惠+实收 / 收货信息（脱敏）/ 物流轨迹（发货·退货双 Tab）/ 售后状态 / **倒计时原文**（如「超过 5天10时33分32秒 则申请达成并自动为买家退款；若期间退货被签收则 24 小时内处理」）/ 协商详情时间轴 / 聊天记录 |
+| 售后详情可用操作 | 实测 | 同意退款 / 驳回退款（`<span onclick>`，不是 `<a>`）/ 添加留言·上传凭证 / 在线联系消费者 / **一键申请平台保护**（本周剩余次数，如 3 次）/ 举报恶意售后 / 添加备注 |
+| 售后申诉页 | 实测 | `/orders/appeals/aftersale/order`。6 个 Tab：可申诉订单 / 申诉记录 / 维权申诉 / 订单赔偿申诉 / 极速退款申诉 / 极速换货申诉。列含**申诉倒计时**。原文规则：申诉失败次数不限，但「利用插件、外挂或第三方工具发起批量无效申诉」可能被暂停申诉；**本月申诉复议权益 0/6**；有「不展示『暂不申诉』和『低通过率』订单」开关——**平台自己在做通过率预判**，分诊应复用这个信号 |
+| 异常单申诉表单 | 实测 | `/orders/appeals/badOrder`。三种类型：异常订单不发货 / 延后发货 / 物流拦截并取消。字段：申诉类型 + 申诉原因（下拉）+ **凭证图片（最多 5 张，单张 ≤5M）** + 申诉描述。审核工作日 10:00–21:00，周期 24h。**所以申诉产出形态是「文本 + 图片清单」，不是纯文本** |
+| 平台自带售后自动化 | 实测 | 侧栏有「售后小助手」（`/aftersales/aftersale_auto/home`）与「逾期自动同意退款」（站内信实测出现过「因逾期未处理已自动同意退款」）。我们的助手**不抢这些动作**，只做分诊 + 文案 + 倒计时 |
+| 售后入口清单 | 实测（首页侧栏） | 售后工作台 `/aftersales/aftersale_list`、工单管理 `/aftersales/work_order/list`（待处理/2小时内将逾期/处理中/违规已处理）、商家举证 `/aftersales/merchant_appeal`（**重定向到 `/orders/list`**，非独立页）、极速退款 `/aftersales/speed_refund`、降退款督导 `/aftersales/supervisor`、拦截快递 `/orders/interceptExpress`、挽单工具 `/kit/retain-order` |
 
 ---
 
@@ -198,6 +225,15 @@
 | `quantity_delta` 语义（增量还是绝对值） | 能否做改库存 | 抓包后看草稿态是否回显 |
 | 图片上传接口 | 图片自动替换的工作量是否翻倍 | 抓编辑页上传请求 |
 | 申诉次数限制的具体规则 | 申诉模块的护栏强度 | 官方文档未见，只能从实操累积 |
+| 售后申诉入口表单字段（48h 时限已多源佐证，见 §3 售后三窗口） | 文案产出的形态（纯文本 or 文本+附件清单）；triage 倒计时精度 | 在本店售后详情页实测申诉入口（只看不提交） |
+| **驳回退款表单字段** | 驳回文案能填多长、要不要选原因、能不能传图 | 详情页点「驳回退款」（实测是 `<span onclick>`，点后未出现 textarea/radio，可能需滚动到视口或走另一渲染通道）。**未拿到表单结构** |
+| **添加留言/上传凭证表单字段** | 举证材料怎么提交 | 同上，未点开 |
+| **售后工作台列表接口** | 能否不读 DOM 直接拿 16 条待处理 | 页面走客户端渲染，未抓到 XHR；目前只能读 DOM 或复用 `afterSales/queryList` |
+| **申诉「低通过率」判定规则** | 分诊能否直接复用这个信号 | 平台未公开，只能观察哪些单被标 |
+| **本月申诉复议 6 次的重置周期** | 复议额度会不会被月底清零 | 页面只显示「本月 0/6」 |
+| **「售后小助手」自动化范围** | 是否已经自动处理了部分售后，我们该不该重复做 | 打开后只见同一套标签壳，未见配置项 |
+| 处罚申诉统一时限 | 处罚申诉倒计时 | 以站内信处罚通知为准，实测累积 |
+| 「申诉优赔」覆盖范围（平台主动赔付哪些异常退款） | 异常退款场景是否还需要商家写申诉文案 | 观察自己店的异常退款单是否被平台主动赔付（2025 新服务，见 research/申诉文案管理_调研_2026-11-21.md） |
 | 跨店上架后平台是否判「搬运」 | 路径 B 的长期可行性 | 小批量试，观察是否限流 |
 
 **降级路径**：端点抓不到就走「页面导出 Excel/CSV → 本地解析」。逻辑不变，只损失自动化，不损失分析能力。
@@ -262,8 +298,33 @@ BatchTask {
   attempts, errorCode, errorMsg,
   goodsId, commitId, startedAt, endedAt
 }
-// 重试规则：queued 与 failed_known 可重跑（默认最多 2 次）；
-//           failed_unknown 与 done 一律跳过 —— 前者必须人工核对
+// 商品检测结果（落盘 app/userdata/risk/，每店一个商品包）—— 已实现
+RiskPackage {                      // risk/store-<mallId>.json
+  mallId, mallName,
+  at, lastTryAt,                   // at = 数据时间；lastTryAt = 最近一次尝试
+  total,                           // 该店商品总数
+  flagged: [{ goodsId, goodsName, thumb, quantity, reason }],
+  error,                           // null = 本次读取成功
+  stale                            // true = 本次没读到，保留的是旧包
+}
+RiskIndex {                        // risk/index.json
+  version, lastRunAt,
+  stores: [{ mallId, mallName, file, at, total, flaggedCount, error, stale }]
+}
+// 读取用 risk:last，形状与 risk:goodsCheck 一致，渲染层不分叉；
+// 渲染层用 fromCache 区分「上次检测」与「检测于」。
+
+// 申诉文案（app/userdata/appeal/templates.json，数组）—— 已实现
+AppealTemplate {
+  id, scene,                       // scene 见 main.js 的 APPEAL_SCENES（8 类）
+  kind: reject | evidence | appeal, // 驳回退款 / 举证留言 / 维权申诉
+  title, body,                     // body 支持占位符 {orderSn} {amount} {returnSn} {days}
+  evidence: [string],              // 举证清单，一行一项
+  builtin,                         // true = 内置骨架，可编辑不可当新建
+  uses, won, lost,                 // 使用次数与结果回写，按胜率排序
+  createdAt, updatedAt, lastUsedAt
+}
+// 文案库只产出文本，绝不自动提交。渲染层每组默认只渲染 3 条（一条 ≈80 DOM 节点）。
 ```
 
 三条铁律：
@@ -301,6 +362,13 @@ BatchTask {
 - 采集箱改为紧凑行（30px 缩略图、4px 行距、操作按钮单行），日志和原始结果一起收进左下角抽屉，`#log` / `#resultBox` 保留在 DOM 中供 agent 直接读取
 - 左侧栏宽度 248px；店铺后台 `WebContentsView` 默认 `MALL_ZOOM = 0.7`（每次 `did-finish-load` 重新应用，避免跨子域失效）
 - 桌面快捷方式与应用窗口使用 `app/assets/icons/app.ico`（图标源文件 `app-icon.svg`，多尺寸 ICO 由 `work/make_app_icon.py` 生成）
+- **上架安全（2026-11-21）**：`poolPublishImpl` 抓不到最终载荷时不再继续 `submitDraft`，改报 `failed_unknown` 并停止 —— 否则会把骨架的标题/图/价格提交上架
+- **失败分类（2026-11-21）**：编辑页打不开、颜色没设对、尺码没配齐三处改为先 `discardDraftOrUnknown()` 删掉刚克隆的草稿；删净报 `failed_known`、删不掉报 `failed_unknown` —— 避免批量重试再克隆一条
+- **退货率（2026-11-21）**：分子改用 `returnEvents` 一单只记一次，不再把「退款/在途/仅退款」三个计数器相加；取消单不再算进有效单
+- **时区（2026-11-21）**：新增 `financeMonth()`，资金快照与月度汇总不再用 `toISOString().slice(0,7)`（UTC 月份，每月 1 日 00:00–08:00 会算成上个月）
+- **账单平台费（2026-11-21）**：按日期分段 —— 账单覆盖的日期用账单均值，其余日期回退费率估算，不再把 1 天的每单均值外推到 90 天
+- **DOM 预算（2026-11-21）**：商品贡献表的折叠区改为懒渲染（收起时不建 DOM），资金页满数据从 2803 节点降到 1612
+- **CSS 变量（2026-11-21）**：补上 `--panel2` / `--income` / `--loss`；浅色主题绿/红/小字/琥珀对比度从 2.00/3.32/3.48 提升到 5.37/5.44/5.73/5.27，全部过 WCAG AA
 
 **仍在**：
 

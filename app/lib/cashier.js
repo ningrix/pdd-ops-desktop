@@ -7,6 +7,32 @@
  * 所以这里全部走「读 DOM 表格」——表里显示的就是平台已经算好的数。
  */
 
+/**
+ * 账务分类映射（code 取自货款明细「业务描述」的 `CODE | 名称` 前缀）。
+ * 12 个 code 是阿泽made 最近 30 天实测出现的全集；未知 code 落「其他」。
+ * label 给 UI 直接显示，group 用于资金去向聚合。
+ */
+const CAT_MAP = {
+  '0010002': { label: '订单收入',   group: '交易收入',  color: '#3ecf8e' },
+  '0010005': { label: '优惠券结算', group: '交易收入',  color: '#2ecc9a' },
+  '0020002': { label: '订单退款',   group: '退款',      color: '#ef5b5b' },
+  '0020005': { label: '优惠券退款', group: '退款',      color: '#ff8a7a' },
+  '0030002': { label: '基础技术服务费', group: '技术服务费', color: '#f5a623' },
+  '0040002': { label: '售后补偿扣款', group: '售后扣款', color: '#e05656' },
+  '0040004': { label: '延迟发货扣款', group: '售后扣款', color: '#e05656' },
+  '0040005': { label: '虚假发货扣款', group: '售后扣款', color: '#e05656' },
+  '0040006': { label: '缺货扣款',   group: '售后扣款',  color: '#e05656' },
+  '0050002': { label: '体验提升计划', group: '其他服务', color: '#b0b8c8' },
+  '0070001': { label: '店铺保证金', group: '保证金',    color: '#7a6ff0' },
+  '0080001': { label: '提现',       group: '提现',      color: '#4a90d9' },
+};
+
+/** code → 分类对象；未知 code 兜底『其他』（带原始 code 可追溯） */
+function catOf(code) {
+  const c = CAT_MAP[String(code || '')];
+  return c || { label: '其他(' + code + ')', group: '其他', color: '#9aa3b2', raw: String(code || '') };
+}
+
 /** 当前 cashier 页是哪个账号 */
 function readAccount() {
   return `(async () => {
@@ -60,7 +86,127 @@ function readMonthSummary() {
   })()`;
 }
 
-/** 读资金中心的四个余额（先等页面真正渲染出「货款账户」） */
+/** 切到「日汇总」页签（对账中心的三张表：日汇总 / 月汇总 / 货款明细） */
+function clickDailyTab() {
+  return `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 20; i++) {
+      const els = [...document.querySelectorAll('div,span')]
+        .filter(e => (e.innerText || '').trim() === '日汇总');
+      const tab = els.find(e => String(e.className).indexOf('TAB_') >= 0);
+      if (tab) { tab.click(); await sleep(2500); return { ok: true }; }
+      await sleep(400);
+    }
+    return { ok: false, error: '找不到日汇总页签' };
+  })()`;
+}
+
+/**
+ * 把对账中心的日期范围设成「最近 30 天」。
+ * 日期输入框是 readonly 的 beast-core rangePicker：直接 React native setter 会把值清空，
+ * 只能驱动它自己的弹层 UI —— 点输入框 → 点「最近 30 天」快捷项 → 点「查询」。
+ */
+function setRange30d() {
+  return `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width };
+    };
+    // 1) 找日期输入框并点开
+    let inp = null;
+    for (let i = 0; i < 20; i++) {
+      inp = [...document.querySelectorAll('input')]
+        .find(i => (i.placeholder || '').indexOf('开始日期') >= 0);
+      if (inp) break;
+      await sleep(400);
+    }
+    if (!inp) return { ok: false, error: '找不到日期输入框' };
+    inp.focus();
+    const p = rect(inp);
+    inp.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y }));
+    inp.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y }));
+    inp.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y }));
+    await sleep(2000);
+
+    // 2) 点「最近 30 天」快捷项
+    let q = null;
+    for (let i = 0; i < 20; i++) {
+      q = [...document.querySelectorAll('div,span,li,button')]
+        .find(e => (e.innerText || '').trim() === '最近30天' && e.getBoundingClientRect().width > 8);
+      if (q) { q.click(); break; }
+      await sleep(400);
+    }
+    if (!q) return { ok: false, error: '找不到最近30天快捷项' };
+    await sleep(1500);
+
+    // 3) 点「查询」
+    let btn = null;
+    for (let i = 0; i < 20; i++) {
+      btn = [...document.querySelectorAll('button,div,span')]
+        .find(e => (e.innerText || '').trim() === '查询' && e.getBoundingClientRect().width > 8);
+      if (btn) { btn.click(); break; }
+      await sleep(400);
+    }
+    if (!btn) return { ok: false, error: '找不到查询按钮' };
+    // 等待表格重新加载（过滤 + 分页都要时间）
+    await sleep(4500);
+    return { ok: true };
+  })()`;
+}
+
+/**
+ * 读「日汇总」表的逐日行。列名通过 th 表头按文字映射，找不到再退回固定下标
+ * （与 readMonthSummary 相同的列序：日期/收入/笔数/支出/笔数/净额/期初/期末）。
+ * 期末余额是每日的权威余额（货款明细没有余额列）。
+ */
+function readDailySummary() {
+  return `(async () => {
+    const t = document.querySelector('table');
+    if (!t) return { ok: false, error: '没找到日汇总表' };
+    const ths = [...t.querySelectorAll('th')].map(x => (x.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean);
+    const idx = (kw) => ths.findIndex(x => x.indexOf(kw) >= 0);
+    const col = (fallback) => { const i = idx(fallback); return i >= 0 ? i : null; };
+    const C = {
+      date: col('日期') ?? 0,
+      income: col('收入') ?? 1,
+      incomeCount: col('收入笔数') ?? 2,
+      expense: col('支出') ?? 3,
+      expenseCount: col('支出笔数') ?? 4,
+      profit: col('净额') ?? 5,
+      beginBalance: col('期初余额') ?? 6,
+      endBalance: col('期末余额') ?? 7,
+    };
+    const num = (s) => {
+      if (s == null) return null;
+      const v = String(s).replace(/[+,\\s]/g, '');
+      if (!/^-?\\d+(\\.\\d+)?$/.test(v)) return null;
+      return Math.round(parseFloat(v) * 100);
+    };
+    const cnt = (s) => { const n = parseInt(String(s || '').replace(/[^\\d]/g, ''), 10); return isNaN(n) ? 0 : n; };
+    // 2026-11 页面改版后「入账时间」只显示 MM-DD（如 11-18），年份从入账月份选择框补回。
+    const mp = document.querySelector('input[placeholder="选择月份"]');
+    const ym = (mp && /^\\d{4}-\\d{2}$/.test(mp.value || '')) ? mp.value : '';
+    const fullRe = /^\\d{4}-\\d{2}-\\d{2}/;
+    const mdRe = /^\\d{2}-\\d{2}$/;
+    const rows = [...t.querySelectorAll('tr')].slice(1)
+      .map(tr => [...tr.querySelectorAll('td')].map(x => (x.innerText || '').replace(/\\s+/g, ' ').trim()))
+      .filter(r => r.length >= 6 && (fullRe.test(r[0] || '') || mdRe.test(r[0] || '')));
+    return {
+      ok: true,
+      days: rows.map(r => {
+        const raw = (r[C.date] || '').slice(0, 10);
+        return {
+          date: (mdRe.test(raw) && ym) ? (ym.slice(0, 4) + '-' + raw) : raw,
+          income: num(r[C.income]), incomeCount: cnt(r[C.incomeCount]),
+          expense: num(r[C.expense]), expenseCount: cnt(r[C.expenseCount]),
+          profit: num(r[C.profit]),
+          beginBalance: num(r[C.beginBalance]), endBalance: num(r[C.endBalance]),
+        };
+      }),
+    };
+  })()`;
+}
 function readBalance() {
   return `(async () => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -205,5 +351,6 @@ function readRestrictions() {
 
 module.exports = { readAccount, readMonthSummary, readBalance,
                    readDetailPage, clickNextPage, clickDetailTab,
-                   readRestrictions };
+                   readRestrictions, clickDailyTab, setRange30d, readDailySummary,
+                   CAT_MAP, catOf };
 

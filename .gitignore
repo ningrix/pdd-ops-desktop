@@ -26,3 +26,8 @@ putian-shoe/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 工具状态目录与临时文件
+.mimosa/
+.tmp/
+tokeness-check.ps1

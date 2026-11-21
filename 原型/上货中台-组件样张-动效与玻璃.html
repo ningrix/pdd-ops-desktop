@@ -1,0 +1,318 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上货中台 · 动效与假毛玻璃样张（高性能版）</title>
+<style>
+/* ============ 页面级 ============ */
+:root { --pg-bg:#0b0f18; --pg-fg:#dfe6f2; --pg-muted:#8fa0b8; }
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--pg-bg); color:var(--pg-fg); }
+body { font:13px/1.6 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif; padding:28px 0 60px; }
+.wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+.intro h1 { font-size:18px; margin:0 0 6px; }
+.intro p { margin:4px 0; color:var(--pg-muted); font-size:12.5px; }
+.sec { margin:0 0 36px; }
+.sec-h { display:flex; align-items:baseline; gap:12px; margin:0 2px 12px; }
+.sec-h b { font-size:15px; }
+.sec-h span { color:var(--pg-muted); font-size:12px; }
+.sec-n { margin:10px 2px 0; color:var(--pg-muted); font-size:12px; line-height:1.75; }
+.sec-n b { color:var(--pg-fg); }
+.board { --bg:#0e1420; --panel:#141c2c; --panel2:#1a2334; --line:#2a3650; --text:#e2e8f2; --muted:#8697b0;
+         --accent:#5a82ff; --accent-strong:#3b5fd9; --income:#3ecf8e; --loss:#ef5b5b; --warn:#f5a623;
+         background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:20px; }
+
+/* ============ 动效刻度（全站唯一来源） ============ */
+.board {
+  --m-fast:120ms;   /* 悬浮 / 按压 / 滑块跟随 */
+  --m-base:220ms;   /* 展开 / 收起 */
+  --m-slow:280ms;   /* 弹层进场 */
+  --m-spring:420ms; /* 弹性强调（对齐现行 rt-pop） */
+  --ease-std:    cubic-bezier(.4, 0, .2, 1);   /* 对称：通用 */
+  --ease-decel:  cubic-bezier(0, 0, .2, 1);    /* 进场：快起慢停 */
+  --ease-accel:  cubic-bezier(.3, 0, .8, .15); /* 退场：先快后走 */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1); /* 微过冲 */
+}
+/* 减弱动态：一键退化（应用里接 matchMedia('(prefers-reduced-motion)')） */
+.no-motion *, .no-motion *::before, .no-motion *::after {
+  animation-duration:.01ms !important; animation-iteration-count:1 !important;
+  transition-duration:.01ms !important;
+}
+.tok-table { width:100%; border-collapse:collapse; font-size:12px; }
+.tok-table td, .tok-table th { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; }
+.tok-table th { color:var(--muted); font-weight:600; font-size:11px; }
+.tok-table td:first-child { font-family:ui-monospace,Consolas,monospace; color:#a8baff; white-space:nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap intro">
+  <h1>动效与假毛玻璃样张（方向 C 基调延续）</h1>
+  <p>核心主张：<b>动效刻度全站唯一</b>（4 个时长 × 4 条曲线），玻璃全部用叠加层伪造（零 backdrop-filter / 零 filter，软件渲染零开销），动效只走 transform / opacity，且永不挂在 #pane-browser 的祖先上。</p>
+</div>
+
+<div class="wrap">
+<!-- ============ 一、动效刻度 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>一 · 动效刻度</b><span>4 时长 × 4 曲线，全站唯一来源；同类交互永远用同一档</span></div>
+  <div class="board">
+    <table class="tok-table">
+      <tr><th>token</th><th>值</th><th>曲线</th><th>用在</th></tr>
+      <tr><td>--m-fast</td><td>120ms</td><td>ease-std</td><td>悬浮、按压、滑块跟随、chip 明暗</td></tr>
+      <tr><td>--m-base</td><td>220ms</td><td>decel / accel 成对</td><td>展开与缩回（进 decel、退 accel）</td></tr>
+      <tr><td>--m-slow</td><td>280ms</td><td>decel</td><td>弹层进场（弹窗/抽屉/toast）</td></tr>
+      <tr><td>--m-spring</td><td>420ms</td><td>spring 微过冲</td><td>滑块落位、完成勾（对齐现行 rt-pop）</td></tr>
+    </table>
+    <div class="sec-n" style="margin-top:12px"><b>一致性三律：</b>① 退场永远比进场快（×0.7，同曲线家族换 accel）② 同一手势只允许一条曲线 ③ 同屏并发动效 ≤2 处、单次 ≤300ms（spring 除外）。<b>依据：</b>HIG「motion 一致且克制、优先弹簧」；M3 的 standard/decel/accel 三分法；本项目 rt-pop 已是 420ms 弹簧——不新增第四种弹性。</div>
+  </div>
+</section>
+
+<!-- ============ 二、假毛玻璃三档 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>二 · 高性能假毛玻璃</b><span>三层叠加伪造，零 backdrop-filter / 零 filter —— 软件渲染零开销</span></div>
+  <div class="board" style="position:relative; overflow:hidden; padding:0;">
+    <div class="vivid"></div>
+    <div class="glass-stage">
+      <div class="glass slim">顶栏级 · slim<br><i>rgba(20,28,44,.55) + 1px 顶光</i></div>
+      <div class="glass panel">卡片级 · panel<br><i>rgba(20,28,44,.72) + 顶光 + sheen</i></div>
+      <div class="glass overlay">弹层级 · overlay<br><i>rgba(16,22,36,.86) + 顶光 + sheen</i></div>
+    </div>
+    <div style="padding:12px 20px 18px; color:var(--muted); font-size:12px;">
+      配方：① 半透明深底（透明度按层级递增）② inset 0 1px 0 rgba(255,255,255,.08) 顶部受光边 ③ 135° 极淡 sheen（rgba(255,255,255,.05) → transparent 40%）④ 1px 高亮描边。视觉近似 iOS 材质，但纯合成——这就是「假」的含义：不采样背后像素，所以不卡。
+    </div>
+  </div>
+  <div class="sec-n"><b>为什么不用真 backdrop-filter：</b>AGENTS §1.1.3 已实测——本机禁 GPU，真毛玻璃「又慢又脏」，且 filter 会造 containing block，一旦挂在 #pane-browser 祖先上原生视图就错位。假玻璃只允许出现在<b>非祖先</b>层：顶栏、侧栏、弹窗、抽屉、toast。</div>
+</section>
+
+<style>
+.vivid { height:150px; background:
+  radial-gradient(ellipse 240px 120px at 15% 80%, rgba(239,91,91,.85), transparent 60%),
+  radial-gradient(ellipse 260px 130px at 50% 30%, rgba(90,130,255,.85), transparent 60%),
+  radial-gradient(ellipse 240px 120px at 85% 75%, rgba(62,207,142,.8), transparent 60%),
+  linear-gradient(120deg, #1b2440, #31265a 55%, #14324a); }
+.glass-stage { display:flex; gap:14px; padding:16px 20px; margin-top:-95px; position:relative; }
+.glass { width:200px; border-radius:10px; padding:14px 16px; font-size:12.5px; color:#eef2fb;
+         border:1px solid rgba(255,255,255,.16); box-shadow:0 8px 24px rgba(4,8,16,.35); }
+.glass i { font-style:normal; font-size:10.5px; opacity:.75; }
+.glass.slim   { background:rgba(20,28,44,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 8px 24px rgba(4,8,16,.30); }
+.glass.panel  { background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,0) 40%), rgba(20,28,44,.72);
+                box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 8px 24px rgba(4,8,16,.35); }
+.glass.overlay{ background:linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,0) 40%), rgba(16,22,36,.86);
+                box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 12px 32px rgba(4,8,16,.45); }
+
+/* ============ 三、悬浮与按压一致性 ============ */
+.btn-m { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 14px;
+         border-radius:8px; border:1px solid var(--line); background:var(--panel2); color:var(--text);
+         font:600 12.5px/1 inherit; font-family:inherit; cursor:pointer;
+         transition:transform var(--m-fast) var(--ease-std), background var(--m-fast) var(--ease-std),
+                    border-color var(--m-fast) var(--ease-std), color var(--m-fast) var(--ease-std),
+                    box-shadow var(--m-fast) var(--ease-std); }
+.btn-m:hover { background:#223052; border-color:#3a4c6e; }
+.btn-m:active { transform:scale(.96); }
+.btn-m:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(90,130,255,.55); }
+.btn-m.pri-m { background:var(--accent-strong); border-color:transparent; color:#fff; }
+.btn-m.pri-m:hover { background:#4668e4; box-shadow:0 4px 14px rgba(59,95,217,.35); }
+/* 悬浮抬升卡片 */
+.glass-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+              transition:transform var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std),
+                         box-shadow var(--m-fast) var(--ease-std); cursor:pointer; }
+.glass-card:hover { transform:translateY(-2px); border-color:#3a4c6e; box-shadow:0 6px 16px rgba(4,8,16,.35); }
+.row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; }
+</style>
+
+<!-- ============ 三、悬浮与按压 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>三 · 悬浮与按压</b><span>全部 120ms ease-std：hover 是「预告」，按压是「确认」，同一手势一条曲线</span></div>
+  <div class="board">
+    <div class="row">
+      <button class="btn-m pri-m">采集全部店铺</button>
+      <button class="btn-m">重试失败项</button>
+      <span class="pill-m"><span class="dot"></span>在线（已登录）</span>
+      <span class="pill-m"><span class="dot"></span>在途售后 27 单</span>
+      <div class="glass-card" style="width:180px">
+        <div style="font-size:11.5px;color:var(--muted)">最近到账</div>
+        <div style="font-size:22px;font-weight:600;color:var(--income)">9,005.85</div>
+        <div style="font-size:10.5px;color:var(--muted)">悬浮：整体抬升 2px</div>
+      </div>
+    </div>
+  </div>
+  <div class="sec-n"><b>一致性：</b>按钮按压 scale(.96)、卡片悬浮 translateY(-2px)——同一套 fast 刻度；胶囊 hover 只变底色不做位移（小元素位移会抖）。把鼠标悬在上面对比手感：预告（变亮）与确认（下压）是两个幅度，不会互相打架。</div>
+</section>
+
+<style>
+.pill-m { display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 12px; border-radius:999px;
+          border:1px solid var(--line); background:var(--panel2); color:var(--muted); font-size:11.5px;
+          transition:background var(--m-fast) var(--ease-std), color var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std); cursor:default; }
+.pill-m:hover { background:#223052; color:var(--text); border-color:#3a4c6e; }
+.pill-m .dot { width:7px; height:7px; border-radius:50%; background:var(--income); box-shadow:0 0 6px rgba(62,207,142,.6); }
+
+/* ============ 四、分段胶囊滑块 ============ */
+.segm { position:relative; display:inline-flex; gap:2px; padding:3px; border-radius:999px;
+        background:var(--panel2); border:1px solid var(--line); }
+.segm .thumb { position:absolute; top:3px; left:3px; height:calc(100% - 6px); border-radius:999px;
+               background:rgba(90,130,255,.22); border:1px solid rgba(90,130,255,.45);
+               transition:transform var(--m-spring) var(--ease-spring), width var(--m-spring) var(--ease-spring);
+               will-change:transform; }
+.segm button { position:relative; z-index:1; height:28px; padding:0 16px; border:none; background:transparent;
+               color:var(--muted); font:500 12px/1 inherit; font-family:inherit; cursor:pointer; border-radius:999px;
+               transition:color var(--m-fast) var(--ease-std); }
+.segm button:hover { color:var(--text); }
+.segm button.on { color:#c3d2ff; }
+  <div class="sec-n"><b>实现：</b>滑块是绝对定位的独立元素，只动 transform + width（420ms spring 微过冲，落位有「咔」的弹性）；文字颜色 120ms 跟随。微软同款交互在 iOS segmented control 里是默认行为——滑块是「共享元素」，内容切换围绕它发生，这就是连贯性的来源。<b>性能：</b>transform 动画不触发布局重排，小面积元件在软件渲染下也是零负担。</div>
+</section>
+
+<style>
+/* ============ 五、展开与缩回 ============ */
+.fold { border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow:hidden; }
+.fold-h { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; cursor:pointer;
+          font-size:12.5px; font-weight:600; transition:background var(--m-fast) var(--ease-std); }
+.fold-h:hover { background:rgba(255,255,255,.04); }
+.fold-h .car { color:var(--muted); font-size:11px; transition:transform var(--m-base) var(--ease-std); }
+.fold.open .fold-h .car { transform:rotate(90deg); }
+.fold-b { display:grid; grid-template-rows:0fr; transition:grid-template-rows var(--m-base) var(--ease-decel); }
+.fold.open .fold-b { grid-template-rows:1fr; }
+.fold-b > div { overflow:hidden; }
+.fold-c { padding:2px 14px 12px; opacity:0; transform:translateY(-4px);
+          transition:opacity var(--m-base) var(--ease-decel) 40ms, transform var(--m-base) var(--ease-decel) 40ms; }
+.fold.open .fold-c { opacity:1; transform:none; transition-delay:60ms; }
+.fold:not(.open) .fold-c { transition-delay:0ms; }
+.fold-c table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.fold-c td { padding:5px 6px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--text); }
+.fold-c td:last-child, .fold-c td:nth-child(3) { text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); }
+
+/* ============ 六、弹层进出场 ============ */
+.demo-stage { position:relative; height:150px; border:1px solid var(--line); border-radius:10px; background:var(--bg); overflow:hidden; }
+.demo-modal { position:absolute; left:50%; bottom:14px; transform:translate(-50%, 16px); width:320px;
+              border-radius:10px; padding:12px 16px; font-size:12px; color:var(--text);
+              background:linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,0) 40%), rgba(16,22,36,.88);
+              border:1px solid rgba(255,255,255,.16); box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 12px 32px rgba(4,8,16,.45);
+              opacity:0; pointer-events:none;
+              transition:transform var(--m-slow) var(--ease-decel), opacity var(--m-slow) var(--ease-decel); }
+.demo-stage.show .demo-modal { opacity:1; transform:translate(-50%, 0); pointer-events:auto; }
+.demo-stage:not(.show) .demo-modal { transition-duration:150ms; transition-timing-function:var(--ease-accel); }
+.demo-toast { position:absolute; top:10px; left:50%; transform:translate(-50%, -8px); height:26px; padding:0 12px;
+              display:inline-flex; align-items:center; gap:6px; border-radius:999px; font-size:11.5px; color:var(--income);
+              background:rgba(62,207,142,.12); border:1px solid rgba(62,207,142,.4);
+              opacity:0; transition:transform var(--m-base) var(--ease-decel), opacity var(--m-base) var(--ease-decel); }
+.demo-stage.show .demo-toast { opacity:1; transform:translate(-50%, 0); }
+</style>
+
+<!-- ============ 四、分段胶囊滑块 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>四 · 分段胶囊滑块</b><span>点一下，滑块以弹簧曲线滑过去——「胶囊移动」的正式答案</span></div>
+  <div class="board">
+    <div class="segm" id="segDemo">
+      <span class="thumb"></span>
+      <button class="on">全部店铺</button><button>阿泽made</button><button>布丁2</button><button>阿泽高端made</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-m" id="busyDemo">hover 我看胶囊跟随（120ms）</button>
+      <span class="segm" id="segSmall">
+        <span class="thumb"></span>
+        <button class="on">深色</button><button>浅色</button>
+      </span>
+    </div>
+  </div>
+  <div class="sec-n"><b>实现：</b>滑块是绝对定位的独立元素，只动 transform + width（420ms spring 微过冲，落位有「咔」的弹性）；文字颜色 120ms 跟随。iOS segmented control 的默认行为——滑块是「共享元素」，内容切换围绕它发生，这就是连贯性的来源。<b>性能：</b>transform 动画不触发布局重排，小面积元件在软件渲染下也是零负担。</div>
+</section>
+
+<!-- ============ 五、展开与缩回 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>五 · 展开与缩回</b><span>grid-rows 0fr↔1fr：展开 220ms decel、缩回同曲线但更快；内容 40ms 错峰淡入</span></div>
+  <div class="board">
+    <div class="fold open" id="foldDemo">
+      <div class="fold-h" id="foldHead"><span>展开 21 天前 / 未动销 59 个商品</span><span class="car">▶</span></div>
+      <div class="fold-b"><div><div class="fold-c">
+        <table><tr><td>纯原莆货美版1996羽绒服 700 保暖…</td><td>ID 1026609432051</td><td>0.0%</td></tr>
+               <tr><td>轻量化5000gt保暖免洗羽绒服冬季爆款…</td><td>ID 1027012692690</td><td>80.0%</td></tr>
+               <tr><td>山行2代 GTX 户外登山鞋防水版徒步鞋…</td><td>ID 1026904098377</td><td>33.3%</td></tr></table>
+      </div></div></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-m" id="foldToggle">展开 / 缩回（点我或点标题）</button>
+      <span style="color:var(--muted);font-size:12px">缩回比展开快 30%（accel 曲线）——离场不留恋</span>
+    </div>
+  </div>
+  <div class="sec-n"><b>为什么用 grid-template-rows：</b>这是唯一不用 JS 量高度的纯 CSS 展开（0fr→1fr），不用 max-height 猜数值、不逐帧改 height；内容层再叠一层 40ms 延迟淡入，展开时「先开口、内容跟上」，缩回时内容先撤、容器再合——<b>连贯性来自次序</b>。对应应用里 B-1 懒渲染的折叠区：展开才建 DOM，动画只包一层。</div>
+</section>
+
+<!-- ============ 六、弹层进出场 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>六 · 弹层进出场</b><span>进场 280ms decel（上滑+淡入），退场 150ms accel——离场永远更快</span></div>
+  <div class="board">
+    <div class="demo-stage" id="modalDemo">
+      <div class="demo-modal"><b>录入拿货成本</b><br><span style="color:var(--muted)">玻璃 overlay 材质 · 上滑 16px + 淡入进场；关闭时 150ms 加速退场</span></div>
+      <div class="demo-toast">✓ 已录入 220.00 元 × 1</div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-m pri-m" id="modalToggle">打开 / 关闭弹层</button>
+      <span style="color:var(--muted);font-size:12px">成对演示：进场 decel、退场 accel，同一手势不换家族</span>
+    </div>
+  </div>
+  <div class="sec-n"><b>连贯性：</b>弹窗（玻璃 overlay 材质，见第二节）从触发按钮方向上滑进场；toast 从顶栏下滑——两者的进场方向都指向「内容的来处」。现行应用的弹窗是瞬间出现（display:none 切换），这是最有体感的一处升级。</div>
+</section>
+
+<!-- ============ 七、一致性规则与减弱动态 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>七 · 全站规则（写进 AGENTS §1.1 的提案）</b><span>一致性 = 同一刻度 + 同一曲线家族 + 同一次序</span></div>
+  <div class="board">
+    <table class="tok-table">
+      <tr><th>#</th><th>规则</th><th>为什么</th></tr>
+      <tr><td>1</td><td>动效只用 transform / opacity</td><td>软件渲染零重排；宽高/top/left 一律禁止</td></tr>
+      <tr><td>2</td><td>动效元素永不成为 #pane-browser 祖先</td><td>containing block 约束（AGENTS §1.1.3），原生视图会错位</td></tr>
+      <tr><td>3</td><td>展开 220ms decel、缩回 150ms accel、弹层进 280/退 150、悬浮按压 120、弹簧落位 420</td><td>刻度唯一，同类交互同档</td></tr>
+      <tr><td>4</td><td>同屏并发 ≤2 处、动面积 ≤1/4 屏</td><td>CPU 软渲染预算</td></tr>
+      <tr><td>5</td><td>系统「减弱动态」开启时全部退化为淡入淡出</td><td>HIG：Reduce Motion 必须支持</td></tr>
+      <tr><td>6</td><td>玻璃只上非祖先层（顶栏/侧栏/弹窗/抽屉/toast）</td><td>零 backdrop-filter 配方，假玻璃三档</td></tr>
+    </table>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-m" id="motionToggle">模拟系统「减弱动态」（当前关闭）</button>
+      <span id="motionState" style="color:var(--muted);font-size:12px">开启后上面所有演示会退化为瞬时切换——应用里接 matchMedia('(prefers-reduced-motion: reduce)') 即可</span>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  // 分段滑块：thumb 定位 + 弹簧滑动
+  function bindSeg(root) {
+    if (!root) return;
+    var thumb = root.querySelector('.thumb');
+    var btns = [].slice.call(root.querySelectorAll('button'));
+    function move(btn) {
+      btns.forEach(function (b) { b.classList.remove('on'); });
+      btn.classList.add('on');
+      thumb.style.width = btn.offsetWidth + 'px';
+      thumb.style.transform = 'translateX(' + (btn.offsetLeft - 3) + 'px)';
+    }
+    btns.forEach(function (b) { b.addEventListener('click', function () { move(b); }); });
+    // 初始定位（onload 后布局稳定）
+    window.addEventListener('load', function () { move(root.querySelector('button.on')); });
+    setTimeout(function () { move(root.querySelector('button.on')); }, 60);
+  }
+  bindSeg(document.getElementById('segDemo'));
+  bindSeg(document.getElementById('segSmall'));
+
+  // 展开缩回
+  var fold = document.getElementById('foldDemo');
+  function toggleFold() { fold.classList.toggle('open'); }
+  document.getElementById('foldHead').addEventListener('click', toggleFold);
+  document.getElementById('foldToggle').addEventListener('click', toggleFold);
+
+  // 弹层
+  document.getElementById('modalToggle').addEventListener('click', function () {
+    document.getElementById('modalDemo').classList.toggle('show');
+  });
+
+  // 减弱动态
+  var motionOn = false;
+  document.getElementById('motionToggle').addEventListener('click', function () {
+    motionOn = !motionOn;
+    document.body.classList.toggle('no-motion', motionOn);
+    this.textContent = motionOn ? '模拟系统「减弱动态」（当前开启）' : '模拟系统「减弱动态」（当前关闭）';
+    document.getElementById('motionState').textContent = motionOn ? '已开启：全部演示瞬时切换' : '已关闭：动效正常播放';
+  });
+})();
+</script>
+</body>
+</html>

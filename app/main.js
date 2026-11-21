@@ -31,6 +31,54 @@ trace('switches applied');
 const DATA_DIR = path.join(__dirname, 'userdata');
 const FINANCE_DIR = path.join(DATA_DIR, 'finance');
 const FINANCE_SNAPSHOT_DIR = path.join(FINANCE_DIR, 'snapshots');
+// 商品检测：每个店铺一个「商品包」文件，另有一份索引记录上次检测时间
+const RISK_DIR = path.join(DATA_DIR, 'risk');
+const RISK_INDEX_FILE = path.join(RISK_DIR, 'index.json');
+// 售后文案库：模板按场景归类，带举证清单与使用结果回写
+const APPEAL_DIR = path.join(DATA_DIR, 'appeal');
+const APPEAL_TEMPLATES_FILE = path.join(APPEAL_DIR, 'templates.json');
+const FINANCE_COSTS_FILE = path.join(FINANCE_DIR, 'costs.json');
+const FINANCE_PRODUCT_COSTS_FILE = path.join(FINANCE_DIR, 'product-costs.json');
+const FINANCE_ORDERS_FILE = path.join(FINANCE_DIR, 'orders-latest.json');
+const FINANCE_FEES_FILE = path.join(FINANCE_DIR, 'fees.json');
+const FINANCE_RETURNS_FILE = path.join(FINANCE_DIR, 'returns-manual.json');
+// 退货物流轨迹缓存：只有「在途售后」能取到（详情页 SSR），已完成退款取不到
+const FINANCE_TRACES_FILE = path.join(FINANCE_DIR, 'return-traces.json');
+
+/**
+ * 退货快递公司解析（只输出已核实的名称，查不到就留空让用户填）。
+ * 已核实：
+ *   44 → 顺丰快递（售后详情页「快递公司:顺丰快递」）
+ *   85 → 圆通快递（orderDetail shipping_id=85 / shipping_name=圆通快递）
+ *   115 → 中通快递（售后详情页「快递公司:中通快递」，单号 79161244212912）
+ * 单号前缀：SF → 顺丰，YT → 圆通，79 开头 12 位 → 中通。
+ * 其余一律返回空字符串，不再显示「快递#id」这种半成品。
+ */
+const CARRIER_BY_ID = { 44: '顺丰快递', 85: '圆通快递', 115: '中通快递' };
+const FINANCE_CARRIER_FILE = path.join(FINANCE_DIR, 'carriers-learned.json');
+
+function loadCarrierLearned() {
+  try {
+    if (!fs.existsSync(FINANCE_CARRIER_FILE)) return {};
+    const o = JSON.parse(fs.readFileSync(FINANCE_CARRIER_FILE, 'utf8'));
+    return o && typeof o === 'object' ? o : {};
+  } catch (_) { return {}; }
+}
+
+function saveCarrierLearned(o) {
+  try { writeJsonAtomic(FINANCE_CARRIER_FILE, o); } catch (_) { /* ignore */ }
+}
+
+function carrierOf(carrierId, returnSn, learned) {
+  const id = Number(carrierId);
+  if (learned && id > 0 && learned[id]) return learned[id];
+  if (id > 0 && CARRIER_BY_ID[id]) return CARRIER_BY_ID[id];
+  const sn = String(returnSn || '').toUpperCase();
+  if (sn.startsWith('SF')) return '顺丰快递';
+  if (sn.startsWith('YT')) return '圆通快递';
+  if (/^79\d{12}$/.test(sn)) return '中通快递';
+  return '';
+}
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* ignore */ }
 try { fs.mkdirSync(FINANCE_SNAPSHOT_DIR, { recursive: true }); } catch (_) { /* ignore */ }
 app.setPath('userData', DATA_DIR);
@@ -80,11 +128,9 @@ let lastSaveError = null;
 function saveMalls() {
   try {
     const p = STORE_FILE();
-    const data = JSON.stringify([...malls.values()].map((m) => ({ id: m.id, name: m.name })), null, 2);
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, data, 'utf8');
+    writeJsonAtomic(p, [...malls.values()].map((m) => ({ id: m.id, name: m.name })));
     lastSaveError = null;
-    trace('saveMalls ok -> ' + p + ' (' + data.length + ' bytes)');
+    trace('saveMalls ok -> ' + p);
   } catch (e) {
     lastSaveError = String((e && e.message) || e);
     trace('saveMalls FAIL: ' + lastSaveError);
@@ -98,6 +144,16 @@ function financeDay(ts) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
+/**
+ * 本地月份 YYYY-MM。
+ * 不能用 toISOString().slice(0,7)：那是 UTC 月份，在 Asia/Shanghai 的
+ * 每月 1 日 00:00–08:00 会算成上个月（差一整个月的账）。
+ */
+function financeMonth(ts) {
+  const d = new Date(ts == null ? Date.now() : ts);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
 function financeDataDate(stores) {
   const dates = [];
   for (const s of (stores || [])) {
@@ -105,6 +161,20 @@ function financeDataDate(stores) {
     for (const d of (s.days || [])) if (d && d.date) dates.push(String(d.date).slice(0, 10));
   }
   return dates.length ? dates.sort().pop() : null;
+}
+
+function yuanTextToFen(s) {
+  const v = String(s == null ? '' : s).replace(/[^0-9.-]/g, '');
+  if (!v) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+}
+
+function orderTimeTextToUnix(s) {
+  const m = String(s || '').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if (!m) return null;
+  const t = new Date(m[1] + 'T' + m[2] + ':00').getTime();
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
 }
 
 function saveFinanceSnapshot(data) {
@@ -116,17 +186,17 @@ function saveFinanceSnapshot(data) {
       version: 1,
       collectedAt: at,
       dataDate,
-      month: data.month || new Date(at).toISOString().slice(0, 7),
+      month: data.month || financeMonth(at),
       aggregate: data.aggregate || null,
       stores: data.stores || [],
     };
     const snapshotFile = path.join(FINANCE_SNAPSHOT_DIR, 'snapshot-' + day + '.json');
-    fs.writeFileSync(snapshotFile, JSON.stringify(payload, null, 2), 'utf8');
+    writeJsonAtomic(snapshotFile, payload);
     const index = {
       version: 1,
       lastCollectedAt: at,
       dataDate,
-      dataMonth: data.month || new Date(at).toISOString().slice(0, 7),
+      dataMonth: data.month || financeMonth(at),
       storeCount: (data.stores || []).length,
       okCount: (data.stores || []).filter((s) => !s.error).length,
       file: path.basename(snapshotFile),
@@ -143,7 +213,7 @@ function saveFinanceSnapshot(data) {
         } : null,
       })),
     };
-    fs.writeFileSync(path.join(FINANCE_DIR, 'index.json'), JSON.stringify(index, null, 2), 'utf8');
+    writeJsonAtomic(path.join(FINANCE_DIR, 'index.json'), index);
     return { ok: true, file: snapshotFile, index };
   } catch (e) {
     trace('saveFinanceSnapshot FAIL: ' + ((e && e.message) || e));
@@ -163,6 +233,89 @@ function readFinanceSnapshot() {
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   }
+}
+
+function loadFinanceCosts() {
+  try {
+    if (!fs.existsSync(FINANCE_COSTS_FILE)) return [];
+    const arr = JSON.parse(fs.readFileSync(FINANCE_COSTS_FILE, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveFinanceCosts(arr) {
+  fs.mkdirSync(FINANCE_DIR, { recursive: true });
+  writeJsonAtomic(FINANCE_COSTS_FILE, arr);
+}
+
+function writeJsonAtomic(file, obj) {
+  // 原子写 JSON：先写 .tmp 再 rename，避免进程被杀时留下半截 JSON（Z-1）。
+  // 之前只有 costs.json 是这么写的，其余落盘文件崩在半截会让读侧静默回退空数据。
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+function loadProductCosts() {
+  try {
+    if (!fs.existsSync(FINANCE_PRODUCT_COSTS_FILE)) return [];
+    const arr = JSON.parse(fs.readFileSync(FINANCE_PRODUCT_COSTS_FILE, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) { return []; }
+}
+
+function saveProductCosts(arr) {
+  writeJsonAtomic(FINANCE_PRODUCT_COSTS_FILE, arr);
+}
+
+function saveFinanceOrders(data) {
+  try {
+    writeJsonAtomic(FINANCE_ORDERS_FILE, data);
+    return true;
+  } catch (e) {
+    trace('saveFinanceOrders FAIL: ' + ((e && e.message) || e));
+    return false;
+  }
+}
+
+function readFinanceOrders() {
+  try {
+    if (!fs.existsSync(FINANCE_ORDERS_FILE)) return { ok: false, error: '还没有商品贡献数据' };
+    return { ok: true, data: JSON.parse(fs.readFileSync(FINANCE_ORDERS_FILE, 'utf8')) };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+function readFinanceFees() {
+  try {
+    if (!fs.existsSync(FINANCE_FEES_FILE)) {
+      return { platformRate: 0.006, promotionPerOrder: 0, shippingPerOrder: 0, packagingPerOrder: 0 };
+    }
+    const x = JSON.parse(fs.readFileSync(FINANCE_FEES_FILE, 'utf8'));
+    return {
+      platformRate: Number(x.platformRate) >= 0 ? Number(x.platformRate) : 0.006,
+      promotionPerOrder: Number(x.promotionPerOrder) || 0,
+      shippingPerOrder: Number(x.shippingPerOrder) || 0,
+      packagingPerOrder: Number(x.packagingPerOrder) || 0,
+    };
+  } catch (_) {
+    return { platformRate: 0.006, promotionPerOrder: 0, shippingPerOrder: 0, packagingPerOrder: 0 };
+  }
+}
+
+function saveFinanceFees(x) {
+  const v = {
+    platformRate: Number(x && x.platformRate) >= 0 ? Number(x.platformRate) : 0.006,
+    promotionPerOrder: Math.round(Number(x && x.promotionPerOrder) || 0),
+    shippingPerOrder: Math.round(Number(x && x.shippingPerOrder) || 0),
+    packagingPerOrder: Math.round(Number(x && x.packagingPerOrder) || 0),
+  };
+  writeJsonAtomic(FINANCE_FEES_FILE, v);
+  return v;
 }
 
 function log(level, msg) {
@@ -449,6 +602,12 @@ function createWindow() {
       try { m.view.webContents.close(); } catch (_) { /* ignore */ }
     }
     malls.clear();
+    // 采集会话视图也要关掉：它独立于 malls 持有 WebContentsView，
+    // 不关的话退出前会话一直占内存（量小但不干净）。
+    if (collectorView && !collectorView.webContents.isDestroyed()) {
+      try { collectorView.webContents.close(); } catch (_) { /* ignore */ }
+    }
+    collectorView = null;
     attachedId = null;
     mainWindow = null;
   });
@@ -574,6 +733,7 @@ ipcMain.handle('pool:collect', async (_e, { index, goodsId }) => {
   if (!r || !r.ok) return r || { ok: false, error: '采集失败' };
 
   const p = r.pack;
+  if (!p) return { ok: false, error: '采集结果异常（缺 pack 数据），未入库' };
   const id = pool.add(Object.assign({}, p, {
     sourceMallId: m.id,
     sourceMallName: m.name,
@@ -594,6 +754,21 @@ ipcMain.handle('pool:detail', (_e, id) => pool.get(id));
  *  做法：目标店里克隆一条它自己的商品当骨架 → 抓骨架草稿的保存载荷 →
  *        用采集箱数据覆盖标题/主图/价格 → 回放保存 → 提交
  */
+/**
+ * 删掉刚克隆出来的草稿。
+ * 删干净 → 失败发生在「创建之前」的等价状态，可以安全重试（failed_known）；
+ * 删不掉 → 草稿还在，必须报 failed_unknown，禁止自动重试。
+ */
+async function discardDraftOrUnknown(draft) {
+  try {
+    const r = await runInMall((o) => o.deleteDraft(draft.commit_id, draft.goods_id));
+    if (r && r.ok) return { cleaned: true };
+    return { cleaned: false, reason: (r && (r.error || JSON.stringify(r.detail))) || '删除接口无响应' };
+  } catch (e) {
+    return { cleaned: false, reason: errText(e) };
+  }
+}
+
 /**
  * 从采集箱上架到指定店铺（跨店）—— 业务实现，IPC 与批量队列共用
  */
@@ -762,7 +937,16 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
   }, 90000);
   steps.push('编辑页: ' + (ready.ok ? '就绪' : '失败 ' + (ready.error || '')));
   if (!ready.ok) {
-    return { ok: false, error: '打不开草稿编辑页：' + (ready.error || ''), steps, draft };
+    // 草稿此刻已经克隆出来了，失败发生在创建之后 —— 必须报 unknown，
+    // 否则批量会重试并再克隆一个骨架，产生重复草稿（AGENTS §5）。
+    return {
+      ok: false,
+      error: '打不开草稿编辑页：' + (ready.error || ''),
+      failed: 'failed_unknown',
+      advice: '草稿已存在：commit=' + draft.commit_id + ' goods=' + draft.goods_id +
+              '；请先到草稿箱核对或删除，不要直接重试',
+      steps, draft,
+    };
   }
 
   // ④ 滚到规格区并等渲染，然后读改前状态
@@ -787,13 +971,17 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
     steps.push('设颜色 实际: ' + JSON.stringify((cr && cr.got) || null));
     if (!cr || !cr.ok) {
       // 颜色没设对就绝不往下走 —— 否则会产出一条「颜色错」的商品
+      const dis = await discardDraftOrUnknown(draft);
+      steps.push('清理草稿: ' + (dis.cleaned ? '已删除' : '删除失败 ' + (dis.reason || '')));
       return {
         ok: false,
         error: '颜色规格没设置成功，已停止（未提交）',
-        failed: 'failed_known',
+        failed: dis.cleaned ? 'failed_known' : 'failed_unknown',
         advice: (cr && cr.error ? errText(cr.error) : '页面颜色与源不一致') +
-                '\n草稿仍在目标店草稿箱：commit=' + draft.commit_id +
-                ' goods=' + draft.goods_id + '（可手动删除后重试）',
+                (dis.cleaned
+                  ? '\n刚克隆的草稿已删除，可直接重试'
+                  : '\n草稿仍在目标店草稿箱：commit=' + draft.commit_id +
+                    ' goods=' + draft.goods_id + '（先人工删除再重试）'),
         steps, draft,
       };
     }
@@ -841,12 +1029,16 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
         steps.push('   该码制可用码: ' + bestHave.slice(0, 30).join(','));
       }
       // 尺码缺了就是残品，绝不提交
+      const dis = await discardDraftOrUnknown(draft);
+      steps.push('清理草稿: ' + (dis.cleaned ? '已删除' : '删除失败 ' + (dis.reason || '')));
       return {
         ok: false,
         error: '尺码没配齐（缺 ' + missing.length + ' 个），已停止（未提交）',
-        failed: 'failed_known',
-        advice: '缺的码: ' + missing.join(',') + '。草稿在目标店草稿箱：commit=' +
-                draft.commit_id + ' goods=' + draft.goods_id,
+        failed: dis.cleaned ? 'failed_known' : 'failed_unknown',
+        advice: '缺的码: ' + missing.join(',') +
+                (dis.cleaned
+                  ? '。刚克隆的草稿已删除，可直接重试'
+                  : '。草稿仍在草稿箱：commit=' + draft.commit_id + ' goods=' + draft.goods_id),
         steps, draft,
       };
     }
@@ -887,6 +1079,8 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
   }
 
   let raw2 = null;
+  // 载荷是否真的覆盖成功。false 时草稿仍是骨架的标题/图/价格，绝不能提交。
+  let payloadApplied = false;
   try { raw2 = await captureEditBody(wc, useCommit, draft.goods_id); } catch (_) {}
   if (raw2) {
     let body;
@@ -1000,11 +1194,25 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
         };
       }
       steps.push('最终 SKU 数: ' + (body.skus || []).length);
+      payloadApplied = true;
     } else {
       steps.push('⚠ 没解析到最终载荷，标题/价格未覆盖（规格已保存）');
     }
   } else {
     steps.push('⚠ 没抓到最终载荷（' + (lastCaptureError || '') + '），标题/价格未覆盖');
+  }
+
+  // 抓不到载荷 = 草稿停在骨架态。提交出去就是把骨架的标题/图/价格上架，
+  // 且草稿已经存在，重试会再造一条 —— 只能报 failed_unknown 让人去草稿箱核对。
+  if (!payloadApplied && !dryRun) {
+    return {
+      ok: false,
+      error: '没抓到最终载荷，已停止（未提交）：草稿仍是骨架态',
+      failed: 'failed_unknown',
+      advice: '草稿在目标店草稿箱：commit=' + useCommit + ' goods=' + draft.goods_id +
+              '；请人工核对或删除后再重试',
+      steps, draft,
+    };
   }
 
   await sleep(1500);
@@ -1599,7 +1807,7 @@ async function preassignSkeletons(poolId, catIdHint, colorCountHint) {
   const readyCount = plans.filter((x) => x.ready).length;
   pool.update(poolId, {
     catId,
-    colors: (it.colors && it.colors.length) ? it.colors : (colorCount ? it.colors : it.colors),
+    colors: it.colors || [],
     skeletonPlans: plans,
     skeletonReady: readyCount > 0,
     skeletonReadyCount: readyCount,
@@ -1741,6 +1949,11 @@ function classifyBatchResult(r) {
   if (r && r.failed === 'failed_unknown') {
     return { state: 'failed_unknown', errorMsg: String(r.error || '状态未知') };
   }
+  if (r && r.blocked) {
+    // blocked（同店/无骨架等拦截）：按 lead 决策归入 failed_unknown ——
+    // getRunnable 会跳过它，不浪费重试次数，也不会被自动重试。
+    return { state: 'failed_unknown', errorMsg: String((r.error || r.blocked) || '已被拦截').slice(0, 160) };
+  }
   const det = (r && r.detail) || {};
   const code = det.error_code || det.errorCode || null;
   const msg = det.error_msg || det.errorMsg || (r && r.error) || (r && r.blocked) || '未知';
@@ -1810,60 +2023,6 @@ async function runBatchLoop(opts) {
   log('info', '批量结束：' + JSON.stringify(batch.stats()));
 }
 
-// ---------------------------------------------------------------- 资金限制（独立采集）
-/**
- * 单独采集资金限制列表。
- * 为什么不塞进 finance:collect：采集结束时视图停在 cashier 域，
- * 从 cashier 跨回 mms 域的 loadURL 常常不生效（实测日志里完全没触发导航）。
- * 独立入口可以先把视图放回 mms 域再导航，成功率高得多。
- */
-ipcMain.handle('finance:restrictions', async () => {
-  const list = Array.from(malls.values());
-  if (!list.length) return { ok: false, error: '还没有店铺' };
-  const out = [];
-  for (const mall of list) {
-    const rec = { mallId: mall.id, mallName: mall.name, items: [], error: null };
-    try {
-      activeId = mall.id;
-      attachView();
-      await sleep(1200);
-
-      const ok = await withPlatform('restrictNav', async () => {
-        const wc = mall.view.webContents;
-        // 若已经在 mms 域，直接去限制页；否则先回 mms 首页
-        let cur = '';
-        try { cur = wc.getURL() || ''; } catch (_) {}
-        if (cur.indexOf('mms.pinduoduo.com') < 0) {
-          try { await wc.loadURL('https://mms.pinduoduo.com/home/'); } catch (_) {}
-          await sleep(3000);
-        }
-        try { await wc.loadURL('https://mms.pinduoduo.com/pg/restrict_list'); } catch (_) {}
-        for (let i = 0; i < 40; i++) {
-          await sleep(500);
-          let u = '';
-          try { u = wc.getURL() || ''; } catch (_) {}
-          if (u.indexOf('restrict_list') >= 0) { await sleep(2000); return true; }
-        }
-        return false;
-      }, 70000);
-
-      if (!ok) {
-        rec.error = '打不开资金限制页';
-      } else {
-        const rr = await runInMallView(mall, cashierOps.readRestrictions(), 45000);
-        if (rr && rr.ok) rec.items = rr.items || [];
-        else rec.error = (rr && rr.error) || '读取失败';
-      }
-    } catch (e) {
-      rec.error = String((e && e.message) || e);
-    }
-    out.push(rec);
-    await sleep(800);
-  }
-  const total = out.reduce((s, x) => s + (x.items ? x.items.length : 0), 0);
-  return { ok: true, stores: out, total };
-});
-
 ipcMain.handle('batch:start', async (_e, { ids, options }) => {
   if (batchRunning) return { ok: false, error: '已有批量任务在跑' };
   if (!Array.isArray(ids) || !ids.length) return { ok: false, error: '没有选中商品' };
@@ -1925,6 +2084,8 @@ ipcMain.handle('bill:openFolder', () => {
 
 // ---------------------------------------------------------------- 资金复盘
 const cashierOps = require('./lib/cashier');
+const ordersOps = require('./lib/orders');
+const financeCore = require('./lib/finance-core');
 
 /** 在指定店铺视图上执行一段注入脚本 */
 async function runInWebContents(wc, js, timeoutMs) {
@@ -1960,6 +2121,9 @@ function createHiddenMallWindow(mall) {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // 隐藏窗口默认被 Chromium 节流（定时器/渲染降频），注入脚本里的 sleep 轮询
+      // 和 DOM 渲染都会变慢甚至停摆 —— 资金/订单采集全靠这个窗口渲染页面，必须显式关掉。
+      backgroundThrottling: false,
     },
   });
   try {
@@ -2003,8 +2167,8 @@ async function gotoCashierBills(wc) {
 }
 
 ipcMain.handle('finance:collect', async (_e, opts) => {
-  const o = Object.assign({ withDetail: false, maxPages: 20 }, opts || {});
-  const list = Array.from(malls.values());
+  const o = Object.assign({ withDetail: false, withDaily: false, maxPages: 20, mallId: null }, opts || {});
+  const list = Array.from(malls.values()).filter((m) => !o.mallId || m.id === o.mallId);
   if (!list.length) return { ok: false, error: '还没有店铺' };
 
   const results = [];
@@ -2045,16 +2209,17 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
       const mon = await runInWebContents(wc, cashierOps.readMonthSummary(), 40000);
       if (mon && mon.ok) item.months = mon.months;
 
-      // ④ 可选：读货款明细（分类要用）+ 日汇总逐日（余额权威来源）
-      if (o.withDetail) {
+      // ④ 可选：日汇总（现金流）+ 货款明细（分类要用）
+      if (o.withDetail || o.withDaily) {
         // ④a 先切「日汇总」，设最近 30 天范围（明细页/日汇总页共用同一个日期筛选）
         const dt = await runInWebContents(wc, cashierOps.clickDailyTab(), 30000);
         if (dt && dt.ok) {
-          const rg = await runInWebContents(wc, cashierOps.setRange30d(), 20000);
+          const rg = await runInWebContents(wc, cashierOps.setRange30d(), 3000);
           const ds = await runInWebContents(wc, cashierOps.readDailySummary(), 20000);
           if (ds && ds.ok && ds.days && ds.days.length) item.daily = ds.days;
         }
 
+        if (o.withDetail) {
         // ④b 切「货款明细」逐页读（分类明细，按入账时间归到对应日）
         const tab = await runInWebContents(wc, cashierOps.clickDetailTab(), 30000);
         if (tab && tab.ok) {
@@ -2095,6 +2260,7 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
           }
           item.days = Object.keys(byDay).sort().map(k => byDay[k]);
         }
+        }
       }
     } catch (e) {
       item.error = String((e && e.message) || e);
@@ -2108,7 +2274,7 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
   }
 
   // 汇总
-  const curMonth = new Date().toISOString().slice(0, 7);
+  const curMonth = financeMonth();
   const agg = { income: 0, expense: 0, profit: 0, stores: results.length, months: {} };
   for (const r of results) {
     if (!r.months) continue;
@@ -2136,6 +2302,959 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
 
 /** 读取上次保存的资金快照（应用重启后仍可展示） */
 ipcMain.handle('finance:last', () => readFinanceSnapshot());
+
+/** 读取订单列表并归一化为商品贡献原始数据（只读，不改远端） */
+ipcMain.handle('finance:orders', async (_e, opts) => {
+  const o = Object.assign({ days: 90, maxPages: 20, mallId: null }, opts || {});
+  const orderType = o.orderType == null ? 0 : Number(o.orderType);
+  const afterSaleType = o.afterSaleType == null ? 0 : Number(o.afterSaleType);
+  const list = Array.from(malls.values()).filter((m) => !o.mallId || m.id === o.mallId);
+  if (!list.length) return { ok: false, error: '还没有店铺' };
+  const now = Math.floor(Date.now() / 1000);
+  const start = now - Math.max(1, Number(o.days) || 90) * 86400;
+  const results = [];
+  for (const mall of list) {
+    const item = { mallId: mall.id, mallName: mall.name, orders: [], total: null };
+    let temp = null;
+    try {
+      temp = createHiddenMallWindow(mall);
+      try {
+        temp.setPosition(-10000, -10000);
+        temp.showInactive();
+      } catch (_) { /* ignore */ }
+      const wc = temp.webContents;
+      try { await wc.loadURL('https://mms.pinduoduo.com/orders/list'); } catch (_) { /* ignore */ }
+      await sleep(8000);
+
+      // 订单分页：终止/去重/截断判定在 lib/finance-core.js（可离线断言）。
+      // 这里只负责取一页原始响应（Promise.race 30 秒超时），lib 做状态机。
+      const PAGE = 20;
+      const fetchOrderPage = async (p) => {
+        const body = {
+          orderType, afterSaleType, remarkStatus: -1, urgeShippingStatus: -1,
+          groupStartTime: start, groupEndTime: now,
+          pageNumber: p, pageSize: PAGE, sortType: 11,
+          hideRegionBlackDelayShipping: false, mobile: '',
+        };
+        let r = null;
+        try {
+          r = await Promise.race([
+            wc.executeJavaScript(ordersOps.readOrderPage(body), true),
+            sleep(30000).then(() => null),
+          ]);
+        } catch (e) {
+          throw new Error(String((e && e.message) || e));
+        }
+        if (typeof r === 'string') {
+          try { r = JSON.parse(r); } catch (_) { throw new Error('订单返回不是合法 JSON'); }
+        }
+        return r;   // null = 30 秒超时，lib 会判为「订单页未就绪」
+      };
+      const ord = await financeCore.collectOrders({
+        fetchPage: fetchOrderPage,
+        maxPages: Number(o.maxPages) || 20,
+        pageSize: PAGE,
+        mallId: mall.id,
+        mallName: mall.name,
+      });
+      item.orders = ord.orders;
+      item.total = ord.total;
+      if (ord.error) item.error = ord.error;
+      item.truncated = !!ord.truncated;
+      if (ord.truncatedNote) item.truncatedNote = ord.truncatedNote;
+      // 售后单（仅待处理类可经接口取到；已完成退款看订单状态里的「退款成功」）
+      item.afterSales = [];
+      const seenAs = new Set();
+      // 关键：不带 quickSearchType 的 queryList 会返回**全部**售后（含已完成 status=5）。
+      // 之前只查 2/4/7/8/18，那些是「待处理」筛选，所以已完成单全被漏掉，
+      // 导致已退款订单拿不到 afterSalesId、也就查不了退货物流。
+      // 现在先跑一次全量，再补跑各 quickSearchType 兜住极端情况（按 id 去重）。
+      for (const qs of [null, 2, 4, 7, 8, 18]) {
+        // 每个 quickSearchType 是独立查询，分页终止必须用「本查询已采数」判断。
+        // 之前拿跨查询累计的 item.afterSales.length 去比单个查询的 total，
+        // 第一个 qs 采满后其余 qs 会立刻被判「已够」而漏单。
+        let qsCount = 0;
+        for (let p = 1; p <= 5; p++) {
+          const body = { pageSize: 50, pageNumber: p, orderByCreatedAtDesc: true };
+          if (qs != null) body.quickSearchType = qs;
+          let ar = null;
+          try {
+            ar = await Promise.race([
+              wc.executeJavaScript(ordersOps.readAfterSales(body), true),
+              sleep(20000).then(() => null),
+            ]);
+          } catch (_) { ar = null; }
+          if (typeof ar === 'string') { try { ar = JSON.parse(ar); } catch (_) { ar = null; } }
+          if (!ar || ar.__blocked || ar.__error || !Array.isArray(ar.list)) break;
+          for (const a of ar.list) {
+            const key = String(a.id || a.orderSn + '|' + a.afterSalesType);
+            if (seenAs.has(key)) continue;
+            seenAs.add(key);
+            item.afterSales.push({
+              id: String(a.id || ''),
+              orderSn: a.orderSn || '',
+              type: a.afterSalesType,
+              typeName: a.afterSalesTypeName || '',
+              status: a.afterSalesStatus,
+              title: a.afterSalesTitle || '',
+              refundAmount: Number(a.refundAmount) || 0,
+              goodsName: a.goodsName || '',
+              goodsNumber: Number(a.goodsNumber) || 0,
+              goodsSpec: a.goodsSpec || '',
+              reason: a.afterSalesReasonDesc || '',
+              // 退货单号：queryList 实测字段 reverseTrackingNumber
+              returnSn: a.reverseTrackingNumber || '',
+              // 退货快递只有数字 id（实测 44=顺丰快递），名称映射见 CARRIER_BY_ID
+              carrierId: a.reverseShippingId == null ? null : Number(a.reverseShippingId),
+              outSn: a.orderTrackingNumber || '',
+              createdAt: Number(a.createdAt) || null,
+              // 售后接口自带商品图，退货列表直接复用，不额外下载
+              thumbUrl: a.thumbUrl || '',
+            });
+            qsCount += 1;
+          }
+          if (!ar.list.length || (ar.total != null && qsCount >= Number(ar.total))) break;
+          await sleep(300);
+        }
+      }
+    } catch (e) {
+      item.error = String((e && e.message) || e);
+    } finally {
+      if (temp) { try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ } }
+    }
+    results.push(item);
+    await sleep(300);
+  }
+  const out = { ok: true, at: Date.now(), range: { start, end: now, days: o.days }, stores: results };
+  out.truncated = results.some((s) => s.truncated);   // Z-2 ⑤：任一店截断即整体提示
+  saveFinanceOrders(out);
+  return out;
+});
+
+/** 读取上次商品贡献订单快照 */
+ipcMain.handle('finance:ordersLast', () => readFinanceOrders());
+
+/**
+ * 店铺商品检测：检查每个商品能否参加平台活动，被判定假货的商品会带出原因。
+ * 接口：POST /bordeaux/mms/gift/query_event_goods_list  body {page, size}
+ * 返回 goods_display_info_list[]：{goods_id, goods_name, hd_thumb_url, quantity,
+ *   can_enroll_event: 1|0, cant_enroll_reason}
+ * 注意：__mms.fetch.sync 有页面级接口白名单，必须在 /kit/freebie 页面上调用。
+ */
+ipcMain.handle('risk:goodsCheck', async (_e, opts) => {
+  const o = opts || {};
+  const list = Array.from(malls.values()).filter((m) => !o.mallId || m.id === o.mallId);
+  if (!list.length) return { ok: false, error: '还没有店铺' };
+  const out = [];
+  for (const mall of list) {
+    const item = { mallId: mall.id, mallName: mall.name, total: 0, flagged: [], error: null };
+    let temp = null;
+    try {
+      temp = createHiddenMallWindow(mall);
+      try { temp.setPosition(-10000, -10000); temp.showInactive(); } catch (_) { /* ignore */ }
+      const wc = temp.webContents;
+      try { await wc.loadURL('https://mms.pinduoduo.com/kit/freebie'); } catch (_) { /* ignore */ }
+      await sleep(7000);
+      const pageSize = 50;
+      for (let page = 1; page <= 20; page++) {
+        const raw = await wc.executeJavaScript(`(async () => {
+          const mms = window.__mms && window.__mms.fetch && window.__mms.fetch.sync;
+          if (typeof mms !== 'function') return JSON.stringify({ __blocked: true });
+          try {
+            const r = await mms('POST', location.origin + '/bordeaux/mms/gift/query_event_goods_list', { page: ${page}, size: ${pageSize} });
+            return JSON.stringify(r);
+          } catch (e) {
+            return JSON.stringify({ __error: String((e && e.message) || e) });
+          }
+        })()`, true);
+        let r = raw;
+        if (typeof r === 'string') { try { r = JSON.parse(r); } catch (_) { r = null; } }
+        if (!r) { item.error = '接口无返回'; break; }
+        if (r.__blocked) { item.error = '页面未就绪'; break; }
+        if (r.__error) { item.error = r.__error; break; }
+        const rows = r.goods_display_info_list || [];
+        if (page === 1) item.total = Number(r.total) || rows.length;
+        for (const g of rows) {
+          if (Number(g.can_enroll_event) === 0) {
+            item.flagged.push({
+              goodsId: g.goods_id == null ? '' : String(g.goods_id),
+              goodsName: g.goods_name || '',
+              thumb: g.hd_thumb_url || '',
+              quantity: Number(g.quantity) || 0,
+              reason: g.cant_enroll_reason || '不可参加活动',
+            });
+          }
+        }
+        if (!rows.length || rows.length < pageSize) break;
+        await sleep(300);
+      }
+    } catch (e) {
+      item.error = String((e && e.message) || e);
+    } finally {
+      if (temp) { try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ } }
+    }
+    out.push(item);
+    await sleep(400);
+  }
+  const flagged = out.reduce((n, s) => n + s.flagged.length, 0);
+  const result = { ok: true, at: Date.now(), flagged, total: out.reduce((n, s) => n + (s.total || 0), 0), stores: out };
+  // 按店铺分包落盘，下次打开直接读回，不用重新检测
+  const saved = saveRiskResult(result);
+  if (saved.ok) result.saved = saved.index;
+  else result.saveError = saved.error;
+  return result;
+});
+
+/** 读回上次商品检测结果（按店铺商品包） */
+ipcMain.handle('risk:last', () => readRiskLast());
+
+// ---------------------------------------------------------------- 售后文案库
+/**
+ * 场景表。kind 决定这条文案用在哪：
+ *   reject   = 驳回退款理由（36h 窗口，第一杠杆）
+ *   evidence = 举证/留言（同意退款前把凭证说清）
+ *   appeal   = 维权/异常单申诉（48h 窗口）
+ */
+const APPEAL_SCENES = [
+  { id: 'return_not_received', name: '退货未收到', kind: 'reject' },
+  { id: 'return_swapped', name: '空包 / 调包', kind: 'reject' },
+  { id: 'size_dispute', name: '尺码不符', kind: 'reject' },
+  { id: 'quality', name: '商品质量', kind: 'evidence' },
+  { id: 'logistics_damage', name: '物流破损', kind: 'evidence' },
+  { id: 'arbitration', name: '判责申诉', kind: 'appeal' },
+  { id: 'malicious_order', name: '恶意下单', kind: 'appeal' },
+  { id: 'generic', name: '通用', kind: 'reject' },
+];
+
+/**
+ * 内置骨架。写法遵循实测结论：平台判的是「规则触发」不是态度，
+ * 所以正文只做四件事 —— 指出买家主张哪一项对不上、列我方履约证据、
+ * 给物流事实链、提明确请求。占位符 {orderSn} {amount} {returnSn} {days} 由界面替换。
+ */
+const APPEAL_BUILTIN = [
+  {
+    scene: 'return_not_received', kind: 'reject',
+    title: '驳回：退货单号无物流轨迹',
+    body: '订单 {orderSn}，买家填写退货单号 {returnSn}，但该单号在物流方查询无任何揽收记录。\n'
+      + '按平台售后规则，退货退款需以实际退回商品为退款前提；当前仅有单号、无揽收与运输轨迹，退货事实尚未成立。\n'
+      + '我方已按约发货并签收（发货单号见订单物流），履约完成。\n'
+      + '请求：驳回本次退款申请；买家可在补充有效物流凭证后重新申请。',
+    evidence: ['退货单号在快递官网/小程序查询无记录的截图（含查询时间）', '订单发货物流轨迹完整截图', '与买家沟通记录（如有）'],
+  },
+  {
+    scene: 'return_swapped', kind: 'reject',
+    title: '驳回：退回空包 / 商品被调包',
+    body: '订单 {orderSn} 退货签收后开箱核验，包裹内{空包/非本店商品/明显使用痕迹}，与买家申请退款的商品不一致。\n'
+      + '我方发货有打包视频与称重记录，可证明发出商品与订单一致。\n'
+      + '请求：驳回本次退款；如需进一步核查，可调取退货开箱视频与称重对比。',
+    evidence: ['退货开箱视频（一镜到底，含面单特写）', '退货包裹称重照片/称重记录', '发货打包视频或发货称重记录', '商品对比照片（发出 vs 退回）'],
+  },
+  {
+    scene: 'size_dispute', kind: 'reject',
+    title: '驳回：尺码不符（商品页已标注尺码表）',
+    body: '订单 {orderSn}，买家申请原因为尺码不合适。\n'
+      + '商品详情页已提供尺码对照表（含衣长/胸围/建议身高体重），买家下单规格为所选尺码，属自主选择。\n'
+      + '尺码不符不属于商品质量问题，且商品已签收使用。\n'
+      + '请求：驳回本次退款申请；如买家坚持，建议走七天无理由退货并由买家承担退回运费。',
+    evidence: ['商品详情页尺码表截图（含页面 URL 与时间）', '订单规格与买家所选尺码截图', '商品实物尺码测量照片'],
+  },
+  {
+    scene: 'quality', kind: 'evidence',
+    title: '举证：商品质量异议（附检测与对比）',
+    body: '订单 {orderSn}，买家主张商品存在质量问题。\n'
+      + '该批次商品进货凭证与质检报告齐全，同批次其他订单无同类反馈。\n'
+      + '买家提供的照片{未见所述问题/无法判断为商品本身问题}。\n'
+      + '请求：按凭证核定责任；如需进一步核验，我方可提供完整进货链路与检测报告。',
+    evidence: ['进货凭证 / 发票', '质检报告或材质说明', '买家提供照片的原图放大对比', '同批次其他订单评价截图'],
+  },
+  {
+    scene: 'logistics_damage', kind: 'evidence',
+    title: '举证：物流破损（派件前已报备）',
+    body: '订单 {orderSn}，买家反馈外包装破损。\n'
+      + '该包裹在我方交寄时包装完好（有交寄照片/打包视频），破损发生在运输环节。\n'
+      + '我方已在发现异常时向快递方报备，报备单号见附件。\n'
+      + '请求：责任按运输环节认定；我方可配合买家向快递方索赔。',
+    evidence: ['交寄时包装照片或打包视频', '快递方报备记录 / 工单号', '物流轨迹异常节点截图', '买家提供的破损照片'],
+  },
+  {
+    scene: 'arbitration', kind: 'appeal',
+    title: '申诉：平台判责与事实不符',
+    body: '订单 {orderSn}，平台判定退款 {amount} 元。\n'
+      + '该判定与以下事实不符：{具体指出是「事实认定」「适用理由」还是「规则依据」哪一项对不上}。\n'
+      + '我方履约证据：{发货凭证 / 签收记录 / 沟通记录}。\n'
+      + '请求：复核本次判责并撤销退款；相关凭证已随附。',
+    evidence: ['平台判责结果页截图（含判定理由原文）', '能直接反驳该理由的凭证', '订单全链路截图（下单→发货→签收）'],
+  },
+  {
+    scene: 'malicious_order', kind: 'appeal',
+    title: '申诉：异常订单不发货（恶意下单）',
+    body: '订单 {orderSn}，买家{下单后即申请退款 / 收货信息异常 / 历史多单异常退款}，存在非正常消费目的迹象。\n'
+      + '该订单如发货将产生实际物流成本与货损风险。\n'
+      + '请求：按「异常订单不发货」通过申诉，本单无需发货且不计入店铺销量。',
+    evidence: ['买家下单与申请退款时间线截图', '该买家历史订单异常记录（如有）', '收货信息异常截图'],
+  },
+  {
+    scene: 'generic', kind: 'reject',
+    title: '通用驳回骨架',
+    body: '订单 {orderSn}，退款金额 {amount} 元。\n'
+      + '买家主张：{原样摘录买家申请原因}。\n'
+      + '该主张不成立，理由：{对应规则条款或事实}。\n'
+      + '我方履约证据：{列 1~3 项}。\n'
+      + '请求：驳回本次退款申请。',
+    evidence: ['订单与物流全链路截图', '能反驳买家主张的关键凭证', '沟通记录（如有）'],
+  },
+];
+
+function seedAppealTemplates() {
+  const now = Date.now();
+  return APPEAL_BUILTIN.map((t, i) => ({
+    id: 'tpl_builtin_' + (i + 1),
+    scene: t.scene,
+    kind: t.kind,
+    title: t.title,
+    body: t.body,
+    evidence: t.evidence,
+    builtin: true,
+    uses: 0,
+    won: 0,
+    lost: 0,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+function loadAppealTemplates() {
+  try {
+    if (!fs.existsSync(APPEAL_TEMPLATES_FILE)) {
+      const seed = seedAppealTemplates();
+      writeJsonAtomic(APPEAL_TEMPLATES_FILE, seed);
+      return seed;
+    }
+    const arr = JSON.parse(fs.readFileSync(APPEAL_TEMPLATES_FILE, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    trace('loadAppealTemplates FAIL: ' + ((e && e.message) || e));
+    return seedAppealTemplates();
+  }
+}
+
+function saveAppealTemplates(arr) {
+  writeJsonAtomic(APPEAL_TEMPLATES_FILE, arr);
+}
+
+ipcMain.handle('appeal:scenes', () => ({ ok: true, items: APPEAL_SCENES }));
+
+ipcMain.handle('appeal:templates', () => {
+  const items = loadAppealTemplates();
+  // 按场景分组顺序返回，同场景内按胜率降序（没打过的按更新时间）
+  const order = new Map(APPEAL_SCENES.map((s, i) => [s.id, i]));
+  items.sort((a, b) => {
+    const d = (order.get(a.scene) ?? 99) - (order.get(b.scene) ?? 99);
+    if (d) return d;
+    const ra = a.uses ? a.won / a.uses : -1;
+    const rb = b.uses ? b.won / b.uses : -1;
+    if (rb !== ra) return rb - ra;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+  return { ok: true, items };
+});
+
+ipcMain.handle('appeal:templateSave', (_e, tpl) => {
+  try {
+    const t = tpl || {};
+    const title = String(t.title || '').trim().slice(0, 80);
+    const body = String(t.body || '').trim().slice(0, 4000);
+    if (!title) return { ok: false, error: '标题不能为空' };
+    if (!body) return { ok: false, error: '正文不能为空' };
+    const scene = APPEAL_SCENES.some((s) => s.id === t.scene) ? t.scene : 'generic';
+    const kind = ['reject', 'evidence', 'appeal'].includes(t.kind) ? t.kind : 'reject';
+    const evidence = Array.isArray(t.evidence)
+      ? t.evidence.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 12)
+      : String(t.evidence || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 12);
+    const rows = loadAppealTemplates();
+    const now = Date.now();
+    if (t.id) {
+      const i = rows.findIndex((x) => x.id === t.id);
+      if (i < 0) return { ok: false, error: '模板不存在' };
+      rows[i] = Object.assign({}, rows[i], { scene, kind, title, body, evidence, updatedAt: now });
+      saveAppealTemplates(rows);
+      return { ok: true, item: rows[i] };
+    }
+    const item = {
+      id: 'tpl_' + now.toString(36) + Math.random().toString(36).slice(2, 6),
+      scene, kind, title, body, evidence,
+      builtin: false, uses: 0, won: 0, lost: 0,
+      createdAt: now, updatedAt: now,
+    };
+    rows.push(item);
+    saveAppealTemplates(rows);
+    return { ok: true, item };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('appeal:templateDelete', (_e, id) => {
+  try {
+    const rows = loadAppealTemplates();
+    const next = rows.filter((x) => x.id !== id);
+    saveAppealTemplates(next);
+    return { ok: true, removed: rows.length - next.length };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/** 记录一次使用结果（win / lose / used），用于按胜率排序 */
+ipcMain.handle('appeal:templateMark', (_e, payload) => {
+  try {
+    const p = payload || {};
+    const rows = loadAppealTemplates();
+    const i = rows.findIndex((x) => x.id === p.id);
+    if (i < 0) return { ok: false, error: '模板不存在' };
+    const r = rows[i];
+    r.uses = (r.uses || 0) + 1;
+    if (p.result === 'won') r.won = (r.won || 0) + 1;
+    if (p.result === 'lost') r.lost = (r.lost || 0) + 1;
+    r.lastUsedAt = Date.now();
+    saveAppealTemplates(rows);
+    return { ok: true, item: r };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/**
+ * 在当前店铺视图里打开售后工作台。
+ * 不能直接 loadURL：/aftersales/aftersale_list 有客户端路由守卫，会被打回 setup。
+ * 正确路径 = 先开 setup，再点「退款/售后」标签。
+ */
+ipcMain.handle('appeal:openWorkbench', async () => {
+  const m = currentMall();
+  if (!m || !m.view) return { ok: false, error: '还没有店铺，先添加店铺' };
+  const wc = m.view.webContents;
+  if (/goods_add/.test(wc.getURL() || '')) {
+    return { ok: false, error: '当前店铺视图停在商品编辑页，会拦截跳转；先切到别的页签再打开售后' };
+  }
+  return withPlatform('openAftersale', async () => {
+    try { await wc.loadURL('https://mms.pinduoduo.com/aftersales/setup?tab=3'); } catch (_) { /* 跳转中断是常态 */ }
+    let ready = false;
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      ready = await wc.executeJavaScript("(document.body.innerText||'').includes('售后设置')", true).catch(() => false);
+      if (ready) break;
+    }
+    if (!ready) return { ok: false, error: '售后设置页没加载出来（可能是登录态或网络）' };
+    const clicked = await wc.executeJavaScript(`(() => {
+      const el = [...document.querySelectorAll('*')].find(e => (e.innerText || '').trim() === '退款/售后' && e.children.length === 0);
+      if (!el) return false;
+      (el.closest('a,button,li,div') || el).click();
+      return true;
+    })()`, true).catch(() => false);
+    if (!clicked) return { ok: false, error: '找不到「退款/售后」标签，页面可能改版' };
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      const u = wc.getURL();
+      if (u.includes('/aftersales/aftersale_list')) return { ok: true, url: u };
+    }
+    return { ok: false, error: '点了标签但没跳到售后列表，当前：' + wc.getURL() };
+  }, 90000);
+});
+
+// ---------------------------------------------------------------- 商品检测结果（按店铺分包）
+/**
+ * 保存一次检测结果：每个店铺写一个 store-<mallId>.json，索引写 index.json。
+ * 某店本次读失败时保留上一次的商品包，标 stale，避免把已有结果冲成空。
+ */
+function saveRiskResult(result) {
+  try {
+    fs.mkdirSync(RISK_DIR, { recursive: true });
+    const at = Number(result.at) || Date.now();
+    const index = { version: 1, lastRunAt: at, stores: [] };
+    for (const s of (result.stores || [])) {
+      const file = 'store-' + String(s.mallId || 'unknown').replace(/[^\w-]/g, '_') + '.json';
+      const full = path.join(RISK_DIR, file);
+      const flagged = Array.isArray(s.flagged) ? s.flagged : [];
+      let payload;
+      if (s.error && !flagged.length) {
+        // 本次没读到，沿用旧包
+        let prev = null;
+        try { if (fs.existsSync(full)) prev = JSON.parse(fs.readFileSync(full, 'utf8')); } catch (_) {}
+        payload = prev
+          ? Object.assign({}, prev, { error: s.error, stale: true, lastTryAt: at })
+          : { mallId: s.mallId, mallName: s.mallName, at, total: 0, flagged: [], error: s.error, stale: true, lastTryAt: at };
+      } else {
+        payload = {
+          mallId: s.mallId, mallName: s.mallName, at,
+          total: Number(s.total) || 0,
+          flagged,
+          error: s.error || null,
+          stale: false,
+          lastTryAt: at,
+        };
+      }
+      writeJsonAtomic(full, payload);
+      index.stores.push({
+        mallId: s.mallId,
+        mallName: s.mallName,
+        file,
+        at: payload.at,
+        total: payload.total,
+        flaggedCount: (payload.flagged || []).length,
+        error: payload.error || null,
+        stale: !!payload.stale,
+      });
+    }
+    writeJsonAtomic(RISK_INDEX_FILE, index);
+    return { ok: true, index };
+  } catch (e) {
+    trace('saveRiskResult FAIL: ' + ((e && e.message) || e));
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+/** 读回上次检测结果，形状与 risk:goodsCheck 一致，渲染层不用分叉。 */
+function readRiskLast() {
+  try {
+    if (!fs.existsSync(RISK_INDEX_FILE)) return { ok: false, error: '还没有检测记录' };
+    const index = JSON.parse(fs.readFileSync(RISK_INDEX_FILE, 'utf8'));
+    const stores = [];
+    for (const s of (index.stores || [])) {
+      let pkg = null;
+      try {
+        const full = path.join(RISK_DIR, s.file);
+        if (fs.existsSync(full)) pkg = JSON.parse(fs.readFileSync(full, 'utf8'));
+      } catch (_) { /* ignore */ }
+      stores.push({
+        mallId: s.mallId,
+        mallName: s.mallName,
+        total: pkg ? (Number(pkg.total) || 0) : 0,
+        flagged: pkg && Array.isArray(pkg.flagged) ? pkg.flagged : [],
+        error: (pkg && pkg.error) || s.error || null,
+        stale: !!(pkg && pkg.stale),
+        at: (pkg && pkg.at) || s.at || null,
+      });
+    }
+    return {
+      ok: true,
+      at: index.lastRunAt || null,
+      fromCache: true,
+      flagged: stores.reduce((n, s) => n + s.flagged.length, 0),
+      total: stores.reduce((n, s) => n + (s.total || 0), 0),
+      stores,
+    };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+function loadReturnsManual() {  try {
+    if (!fs.existsSync(FINANCE_RETURNS_FILE)) return {};
+    const o = JSON.parse(fs.readFileSync(FINANCE_RETURNS_FILE, 'utf8'));
+    return o && typeof o === 'object' ? o : {};
+  } catch (_) { return {}; }
+}
+
+function saveReturnsManual(o) {
+  fs.mkdirSync(FINANCE_DIR, { recursive: true });
+  writeJsonAtomic(FINANCE_RETURNS_FILE, o);
+}
+
+function loadReturnTraces() {
+  try {
+    if (!fs.existsSync(FINANCE_TRACES_FILE)) return {};
+    const o = JSON.parse(fs.readFileSync(FINANCE_TRACES_FILE, 'utf8'));
+    return o && typeof o === 'object' ? o : {};
+  } catch (_) { return {}; }
+}
+
+function saveReturnTraces(o) {
+  fs.mkdirSync(FINANCE_DIR, { recursive: true });
+  writeJsonAtomic(FINANCE_TRACES_FILE, o);
+}
+
+/**
+ * 从售后详情页文本里解析「退货物流」。
+ * 页面结构（实测）：物流轨迹 发货物流 退货物流 快递公司:顺丰快递 快递单号:SF... 快件到达 【泉北转运中心】 2026-11-21 03:27:40
+ * 判据：出现签收类关键词 → signed=true；只有运输节点 → signed=false；解析不到退货物流区块 → null（未知）
+ */
+function parseReturnTrace(text) {
+  const t = String(text || '');
+  const i = t.indexOf('退货物流');
+  if (i < 0) return null;
+  // 截到下一个分区，避免把「备注」「售后状态」的内容混进来
+  const rest = t.slice(i + 4);
+  const endMark = rest.search(/备注\s|售后状态|协商详情|聊天记录|一键申请平台保护/);
+  const block = (endMark > 0 ? rest.slice(0, endMark) : rest.slice(0, 600)).trim();
+  if (!block) return null;
+
+  const sn = (block.match(/快递单号[:：]\s*([A-Za-z0-9]+)/) || [])[1] || '';
+  const carrier = (block.match(/快递公司[:：]\s*(\S+?)\s/) || [])[1] || '';
+
+  // 签收判据：平台/快递的妥投措辞。含「放在门口/经客户同意」这类也算已送达
+  const SIGNED_RE = /已签收|签收成功|已取件|已放入|已放在|已放至|已代收|代收点|本人签收|包裹已签收|已投递|已送达|已妥投|经客户同意/;
+  const signed = SIGNED_RE.test(block);
+
+  // 最新一条节点：取区块里第一个时间戳，前面那段就是节点描述
+  let nodeText = '';
+  let nodeTime = '';
+  const tm = block.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+  if (tm) {
+    nodeTime = tm[1];
+    let before = block.slice(0, tm.index).trim();
+    // 去掉前面的固定抬头「退货包裹已由物流商取走… 快递公司:X 快递单号:Y」
+    const cut = before.search(/快递单号[:：]\s*[A-Za-z0-9]+/);
+    if (cut >= 0) before = before.slice(cut).replace(/^快递单号[:：]\s*[A-Za-z0-9]+\s*/, '');
+    nodeText = before.trim().slice(-70);
+  }
+  return {
+    signed,
+    signedText: signed ? '已签收' : '在途',
+    carrier: carrier || '',
+    returnSn: sn || '',
+    nodeText,
+    nodeTime,
+    raw: block.slice(0, 400),
+  };
+}
+
+/** 售后退货清单：平台在途单 + 已完成退款单 + 本地手工补录/完成标记 */
+ipcMain.handle('finance:returns', () => {
+  const snap = readFinanceOrders();
+  const manual = loadReturnsManual();
+  const learned = loadCarrierLearned();
+  const traces = loadReturnTraces();
+  const rows = [];
+  const seen = new Set();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const DAY = 86400;
+  const daysOf = (t) => (t ? Math.max(0, Math.floor((nowSec - Number(t)) / DAY)) : null);
+
+  if (snap.ok && snap.data) {
+    for (const s of (snap.data.stores || [])) {
+      // ① 平台售后单（现在含已完成 status=5）
+      for (const a of (s.afterSales || [])) {
+        const m = manual[a.orderSn] || {};
+        seen.add(a.orderSn);
+        const days = daysOf(a.createdAt);
+        const tr = traces[a.orderSn] || null;
+        // 售后类型决定「需不需要退货」：未发货退款/仅退款不用退货，谈不上签收
+        const needReturn = /退货/.test(String(a.typeName || ''));
+        // status 5 = 已完成，10 = 待消费者寄货，11 = 待商家确认收货
+        const stage = a.status === 5 ? 'done'
+          : (a.status === 10 ? 'pending_ship' : (a.status === 11 ? 'in_transit' : 'pending'));
+        let signed = null;
+        let signedText = '未知';
+        if (!needReturn) {
+          // 未发货退款 / 仅退款：本来就没有退货包裹，谈不上签收
+          signed = null;
+          signedText = '无退货包裹';
+        } else if (tr) {
+          signed = tr.signed;
+          signedText = tr.signed === true ? '已签收 · 注意查收' : (tr.signedText || '在途');
+        } else if (stage !== 'done') {
+          signed = false;
+          signedText = '未签收';
+        } else {
+          // 已完成但还没抓过物流：不猜，标出来让人去抓
+          signedText = '未抓签收';
+        }
+        rows.push({
+          orderSn: a.orderSn,
+          afterSalesId: a.id || '',
+          mallId: s.mallId,
+          mallName: s.mallName,
+          goodsName: a.goodsName,
+          thumbUrl: a.thumbUrl || '',
+          refundAmount: a.refundAmount,
+          platformStatus: a.status,
+          platformTitle: a.title,
+          typeName: a.typeName,
+          needReturn,
+          carrierId: a.carrierId == null ? null : Number(a.carrierId),
+          returnSn: m.returnSn || a.returnSn || '',
+          carrier: m.carrier || carrierOf(a.carrierId, m.returnSn || a.returnSn, learned),
+          done: !!m.done,
+          doneAt: m.doneAt || null,
+          manual: !!m.returnSn || !!m.carrier || !!m.done,
+          source: 'platform',
+          stage,
+          stageText: stage === 'done' ? '已完成'
+            : (stage === 'pending_ship' ? '待寄回' : (stage === 'in_transit' ? '在途待收' : '待处理')),
+          signed,
+          signedText,
+          traceNode: tr ? (tr.nodeText || '') : '',
+          traceTime: tr ? (tr.nodeTime || '') : '',
+          traceAt: tr ? (tr.at || null) : null,
+          createdAt: a.createdAt || null,
+          days,
+          within21: days != null && days <= 21,
+        });
+      }
+
+      // ② 已退款但没有售后单记录的（多为未发货退款），保持「未知」不猜
+      for (const o of (s.orders || [])) {
+        if (!/退款成功/.test(String(o.status || ''))) continue;
+        if (!o.orderSn || seen.has(o.orderSn)) continue;
+        seen.add(o.orderSn);
+        const m = manual[o.orderSn] || {};
+        const days = daysOf(o.orderTime);
+        rows.push({
+          orderSn: o.orderSn,
+          mallId: s.mallId,
+          mallName: s.mallName,
+          goodsName: o.goodsName,
+          thumbUrl: o.thumbUrl || '',
+          refundAmount: Number(o.orderAmount) || 0,
+          platformStatus: 5,
+          platformTitle: o.status,
+          typeName: '已退款',
+          carrierId: null,
+          returnSn: m.returnSn || '',
+          carrier: m.carrier || '',
+          done: !!m.done,
+          doneAt: m.doneAt || null,
+          manual: !!m.returnSn || !!m.carrier || !!m.done,
+          source: 'refunded',
+          stage: 'refunded',
+          stageText: '已退款',
+          // 退款已完成但货有没有退回来，平台接口拿不到 —— 未知用 null，不用 false
+          signed: m.done ? true : null,
+          signedText: m.done ? '已签收' : '未知',
+          createdAt: o.orderTime || null,
+          days,
+          within21: days != null && days <= 21,
+        });
+      }
+    }
+  }
+
+  // ③ 手工新增（平台已取不到的已完成单，人工补录）
+  for (const [orderSn, m] of Object.entries(manual)) {
+    if (seen.has(orderSn)) continue;
+    const days = daysOf(m.createdAt || m.doneAt);
+    rows.push({
+      orderSn, mallId: m.mallId || null, mallName: m.mallName || '', goodsName: m.goodsName || '',
+      thumbUrl: m.thumbUrl || '',
+      refundAmount: Number(m.refundAmount) || 0, platformStatus: null, platformTitle: '',
+      typeName: '手工补录', returnSn: m.returnSn || '', carrier: m.carrier || '',
+      done: !!m.done, doneAt: m.doneAt || null, manual: true, source: 'manual',
+      stage: m.done ? 'done' : 'manual',
+      stageText: m.done ? '已完成' : '待核对',
+      signed: m.done ? true : null,
+      signedText: m.done ? '已签收' : '未知',
+      createdAt: m.createdAt || null,
+      days,
+      within21: days != null && days <= 21,
+    });
+  }
+
+  // 排序只按时间（新的在前）。已签收的留在原位，不沉底 —— 沉底后勾错了找不到。
+  rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const within21 = rows.filter((r) => r.within21).length;
+  const open = rows.filter((r) => !r.done).length;
+  return { ok: true, at: Date.now(), rows, stats: { total: rows.length, within21, open } };
+});
+
+/**
+ * 抓在途售后的真实退货物流轨迹（签收判断）。
+ * 只有「售后接口能取到的在途单」有 afterSalesId，才能打开详情页；
+ * 已完成退款（系统提前退款）没有 afterSalesId，详情页也取不到退货物流 —— 那些保持未知，不猜。
+ */
+ipcMain.handle('finance:returnTrace', async (_e, opts) => {
+  const o = Object.assign({ maxItems: 200, force: false }, opts || {});
+  const snap = readFinanceOrders();
+  if (!snap.ok || !snap.data) return { ok: false, error: '还没有订单数据，先点「商品贡献」读取' };
+  const traces = loadReturnTraces();
+  const targets = [];
+  for (const s of (snap.data.stores || [])) {
+    for (const a of (s.afterSales || [])) {
+      if (!a.id || !a.orderSn) continue;
+      // 只有「退货退款」才需要查退货物流；未发货退款/仅退款没有退货包裹
+      if (!/退货/.test(String(a.typeName || ''))) continue;
+      // 断点续跑：已经抓过的跳过，除非显式 force
+      if (!o.force && traces[a.orderSn]) continue;
+      targets.push({ mallId: s.mallId, afterSalesId: String(a.id), orderSn: a.orderSn });
+    }
+  }
+  const out = { ok: true, at: Date.now(), total: targets.length, checked: 0, signed: 0, noTrace: 0, failed: 0 };
+  const limit = Math.min(targets.length, Math.max(1, Number(o.maxItems) || 60));
+  for (let i = 0; i < limit; i++) {
+    const it = targets[i];
+    const mall = malls.get(it.mallId);
+    if (!mall) { out.failed += 1; continue; }
+    let temp = null;
+    try {
+      temp = createHiddenMallWindow(mall);
+      try { temp.setPosition(-10000, -10000); temp.showInactive(); } catch (_) { /* ignore */ }
+      const wc = temp.webContents;
+      const url = 'https://mms.pinduoduo.com/aftersales-ssr/detail?id=' +
+        encodeURIComponent(it.afterSalesId) + '&orderSn=' + encodeURIComponent(it.orderSn);
+      try { await wc.loadURL(url); } catch (_) { /* 跳转中断是常态 */ }
+      let text = '';
+      for (let k = 0; k < 12; k++) {
+        await sleep(900);
+        try {
+          text = await wc.executeJavaScript(
+            "(document.body.innerText||'').replace(/\\s+/g,' ')", true);
+        } catch (_) { text = ''; }
+        if (text && text.indexOf('退货物流') >= 0) break;
+      }
+      const tr = parseReturnTrace(text);
+      if (tr) {
+        traces[it.orderSn] = Object.assign({ at: Date.now() }, tr);
+        out.checked += 1;
+        if (tr.signed) out.signed += 1;
+      } else {
+        // 没有退货物流区块：可能是买家还没寄。记成「无轨迹」，仍然不是签收
+        traces[it.orderSn] = {
+          at: Date.now(), signed: false, signedText: '无轨迹',
+          carrier: '', returnSn: '', nodeText: '', nodeTime: '', raw: '',
+        };
+        out.noTrace += 1;
+      }
+    } catch (e) {
+      out.failed += 1;
+    } finally {
+      if (temp) { try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ } }
+    }
+  }
+  saveReturnTraces(traces);
+  return out;
+});
+
+ipcMain.handle('finance:returnSet', (_e, entry) => {
+  try {
+    const e = entry || {};
+    const orderSn = String(e.orderSn || '').trim();
+    if (!orderSn) return { ok: false, error: '缺少订单号' };
+    const manual = loadReturnsManual();
+    const cur = manual[orderSn] || {};
+    const next = Object.assign({}, cur);
+    if (e.returnSn !== undefined) next.returnSn = String(e.returnSn || '').trim().slice(0, 40);
+    if (e.carrier !== undefined) next.carrier = String(e.carrier || '').trim().slice(0, 30);
+    // 手工填的快递名按 carrierId 记住，下次同快递自动带出
+    if (e.carrier && e.carrierId) {
+      const learned = loadCarrierLearned();
+      learned[String(Number(e.carrierId))] = String(e.carrier).trim().slice(0, 30);
+      saveCarrierLearned(learned);
+    }
+    if (e.done !== undefined) {
+      next.done = !!e.done;
+      next.doneAt = next.done ? Date.now() : null;
+    }
+    if (e.mallName !== undefined) next.mallName = String(e.mallName || '').slice(0, 60);
+    if (e.goodsName !== undefined) next.goodsName = String(e.goodsName || '').slice(0, 120);
+    if (e.refundAmount !== undefined) next.refundAmount = Math.round(Number(e.refundAmount) || 0);
+    manual[orderSn] = next;
+    saveReturnsManual(manual);
+    return { ok: true, item: Object.assign({ orderSn }, next) };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+ipcMain.handle('finance:returnRemove', (_e, orderSn) => {
+  try {
+    const manual = loadReturnsManual();
+    delete manual[String(orderSn || '')];
+    saveReturnsManual(manual);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+/** 费用扣项设置：平台费率/推广/快递/包装 */
+ipcMain.handle('finance:feeGet', () => ({ ok: true, data: readFinanceFees() }));
+ipcMain.handle('finance:feeSet', (_e, x) => {
+  try { return { ok: true, data: saveFinanceFees(x || {}) }; }
+  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+/** 拿货成本账本（本地 JSON，简单模式：采购当天计入现金成本） */
+ipcMain.handle('finance:costList', () => {
+  const rows = loadFinanceCosts();
+  rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  return { ok: true, items: rows };
+});
+
+ipcMain.handle('finance:costAdd', (_e, entry) => {
+  try {
+    const e = entry || {};
+    const date = String(e.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: '日期格式必须是 YYYY-MM-DD' };
+    const quantity = Number(e.quantity);
+    const unitCost = Math.round(Number(e.unitCost));
+    if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, error: '数量必须大于 0' };
+    if (!Number.isFinite(unitCost) || unitCost < 0) return { ok: false, error: '单价必须是非负金额' };
+    const rows = loadFinanceCosts();
+    const item = {
+      id: 'cost_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      date,
+      mallId: e.mallId || null,
+      productTitle: String(e.productTitle || '').slice(0, 120),
+      quantity,
+      unitCost,
+      totalCost: Math.round(quantity * unitCost),
+      supplier: String(e.supplier || '').slice(0, 80),
+      note: String(e.note || '').slice(0, 200),
+      createdAt: Date.now(),
+    };
+    rows.push(item);
+    saveFinanceCosts(rows);
+    return { ok: true, item };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+ipcMain.handle('finance:costDelete', (_e, id) => {
+  try {
+    const rows = loadFinanceCosts();
+    const next = rows.filter((x) => x.id !== id);
+    saveFinanceCosts(next);
+    return { ok: true, removed: rows.length - next.length };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+/** 商品单位拿货成本（商品贡献表内联录入） */
+ipcMain.handle('finance:productCostList', () => ({ ok: true, items: loadProductCosts() }));
+
+ipcMain.handle('finance:productCostSet', (_e, entry) => {
+  try {
+    const e = entry || {};
+    const goodsId = String(e.goodsId || '').trim();
+    const productName = String(e.productName || e.productTitle || '').trim().slice(0, 200);
+    const unitCost = Math.round(Number(e.unitCost));
+    if (!goodsId && !productName) return { ok: false, error: '缺少商品 ID/名称' };
+    if (!Number.isFinite(unitCost) || unitCost < 0) return { ok: false, error: '单位成本必须是非负金额' };
+    const rows = loadProductCosts();
+    const idx = rows.findIndex((x) => (goodsId ? x.goodsId === goodsId : String(x.productName || '').replace(/\s+/g, '') === productName.replace(/\s+/g, '')));
+    const item = { goodsId, productName, unitCost, updatedAt: Date.now() };
+    if (idx >= 0) rows[idx] = Object.assign(rows[idx], item); else rows.push(item);
+    saveProductCosts(rows);
+    return { ok: true, item };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+ipcMain.handle('finance:productCostDelete', (_e, entry) => {
+  try {
+    const e = entry || {};
+    const goodsId = String(e.goodsId || '').trim();
+    const productName = String(e.productName || '').replace(/\s+/g, '');
+    const rows = loadProductCosts();
+    const next = rows.filter((x) => !(goodsId ? x.goodsId === goodsId : String(x.productName || '').replace(/\s+/g, '') === productName));
+    saveProductCosts(next);
+    return { ok: true, removed: rows.length - next.length };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
 
 // ---------------------------------------------------------------- 尺码表模板
 const SIZE_TPL_FILE = path.join(__dirname, 'data', 'size-templates.json');
