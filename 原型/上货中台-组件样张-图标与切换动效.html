@@ -515,5 +515,253 @@ document.addEventListener('DOMContentLoaded', function () {
   </div>
   <div class="sec-n"><b>政治经济学：</b>采集是商户向平台「取回自己的数据」——编排把这一过程演成看得见的次序，工具在为商户劳动，而不是黑箱。<b>社会心理学：</b>toast 先于数字出现（先告知、后展示），符合「结果优先于细节」的阅读预期；三段之间 100~200ms 的呼吸间隙防止感知过载。</div>
 </section>
+
+<style>
+/* ============ 八、社会心理学专题 ============ */
+.ps { display:flex; flex-direction:column; gap:18px; }
+.ps-lb { font-size:11.5px; color:var(--muted); margin:0 0 8px; }
+.ps-lb b { color:var(--text); }
+/* 8.1 阈值跨越 */
+.rate-pill { display:inline-flex; align-items:center; gap:10px; height:36px; padding:0 16px; border-radius:10px;
+             border:1px solid var(--line); background:var(--panel2); font-size:15px; font-weight:600;
+             font-variant-numeric:tabular-nums; color:var(--text);
+             transition:color var(--m-fast) var(--ease-std), background var(--m-fast) var(--ease-std),
+                        border-color var(--m-fast) var(--ease-std); }
+.rate-pill .dot2 { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+.rate-pill .st { font-size:11px; font-weight:500; color:var(--muted); }
+.rate-pill.warn { border-color:rgba(245,166,35,.5); background:rgba(245,166,35,.10); color:var(--warn); }
+.rate-pill.warn .dot2 { background:var(--warn); box-shadow:0 0 6px rgba(245,166,35,.5); }
+.rate-pill.warn .st { color:var(--warn); }
+.rate-pill.flash { animation:crossflash 420ms var(--ease-std) 1; }
+@keyframes crossflash {
+  0% { box-shadow:0 0 0 0 rgba(245,166,35,.5); transform:scale(1); }
+  40% { box-shadow:0 0 0 8px rgba(245,166,35,.25); transform:scale(1.05); }
+  100% { box-shadow:0 0 0 0 rgba(245,166,35,0); transform:scale(1); } }
+/* 8.2 未闭环脉冲（慢）vs 忙碌呼吸（快）——同一语言家族、两种节奏 */
+.zk-dot { width:7px; height:7px; border-radius:50%; background:var(--warn); animation:zk 2.4s ease-in-out infinite; }
+@keyframes zk { 50% { opacity:.3; } }
+.busy-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); animation:busy 1.15s ease-out infinite; }
+@keyframes busy { 0% { box-shadow:0 0 0 0 rgba(90,130,255,.55); } 65% { box-shadow:0 0 0 6px rgba(90,130,255,0); } 100% { box-shadow:0 0 0 0 rgba(90,130,255,0); } }
+
+/* 8.3 入库飞入（FLIP） */
+.fly-list { list-style:none; margin:0; padding:0; width:420px; border:1px solid var(--line); border-radius:10px;
+            background:var(--panel); overflow:hidden; }
+.fly-list li { display:flex; align-items:center; gap:10px; padding:8px 14px; font-size:12px;
+               border-bottom:1px solid rgba(255,255,255,.04); }
+.fly-list li:last-child { border-bottom:none; }
+.fly-list li .nm { max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fly-list li .num { margin-left:auto; color:var(--muted); font-size:11px; }
+.fly-list li.fresh { animation:flyin var(--m-spring) var(--ease-spring) both; }
+@keyframes flyin { from { opacity:0; transform:translateX(22px); } to { opacity:1; transform:none; } }
+.fly-list li.retire { opacity:0; transform:translateX(-14px); transition:opacity 140ms var(--ease-accel), transform 140ms var(--ease-accel); }
+
+/* 8.4 损失剔除流 */
+.leak { display:flex; flex-direction:column; gap:8px; width:420px; }
+.leak-line { display:flex; align-items:baseline; gap:10px; font-size:12.5px; }
+.leak-line .k { color:var(--muted); width:70px; flex:none; }
+.leak-line .v { font-variant-numeric:tabular-nums; font-weight:600; color:var(--text); }
+.leak-line .v.loss { color:var(--loss); }
+.leak-chips { display:flex; flex-direction:column; gap:4px; min-height:78px; }
+.leak-chip { display:inline-flex; justify-content:space-between; padding:4px 10px; border-radius:6px;
+             border:1px solid rgba(239,91,91,.30); background:rgba(239,91,91,.08); color:#ff9d9d;
+             font-size:11px; font-variant-numeric:tabular-nums; width:230px;
+             opacity:0; transform:translateX(-10px); }
+.leak-chip.in { opacity:1; transform:none; transition:opacity var(--m-base) var(--ease-decel),
+                                                 transform var(--m-base) var(--ease-decel); }
+.leak-chip.out { opacity:0; transform:translateY(14px); transition:opacity var(--m-base) var(--ease-accel),
+                                                  transform var(--m-base) var(--ease-accel); }
+
+/* 8.5 分段任务进度 */
+.segs { display:flex; align-items:center; gap:8px; }
+.seg-item { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 12px; border-radius:999px;
+            border:1px solid var(--line); background:var(--panel2); color:var(--muted); font-size:11.5px; }
+.seg-item svg { width:14px; height:14px; }
+.seg-item .mini-ck { fill:none; stroke:var(--income); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
+                     stroke-dasharray:16; stroke-dashoffset:16; }
+.seg-item.done { border-color:rgba(62,207,142,.4); background:rgba(62,207,142,.10); color:var(--income); }
+.seg-item.done .mini-ck { animation:draw 240ms var(--ease-decel) forwards; }
+.seg-item.act { border-color:rgba(90,130,255,.5); color:#a8baff; }
+.seg-link { width:22px; height:1px; background:var(--line); flex:none; }
+</style>
+
+<!-- ============ 八、社会心理学专题 ============ -->
+<section class="sec">
+  <div class="sec-h"><b>八 · 社会心理学专题</b><span>五个复杂编排，每个挂在一条心理学定律上；全部支持减弱动态</span></div>
+  <div class="board">
+    <div class="ps">
+
+      <div>
+        <div class="ps-lb"><b>8.1 阈值跨越</b> · 损失厌恶——平时不渲染，只有跨过决策线（30%）的那一瞬间强调一次，之后静默保持</div>
+        <div class="row">
+          <span class="rate-pill" id="ratePill"><span class="dot2"></span><b id="rateVal">29.4%</b><span class="st" id="rateSt">正常</span></span>
+          <button class="btn-m" id="rateBtn">模拟退货率爬升 → 30.2%</button>
+          <button class="btn-m ghost" id="rateReset">重置</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="ps-lb"><b>8.2 未闭环脉冲</b> · 蔡格尼克效应——未完成的事占据工作记忆，工具替商户记着；与「忙碌」区分：欠办=慢淡出，进行中=快呼吸</div>
+        <div class="row">
+          <span class="pill-m"><span class="zk-dot"></span>在途售后 27 单 · 待闭环</span>
+          <span class="pill-m"><span class="busy-dot"></span>资金采集中 · 2/3 店</span>
+          <span style="color:var(--muted);font-size:12px">左：慢脉动（2.4s 欠办）｜右：快呼吸（1.15s 进行中）</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="ps-lb"><b>8.3 入库飞入（FLIP）</b> · 禀赋效应——「飞进我的仓库」强化拥有感；老行平滑让位、满 5 条尾行淡出</div>
+        <button class="btn-m" id="flyBtn" style="margin-bottom:10px">模拟采集入库</button>
+        <ul class="fly-list" id="flyList">
+          <li><span class="nm">山行2代 GTX 户外登山鞋防水版…</span><span class="num">已入库 · 11-19</span></li>
+          <li><span class="nm">纯原莆货美版1996羽绒服 700 保暖…</span><span class="num">已入库 · 11-19</span></li>
+          <li><span class="nm">轻量化5000gt保暖免洗羽绒服冬季…</span><span class="num">已入库 · 11-20</span></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="ps-lb"><b>8.4 损失剔除流</b> · 心理账户 + 前景理论——把「退款拖累净额」演成过程：实收定锚 → 退款逐笔飞离 → 净额定格（退款金额为演示数据）</div>
+        <div class="leak">
+          <div class="leak-line"><span class="k">实收</span><span class="v" id="lkGross">1,557.75</span></div>
+          <div class="leak-chips" id="leakChips">
+            <span class="leak-chip" data-ref="2154.00"><span>订单退款 · 261112-…</span><span>−2,154.00</span></span>
+            <span class="leak-chip" data-ref="2702.00"><span>订单退款 · 261109-…</span><span>−2,702.00</span></span>
+            <span class="leak-chip" data-ref="2198.25"><span>订单退款 · 261108-…</span><span>−2,198.25</span></span>
+          </div>
+          <div class="leak-line"><span class="k">退款合计</span><span class="v loss" id="lkRef">−7,054.25</span></div>
+          <div class="leak-line"><span class="k">净额</span><span class="v loss" id="lkNet">—</span></div>
+        </div>
+        <button class="btn-m" id="leakBtn" style="margin-top:10px">▶ 播放损失剔除流</button>
+      </div>
+
+      <div>
+        <div class="ps-lb"><b>8.5 分段任务进度</b> · 目标梯度——越接近终点动力越强；分段让总时长可预期（缓解规划谬误）</div>
+        <div class="segs" id="segProg">
+          <span class="seg-item act"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/></svg>连接店铺</span>
+          <span class="seg-link"></span>
+          <span class="seg-item"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/></svg>读取资金</span>
+          <span class="seg-link"></span>
+          <span class="seg-item"><svg viewBox="0 0 24 24"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/></svg>读取订单
+            <svg class="mini-ck" viewBox="0 0 24 24"><path d="m8 12.5 3 3 5-6"/></svg>
+          </span>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn-m" id="segProgBtn">▶ 播放三段进度</button>
+          <span style="color:var(--muted);font-size:12px">段完成时勾描画（240ms），段间 200ms 呼吸；每段完成，下一格立即点亮</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="sec-n"><b>依据：</b>损失厌恶与参照点（Kahneman &amp; Tversky 1979）；蔡格尼克效应（未完成任务的记忆优势，<a style="color:#8fa0b8" href="https://en.wikipedia.org/wiki/Zeigarnik_effect">Wikipedia</a>）；禀赋效应与心理账户（Thaler）——「数据是商户自己的资产」与「钱分账户记」正是本工具的数据主权立场。<b>工程：</b>FLIP 是 First-Last-Invert-Play——先量旧位、插 DOM、量新位、反向 transform、播放回位；纯 transform，软件渲染安全。</div>
+</section>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var reduced8 = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function g8(id) { return document.getElementById(id); }
+  function fmt8(n) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  /* 8.1 阈值跨越：29.4 → 30.2，跨线瞬间单次强调 */
+  var rateBusy = false;
+  g8('rateBtn').addEventListener('click', function () {
+    if (rateBusy) return; rateBusy = true;
+    var el = g8('rateVal'), t0 = performance.now(), from = 29.4, to = 30.2, crossed = false;
+    function step(t) {
+      var k = Math.min(1, (t - t0) / 900);
+      var v = from + (to - from) * (1 - Math.pow(1 - k, 3));
+      el.textContent = v.toFixed(1) + '%';
+      if (!crossed && v >= 30) {
+        crossed = true;
+        var pill = g8('ratePill');
+        pill.classList.add('warn'); pill.classList.remove('flash'); void pill.offsetWidth;
+        pill.classList.add('flash'); g8('rateSt').textContent = '需关注';
+      }
+      if (k < 1) requestAnimationFrame(step); else rateBusy = false;
+    }
+    if (reduced8) { el.textContent = '30.2%'; g8('ratePill').classList.add('warn'); g8('rateSt').textContent = '需关注'; rateBusy = false; return; }
+    requestAnimationFrame(step);
+  });
+  g8('rateReset').addEventListener('click', function () {
+    var pill = g8('ratePill');
+    pill.classList.remove('warn', 'flash'); g8('rateVal').textContent = '29.4%'; g8('rateSt').textContent = '正常';
+  });
+
+  /* 8.3 入库飞入（FLIP）：量旧位 → 插 DOM → 量新位 → 反向 transform → 播放回位 */
+  var flyNames = ['蒲田鼎级高货Lulu泡芙五格羽绒服…', '爆款1U1U LU璐家四格鸭绒泡芙款…', 'ex3BOA越野跑鞋 免系带机能登山鞋…', '跨境26小太阳5000gt蓬松同款…', 'k系户外远征徒步运动低帮越野跑…'];
+  var flyN = 0;
+  g8('flyBtn').addEventListener('click', function () {
+    var list = g8('flyList');
+    var old = [].slice.call(list.children);
+    var firstTop = old.map(function (r) { return r.getBoundingClientRect().top; });
+    var li = document.createElement('li');
+    li.className = 'fresh';
+    li.innerHTML = '<span class="nm">' + flyNames[flyN % flyNames.length] + '</span><span class="num">刚入库 · 刚刚</span>';
+    list.insertBefore(li, list.firstChild);
+    flyN++;
+    var now = [].slice.call(list.children);
+    now.forEach(function (r, i) {
+      if (i === 0) return;
+      var oldIdx = i - 1;
+      if (oldIdx < firstTop.length) {
+        var d = firstTop[oldIdx] - r.getBoundingClientRect().top;
+        if (d) { r.style.transition = 'none'; r.style.transform = 'translateY(' + d + 'px)'; }
+      }
+    });
+    requestAnimationFrame(function () {
+      now.forEach(function (r, i) {
+        if (i === 0) return;
+        r.style.transition = 'transform 220ms cubic-bezier(0,0,.2,1)';
+        r.style.transform = '';
+      });
+    });
+    if (now.length > 5) {
+      var last = now[now.length - 1];
+      last.classList.add('retire');
+      setTimeout(function () { if (last.parentNode) last.parentNode.removeChild(last); }, 160);
+    }
+  });
+
+  /* 8.4 损失剔除流：实收定锚 → 退款逐笔飞离 → 净额定格 */
+  var leakBusy = false;
+  g8('leakBtn').addEventListener('click', function () {
+    if (leakBusy) return; leakBusy = true;
+    var chips = [].slice.call(g8('leakChips').children);
+    var gross = g8('lkGross'), net = g8('lkNet');
+    chips.forEach(function (c) { c.classList.remove('in', 'out'); });
+    gross.textContent = fmt8(155775 / 100); net.textContent = '—';
+    if (reduced8) {
+      chips.forEach(function (c) { c.classList.add('in', 'out'); });
+      net.textContent = '−5,496.50'; leakBusy = false; return;
+    }
+    var grossFen = 155775;
+    chips.forEach(function (c, i) {
+      setTimeout(function () {
+        c.classList.add('in');
+        setTimeout(function () {
+          c.classList.add('out');
+          grossFen -= Math.round(parseFloat(c.getAttribute('data-ref')) * 100);
+          gross.textContent = fmt8(grossFen / 100);
+        }, 420);
+      }, 200 + i * 260);
+    });
+    setTimeout(function () { net.textContent = '−5,496.50'; leakBusy = false; }, 200 + chips.length * 260 + 500);
+  });
+
+  /* 8.5 分段进度：段完成勾描画，下一格立即点亮 */
+  var segBusy = false;
+  g8('segProgBtn').addEventListener('click', function () {
+    if (segBusy) return; segBusy = true;
+    var items = [].slice.call(g8('segProg').querySelectorAll('.seg-item'));
+    items.forEach(function (it) { it.classList.remove('done', 'act'); });
+    items[0].classList.add('act');
+    items.forEach(function (it, i) {
+      setTimeout(function () {
+        it.classList.remove('act'); it.classList.add('done');
+        if (i + 1 < items.length) items[i + 1].classList.add('act');
+        else segBusy = false;
+      }, 700 + i * 900);
+    });
+  });
+});
+</script>
 </body>
 </html>
