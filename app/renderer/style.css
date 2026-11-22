@@ -120,11 +120,11 @@ html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-moon { display: n
 .theme-toggle::after {
   content: ''; position: absolute; left: 50%; top: 50%;
   width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
-  background: rgba(122, 162, 255, .55); transform: scale(0); opacity: 0; pointer-events: none;
+  background: rgba(122, 162, 255, .55); transform: scale(.6); opacity: 0; pointer-events: none;
 }
-.theme-toggle.ripple::after { animation: theme-btn-ripple .45s ease-out; }
+.theme-toggle.ripple::after { animation: theme-btn-ripple .28s var(--ease-decel); }
 @keyframes theme-btn-ripple {
-  0% { transform: scale(0); opacity: .85; }
+  0% { transform: scale(.6); opacity: .55; }
   100% { transform: scale(16); opacity: 0; }
 }
 
@@ -277,7 +277,7 @@ html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-moon { display: n
   display: flex; flex-direction: column; z-index: 900;
   background: var(--bg2); border-top: 1px solid var(--line); border-right: 1px solid var(--line);
   box-shadow: 0 -12px 30px rgba(0, 0, 0, .35);
-  transform: translateY(110%); transition: transform .22s ease;
+  transform: translateY(110%); transition: transform .3s var(--ease-drawer);
 }
 .log-panel.open { transform: translateY(0); }
 .log-panel-head {
@@ -1031,6 +1031,7 @@ html[data-theme="light"] .cc-sub { color: #66748b; }
   --ease-decel: cubic-bezier(.23, 1, .32, 1);   /* emil：内置曲线太弱 */
   --ease-accel: cubic-bezier(.3, 0, .8, .15);
   --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-drawer: cubic-bezier(.32, .72, 0, 1);   /* iOS 抽屉曲线（emil 引 Ionic） */
   --accent-strong: #3b5fd9;
   --r-lg: 10px; --r-md: 8px; --r-sm: 6px;
 }
