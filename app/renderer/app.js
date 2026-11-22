@@ -1285,6 +1285,40 @@ function localDateStr(d) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
+/**
+ * 金额滚动：从上一个值滚到新值（360ms）。首次赋值直接到位，不滚。
+ * prefers-reduced-motion 时全部直接到位。只动 textContent，不改布局。
+ */
+const _moneyPrev = new Map();
+function setMoney(el, value) {
+  if (!el) return;
+  const to = Number.isFinite(Number(value)) ? Number(value) : null;
+  if (to === null) { el.textContent = '—'; _moneyPrev.delete(el); return; }
+  const key = el.id || el;
+  const from = _moneyPrev.has(key) ? _moneyPrev.get(key) : null;
+  _moneyPrev.set(key, to);
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (from === null || reduce || from === to) { el.textContent = fmtYuan(to); return; }
+  if (el._moneyRaf) cancelAnimationFrame(el._moneyRaf);
+  const t0 = performance.now();
+  const DUR = 360;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / DUR);
+    const eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmtYuan(Math.round(from + (to - from) * eased));
+    if (k < 1) el._moneyRaf = requestAnimationFrame(step);
+    else { el._moneyRaf = null; el.textContent = fmtYuan(to); }
+  };
+  el._moneyRaf = requestAnimationFrame(step);
+  // 兜底：窗口在后台时 rAF 可能被节流到不触发，必须保证终值一定落下
+  if (el._moneyTimer) clearTimeout(el._moneyTimer);
+  el._moneyTimer = setTimeout(() => {
+    el._moneyTimer = null;
+    if (el._moneyRaf) { cancelAnimationFrame(el._moneyRaf); el._moneyRaf = null; }
+    el.textContent = fmtYuan(to);
+  }, DUR + 80);
+}
+
 function renderFinance(data, month) {
   const body = $('#finBody');
   const empty = $('#finEmpty');
@@ -1333,7 +1367,7 @@ function renderFinance(data, month) {
       pendingOk = true;
     }
   }
-  $('#fcPending').textContent = pendingOk ? fmtYuan(pending) : '—';
+  setMoney($('#fcPending'), pendingOk ? pending : null);
   $('#fcPendingSub').textContent = pendingOk ? '货款已入账 · 未到可提现' : '采集余额后显示';
 
   // ②③ 本月毛利 / 待退货金额：都从订单明细算，和商品贡献表同一套口径
@@ -1357,12 +1391,12 @@ function renderFinance(data, month) {
     grossOk = true;
   }
   const monthGross = grossOk ? monthRevenue - monthCost : null;
-  $('#fcMonthGross').textContent = monthGross === null ? '—' : fmtYuan(monthGross);
+  setMoney($('#fcMonthGross'), monthGross);
   $('#fcMonthGross').className = 'fc-value ' + (monthGross !== null && monthGross < 0 ? 'expense' : 'income');
   $('#fcMonthGrossSub').textContent = grossOk
     ? ('实收 ' + fmtYuan(monthRevenue) + ' − 成本 ' + fmtYuan(monthCost))
     : '需要订单与商品成本';
-  $('#fcPendingRefund').textContent = fmtYuan(pendingRefund);
+  setMoney($('#fcPendingRefund'), pendingRefund);
   $('#fcPendingRefundSub').textContent = pendingRefundCount
     ? (pendingRefundCount + ' 单退货退款中')
     : '当前没有在途退货';
@@ -1371,10 +1405,9 @@ function renderFinance(data, month) {
   const costTotal = Number.isFinite(Number(state.costTotal))
     ? Number(state.costTotal)
     : (state.costs || []).reduce((n, c) => n + (Number(c.amount) || 0), 0);
-  $('#fcCostTotal').textContent = fmtYuan(costTotal);
+  setMoney($('#fcCostTotal'), costTotal);
   $('#fcCostTotalSub').textContent = (state.costs || []).length + ' 笔 · 累计进货';
 
-  if (state.orderData) renderOrderContribution(state.orderData);
   renderCostBlock();
 
   // 分店铺
@@ -2025,8 +2058,9 @@ function renderOrderContribution(data) {
   }
   const activeRows = rows.filter((r) => r.qty > 0 && r.revenue > 0 && r.lastSaleAt && (Date.now() / 1000 - r.lastSaleAt <= 21 * 86400));
   const otherRows = rows.filter((r) => !activeRows.includes(r));
-  const appendRow = (target, r) => {
+  const appendRow = (target, r, i) => {
     const tr = document.createElement('tr');
+    tr.style.setProperty('--i', String(Math.min(i == null ? 0 : i, 12)));
     const thumb = poolThumbFor(r.goodsId, r.name);
     const thumbHtml = thumb
       ? '<img class="order-thumb" loading="lazy" src="' + esc(thumb) + '" alt="" />'
@@ -2062,7 +2096,7 @@ function renderOrderContribution(data) {
       '<td class="r ' + (r.net != null && r.net < 0 ? 'expense' : 'income') + '">' + (r.net == null ? '—' : fmtYuan(r.net)) + '</td>';
     target.appendChild(tr);
   };
-  for (const r of activeRows) appendRow(body, r);
+  activeRows.forEach((r, i) => appendRow(body, r, i));
   if (!activeRows.length) {
     body.innerHTML = '<tr><td colspan="8" style="color:#7d8aa3">暂无近 21 天动销商品</td></tr>';
   }
@@ -2155,8 +2189,10 @@ function renderReturns(data) {
     }
   }
   body.innerHTML = '';
+  let _ri = 0;
   for (const r of rows) {
     const tr = document.createElement('tr');
+    tr.style.setProperty('--i', String(Math.min(_ri++, 12)));
     const signCls = r.signed === true ? 'ok'
       : (r.signed === false ? 'wait'
       : (r.signedText === '无退货包裹' ? 'na' : 'unknown'));
