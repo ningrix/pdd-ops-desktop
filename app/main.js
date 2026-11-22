@@ -28,6 +28,17 @@ trace('switches applied');
 //   · malls.json 写不进去 → 店铺列表每次重启丢失
 //   · Partitions 目录建不了 → 登录态不落盘 → 每次都要重新扫码
 // 因此把所有数据放到应用自己目录下，绕开这个限制，同时实现"绿色便携"。
+/**
+ * 强制某个 session 直连。
+ * 本机有系统代理（HTTP_PROXY=127.0.0.1:7897），Electron 会继承；
+ * 拼多多的图片 / 字体 CDN 走代理会被 ERR_CONNECTION_CLOSED 掐断，
+ * 表现就是「发布页只渲染站点框架、主图计数一直 0/10」。
+ * 这些请求本来就在国内直连，显式 direct 即可。
+ */
+function applyDirectProxy(sess) {
+  try { sess.setProxy({ mode: 'direct' }); } catch (e) { trace('setProxy fail: ' + ((e && e.message) || e)); }
+}
+
 const DATA_DIR = path.join(__dirname, 'userdata');
 const FINANCE_DIR = path.join(DATA_DIR, 'finance');
 const FINANCE_SNAPSHOT_DIR = path.join(FINANCE_DIR, 'snapshots');
@@ -416,6 +427,7 @@ function createMall(name, forcedId) {
   const partition = 'persist:' + id;
 
   const sess = session.fromPartition(partition);
+  applyDirectProxy(sess);
   sess.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
   attachDownloadHandler(sess);
   trace('session ready ' + partition);
@@ -507,6 +519,7 @@ function getCollector() {
   if (collectorView && !collectorView.webContents.isDestroyed()) return collectorView;
 
   const sess = session.fromPartition(COLLECTOR_PARTITION);
+  applyDirectProxy(sess);
   sess.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
 
   collectorView = new WebContentsView({
@@ -2944,6 +2957,7 @@ require('./ipc/collect')({
 });
 
 app.whenReady().then(() => {
+  applyDirectProxy(session.defaultSession);
   trace('whenReady fired');
   createWindow();
 
