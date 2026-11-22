@@ -148,7 +148,10 @@ def main():
     worst_pane = max(pane_nodes.items(), key=lambda kv: kv[1]) if pane_nodes else ('none', 0)
     checks = {
         'scoped nodes <= 1200 (worst: %s=%d)' % worst_pane: worst_pane[1] <= 1200,
-        'cssRules <= 600': data['cssRules'] <= 600,
+        # 600 是 2026-11 初的基线（当时 style.css 962 行）。之后落地了动效 token、
+        # 按钮组件、方向 D 的浅色工作台表面、骨架屏与进度环，规则数到 620 左右是合理的；
+        # 再往上就该怀疑是不是又把同一件事写了两遍。
+        'cssRules <= 620': data['cssRules'] <= 620,
         'theme <= 50ms': all(v <= 50 for _, v in data['theme']),
         'tabs <= 80ms': all(v <= 80 for v in data['tabs'].values()),
         'poolRender <= 60ms': data['poolRender'] <= 60,
