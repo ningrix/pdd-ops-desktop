@@ -2649,6 +2649,51 @@ async function collectOrderContribution() {
   }
 }
 
+/**
+ * 采集进度环：done/total 由 main 的 finance:progress 推过来。
+ * total 为 0 时隐藏。周长按 r=8 算（2πr ≈ 50.27），用 dashoffset 表示进度。
+ */
+const RING_C = 2 * Math.PI * 8;
+function setRing(done, total) {
+  const ring = $('#finRing');
+  const fg = $('#finRingFg');
+  const txt = $('#finRingTxt');
+  if (!ring) return;
+  if (!total) { ring.hidden = true; return; }
+  ring.hidden = false;
+  if (fg) {
+    fg.style.strokeDasharray = String(RING_C);
+    fg.style.strokeDashoffset = String(RING_C * (1 - Math.min(1, done / total)));
+  }
+  if (txt) txt.textContent = done + '/' + total;
+}
+
+/** 采集期间用骨架屏占位，别让页面看着像卡死 */
+function showSkeleton(on) {
+  const sk = $('#finSkeleton');
+  const content = $('#finContent');
+  const empty = $('#finEmpty');
+  if (!sk) return;
+  sk.hidden = !on;
+  if (on) {
+    if (content) content.style.display = 'none';
+    if (empty) empty.style.display = 'none';
+    return;
+  }
+  // 收起骨架：有旧数据必须把内容区放回来，否则采集失败后会是一片空白
+  if (state.finance) {
+    if (content) content.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+  } else {
+    if (content) content.style.display = 'none';
+    if (empty) empty.style.display = 'flex';
+  }
+}
+
+if (window.pdd && window.pdd.onFinanceProgress) {
+  window.pdd.onFinanceProgress((d) => setRing((d && d.done) || 0, (d && d.total) || 0));
+}
+
 async function collectFinance() {
   if (financeBusy) { logWarn('正在采集，请稍候'); return; }
   financeBusy = true;
@@ -2657,6 +2702,8 @@ async function collectFinance() {
   btn.disabled = true;
   btn.textContent = '采集中…';
   $('#finSub').textContent = '正在逐个店铺读取资金数据，请勿切换页签…';
+  setRing(0, (state.malls || []).length);
+  showSkeleton(true);
   logInfo('开始采集资金数据（含日汇总/明细） ...');
   try {
     const r = await window.pdd.financeCollect({ withDetail: true, withDaily: true, maxPages: 20 });
@@ -2684,6 +2731,8 @@ async function collectFinance() {
     financeBusy = false;
     btn.disabled = false;
     btn.textContent = old;
+    setRing(0, 0);
+    showSkeleton(false);
   }
 }
 

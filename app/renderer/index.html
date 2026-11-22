@@ -238,6 +238,7 @@
         <div class="fin-bar">
           <span class="fin-title">资金复盘</span>
           <span class="fin-sub" id="finSub">还没采集</span>
+          <span class="fin-ring" id="finRing" hidden aria-hidden="true"><svg viewBox="0 0 20 20"><circle class="ring-bg" cx="10" cy="10" r="8"></circle><circle class="ring-fg" id="finRingFg" cx="10" cy="10" r="8"></circle></svg><span class="fin-ring-txt" id="finRingTxt"></span></span>
           <span class="spacer"></span>
           <label class="mini-field">核对月份
             <select id="finMonth"></select>
@@ -247,6 +248,12 @@
         </div>
 
         <div class="fin-body" id="finBody">
+          <div class="fin-skeleton" id="finSkeleton" hidden>
+            <div class="sk-cards"><div class="sk-card"></div><div class="sk-card"></div><div class="sk-card"></div><div class="sk-card"></div></div>
+            <div class="sk-bar"></div>
+            <div class="sk-rows"><div class="sk-row"></div><div class="sk-row"></div><div class="sk-row"></div><div class="sk-row"></div><div class="sk-row"></div></div>
+          </div>
+
           <div class="big-empty" id="finEmpty">
             <div class="be-icon">¥</div>
             <p>还没有资金数据</p>

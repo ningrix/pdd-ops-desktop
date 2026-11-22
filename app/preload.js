@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld('pdd', {
   returnsExport: (payload) => ipcRenderer.invoke('returns:export', payload),
   financeFeeGet: () => ipcRenderer.invoke('finance:feeGet'),
   financeFeeSet: (x) => ipcRenderer.invoke('finance:feeSet', x),
+  // 采集进度：main 每进一个店铺发一条（只加不改，原有通道不动）
+  onFinanceProgress: (cb) => { ipcRenderer.on('finance:progress', (_e, d) => cb(d)); },
   financeCostList: () => ipcRenderer.invoke('finance:costList'),
   financeCostAdd: (entry) => ipcRenderer.invoke('finance:costAdd', entry),
   financeCostUpdate: (entry) => ipcRenderer.invoke('finance:costUpdate', entry),

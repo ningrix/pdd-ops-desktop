@@ -1090,3 +1090,46 @@ html[data-theme="light"] .theme-toggle .sun-morph .moon { opacity: 1; transform:
     animation: none !important;
   }
 }
+
+/* UI-W2b 采集进度环 + 骨架屏（零 backdrop-filter；环用 stroke-dashoffset 表示进度） */
+.fin-ring { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; vertical-align: middle; }
+.fin-ring svg { width: 15px; height: 15px; display: block; transform: rotate(-90deg); }
+.fin-ring .ring-bg { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.fin-ring .ring-fg {
+  fill: none; stroke: var(--brand); stroke-width: 2.5; stroke-linecap: round;
+  transition: stroke-dashoffset var(--m-base) var(--ease-decel);
+}
+.fin-ring-txt { font-size: 11px; color: #7d8aa3; font-variant-numeric: tabular-nums; }
+
+.fin-skeleton { padding: 2px 0 8px; }
+.fin-skeleton .sk-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.fin-skeleton .sk-card {
+  height: 74px; border-radius: 8px;
+  background: linear-gradient(90deg, var(--panel2) 25%, rgba(255,255,255,.06) 37%, var(--panel2) 63%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.fin-skeleton .sk-bar { height: 30px; border-radius: 7px; margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--panel2) 25%, rgba(255,255,255,.06) 37%, var(--panel2) 63%);
+  background-size: 400% 100%; animation: sk-shimmer 1.4s ease-in-out infinite; }
+.fin-skeleton .sk-rows { display: flex; flex-direction: column; gap: 6px; }
+.fin-skeleton .sk-row { height: 34px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--panel2) 25%, rgba(255,255,255,.06) 37%, var(--panel2) 63%);
+  background-size: 400% 100%; animation: sk-shimmer 1.4s ease-in-out infinite; }
+.fin-skeleton .sk-row:nth-child(2) { animation-delay: .08s; }
+.fin-skeleton .sk-row:nth-child(3) { animation-delay: .16s; }
+.fin-skeleton .sk-row:nth-child(4) { animation-delay: .24s; }
+.fin-skeleton .sk-row:nth-child(5) { animation-delay: .32s; }
+@keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .fin-skeleton .sk-card, .fin-skeleton .sk-bar, .fin-skeleton .sk-row { animation: none; }
+}
+
+/* UI-W2b 补：浅色主题下骨架要压深一档，否则白底白块看不见 */
+html[data-theme="light"] .fin-skeleton .sk-card,
+html[data-theme="light"] .fin-skeleton .sk-bar,
+html[data-theme="light"] .fin-skeleton .sk-row {
+  background: linear-gradient(90deg, #e6ecf5 25%, #f4f7fc 37%, #e6ecf5 63%);
+  background-size: 400% 100%;
+}
+html[data-theme="light"] .fin-ring .ring-bg { stroke: #d6dfec; }

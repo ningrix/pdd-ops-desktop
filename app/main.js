@@ -1853,6 +1853,12 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
 
   const results = [];
   for (const mall of list) {
+    // 进度上报：渲染层用它在采集期间画进度环（0/2 → 1/2 → 2/2）
+    try {
+      if (_e && _e.sender && !_e.sender.isDestroyed()) {
+        _e.sender.send('finance:progress', { done: results.length, total: list.length, mallName: mall.name });
+      }
+    } catch (_) { /* ignore */ }
     const item = { mallId: mall.id, mallName: mall.name };
     let temp = null;
     try {
