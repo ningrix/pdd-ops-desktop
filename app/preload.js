@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('pdd', {
   financeFeeSet: (x) => ipcRenderer.invoke('finance:feeSet', x),
   financeCostList: () => ipcRenderer.invoke('finance:costList'),
   financeCostAdd: (entry) => ipcRenderer.invoke('finance:costAdd', entry),
+  financeCostUpdate: (entry) => ipcRenderer.invoke('finance:costUpdate', entry),
   financeCostDelete: (id) => ipcRenderer.invoke('finance:costDelete', id),
   financeProductCostList: () => ipcRenderer.invoke('finance:productCostList'),
   financeProductCostSet: (entry) => ipcRenderer.invoke('finance:productCostSet', entry),

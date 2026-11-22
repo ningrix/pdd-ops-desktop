@@ -105,7 +105,10 @@ check('⑤ 仅退款计货损 / 退货退款不计', () => {
 // —— 源码级断言：shipped 公式与镜像一致的关键标记存在 ——
 const SRC = fs.readFileSync(new URL('../app/renderer/app.js', import.meta.url), 'utf8');
 check('⑥ app.js 使用 returnEvents（C-3 修复在位）', () => {
-  ok(/if \(refunded \|\| isReturn \|\| isOnly\) g\.returnEvents \+= 1;/.test(SRC), 'returnEvents 累加行未找到');
+  // 源码形态在 2026-11-22 改过一次：分类谓词抽到 classifyOrder()，
+  // 累加行从 refunded/isReturn/isOnly 变成 f.refunded/f.isReturn/f.isOnly。
+  // 两种写法都要认，判据是「三个标记用 OR、一单只 +1」。
+  ok(/if \((?:f\.)?refunded \|\| (?:f\.)?isReturn \|\| (?:f\.)?isOnly\) g\.returnEvents \+= 1;/.test(SRC), 'returnEvents 累加行未找到');
 });
 check('⑦ rate 分母为 0 时返回 null（守卫在位）', () => {
   ok(/totalOrders > 0 \? returnOrders \/ g\.totalOrders : null/.test(SRC), '守卫行未找到');

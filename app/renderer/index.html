@@ -258,32 +258,42 @@
           <div id="finContent" style="display:none">
             <div class="fin-cards fin-cash-cards">
               <div class="fin-card">
-                <div class="fc-label">最近到账</div>
-                <div class="fc-value income" id="fcLastIn">—</div>
-                <div class="fc-sub" id="fcLastInSub">采集明细后显示</div>
+                <div class="fc-label">待到账金额</div>
+                <div class="fc-value income" id="fcPending">—</div>
+                <div class="fc-sub" id="fcPendingSub">货款余额 − 可提现余额</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">本月到账</div>
-                <div class="fc-value income" id="fcMonthIn">0.00</div>
-                <div class="fc-sub" id="fcMonthInSub">平台结算到货款账户</div>
+                <div class="fc-label">本月毛利</div>
+                <div class="fc-value income" id="fcMonthGross">—</div>
+                <div class="fc-sub" id="fcMonthGrossSub">本月实收 − 拿货成本</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">今日拿货成本</div>
-                <div class="fc-value expense" id="fcCostToday">0.00</div>
-                <div class="fc-sub" id="fcCostTodaySub">本地录入 · 简单模式</div>
+                <div class="fc-label">待退货金额</div>
+                <div class="fc-value expense" id="fcPendingRefund">—</div>
+                <div class="fc-sub" id="fcPendingRefundSub">退货退款中 · 尚未退款</div>
               </div>
               <div class="fin-card">
-                <div class="fc-label">今日净现金流</div>
-                <div class="fc-value" id="fcNetCash">0.00</div>
-                <div class="fc-sub" id="fcNetCashSub">今日到账 − 今日拿货成本</div>
+                <div class="fc-label">拿货成本</div>
+                <div class="fc-value expense" id="fcCostTotal">—</div>
+                <div class="fc-sub" id="fcCostTotalSub">累计进货总额</div>
               </div>
             </div>
 
-            <div class="fin-sec" id="finCostSec" style="display:none">
-              <div class="fin-sec-h">最近拿货成本</div>
-              <table class="fin-table">
+            <div class="fin-sec" id="finCostSec">
+              <div class="fin-sec-h">
+                <span>拿货成本</span>
+                <span class="fin-sec-note" id="finCostNote">按日总额记账，不在商品上分摊</span>
+              </div>
+              <div class="cost-add-bar">
+                <input type="date" id="costAddDate" />
+                <input type="number" id="costAddAmount" min="0" step="0.01" placeholder="当日进货金额（元）" />
+                <input type="text" id="costAddNote" placeholder="备注（可选）" />
+                <button class="btn primary" id="costAddBtn">记一笔</button>
+                <span class="cost-add-total">累计 <b id="costTotalInline">—</b></span>
+              </div>
+              <table class="fin-table" id="finCostTable">
                 <thead><tr>
-                  <th>日期</th><th>商品</th><th class="r">数量</th><th class="r">单价</th><th class="r">合计</th><th>供应商</th><th>备注</th>
+                  <th>日期</th><th class="r">金额（元）</th><th>备注</th><th class="rt-col-check"></th>
                 </tr></thead>
                 <tbody id="finCostBody"></tbody>
               </table>

@@ -396,61 +396,12 @@ function askText({ title = '输入', placeholder = '', value = '' } = {}) {
 }
 
 // ------------------------------------------------------------------ 拿货成本录入
-function openCostDialog() {
-  return withViewHidden(() => new Promise((resolve) => {
-    const mask = $('#costMask');
-    const err = $('#costErr');
-    const date = $('#costDate');
-    const product = $('#costProduct');
-    const qty = $('#costQty');
-    const unit = $('#costUnit');
-    const supplier = $('#costSupplier');
-    const note = $('#costNote');
-    date.value = localDateStr(new Date());
-    product.value = '';
-    qty.value = '1';
-    unit.value = '';
-    supplier.value = '';
-    note.value = '';
-    err.textContent = '';
-    mask.classList.add('on');
-    setTimeout(() => { try { product.focus(); } catch (_) { /* ignore */ } }, 80);
-
-    const done = (v) => {
-      mask.classList.remove('on');
-      $('#costOk').onclick = null;
-      $('#costCancel').onclick = null;
-      resolve(v);
-    };
-    $('#costCancel').onclick = () => done(null);
-    $('#costOk').onclick = async () => {
-      const dateVal = String(date.value || '').slice(0, 10);
-      const title = product.value.trim();
-      const q = Number(qty.value);
-      const u = Number(unit.value);
-      if (!dateVal) { err.textContent = '请选择日期'; return; }
-      if (!title) { err.textContent = '请填写商品'; return; }
-      if (!Number.isFinite(q) || q <= 0) { err.textContent = '数量必须大于 0'; return; }
-      if (!Number.isFinite(u) || u < 0) { err.textContent = '单价必须是非负金额'; return; }
-      try {
-        const r = await window.pdd.financeCostAdd({
-          date: dateVal,
-          mallId: state.activeId,
-          productTitle: title,
-          quantity: q,
-          unitCost: Math.round(u * 100),
-          supplier: supplier.value.trim(),
-          note: note.value.trim(),
-        });
-        if (!r || !r.ok) { err.textContent = (r && r.error) || '保存失败'; return; }
-        logOk('已录入拿货成本：' + title + ' × ' + q + '，' + u.toFixed(2) + ' 元/件');
-        await loadFinanceCosts();
-        done(true);
-      } catch (e) {
-        err.textContent = (e && e.message) || String(e);
-      }
-    };
-  }));
+/** 「＋ 拿货成本」按钮：滚到成本块并聚焦金额框，不再弹窗 */
+function focusCostBar() {
+  const sec = $('#finCostSec');
+  if (sec) sec.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const amt = $('#costAddAmount');
+  if (amt) setTimeout(() => { try { amt.focus(); } catch (_) { /* ignore */ } }, 120);
 }
 
 // ------------------------------------------------------------------ 店铺
@@ -1363,7 +1314,7 @@ function renderFinance(data, month) {
     inc = mm.income || 0; exp = mm.expense || 0; profit = mm.profit || 0;
   }
 
-  // 现金流卡片：到账来自日汇总，成本来自本地录入
+  // 四张卡：待到账 / 本月毛利 / 待退货金额 / 拿货成本（累计）
   const today = localDateStr(new Date());
   const cashDailyRows = [];
   for (const s of (data.stores || [])) {
@@ -1373,50 +1324,58 @@ function renderFinance(data, month) {
   }
   cashDailyRows.sort((a, b) => b.date.localeCompare(a.date));
   const lastCashDaily = cashDailyRows[0] || null;
-  const monthIncome = cur === data.month ? (agg.income || 0) : ((agg.months || {})[cur] || {}).income || 0;
-  const costs = (state.costs || []).filter((c) => c && c.date);
-  const todayCost = costs.filter((c) => c.date === today).reduce((n, c) => n + (c.totalCost || 0), 0);
-  const todayCostCount = costs.filter((c) => c.date === today).length;
-  const todayRow = cashDailyRows.find((d) => d.date === today) || null;
-  const todayIn = todayRow ? (todayRow.income || 0) : 0;
 
-  $('#fcLastIn').textContent = lastCashDaily ? fmtYuan(lastCashDaily.income) : '—';
-  $('#fcLastInSub').textContent = lastCashDaily ? lastCashDaily.date : '待采集';
-  $('#fcMonthIn').textContent = fmtYuan(monthIncome);
-  $('#fcMonthInSub').textContent = cur;
-  $('#fcCostToday').textContent = fmtYuan(todayCost);
-  $('#fcCostTodaySub').textContent = todayCostCount + ' 笔';
-  const netCash = todayRow ? todayIn - todayCost : null;
-  $('#fcNetCash').textContent = netCash === null ? '—' : fmtYuan(netCash);
-  $('#fcNetCash').className = 'fc-value ' + (netCash !== null && netCash < 0 ? 'expense' : 'income');
-  $('#fcNetCashSub').textContent = todayRow ? '到账 ' + fmtYuan(todayIn) + ' − 成本 ' + fmtYuan(todayCost) : '今日无到账';
-
-  // 最近拿货成本（本地账本，最多显示 20 条）
-  const costSec = $('#finCostSec');
-  const costBody = $('#finCostBody');
-  const recentCosts = (state.costs || [])
-    .slice()
-    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.createdAt || 0) - Number(a.createdAt || 0))
-    .slice(0, 20);
-  if (recentCosts.length) {
-    costSec.style.display = 'block';
-    costBody.innerHTML = '';
-    for (const c of recentCosts) {
-      const tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td>' + esc(c.date || '') + '</td>' +
-        '<td>' + esc(c.productTitle || '—') + '</td>' +
-        '<td class="r">' + esc(String(c.quantity == null ? '—' : c.quantity)) + '</td>' +
-        '<td class="r">' + fmtYuan(c.unitCost) + '</td>' +
-        '<td class="r expense">' + fmtYuan(c.totalCost) + '</td>' +
-        '<td>' + esc(c.supplier || '—') + '</td>' +
-        '<td style="color:#7d8aa3">' + esc(c.note || '—') + '</td>';
-      costBody.appendChild(tr);
+  // ① 待到账 = 各店（货款余额 − 可提现余额）。余额都是「分」。
+  let pending = 0, pendingOk = false;
+  for (const s of (data.stores || [])) {
+    const b = s.balance;
+    if (b && b.cash != null && b.cashAvailable != null) {
+      pending += Math.max(0, (Number(b.cash) || 0) - (Number(b.cashAvailable) || 0));
+      pendingOk = true;
     }
-  } else {
-    costSec.style.display = 'none';
-    costBody.innerHTML = '';
   }
+  $('#fcPending').textContent = pendingOk ? fmtYuan(pending) : '—';
+  $('#fcPendingSub').textContent = pendingOk ? '货款已入账 · 未到可提现' : '采集余额后显示';
+
+  // ②③ 本月毛利 / 待退货金额：都从订单明细算，和商品贡献表同一套口径
+  buildOrderThumbIndex(state.orderData);
+  const contrib = computeContribution(state.orderData);
+  const monthPrefix = cur + '-';
+  let monthRevenue = 0, monthCost = 0, grossOk = false;
+  let pendingRefund = 0, pendingRefundCount = 0;
+  for (const r of contrib.rows) {
+    if (r.excluded) {
+      if (r.pendingReturn) {
+        pendingRefund += r.orderAmount;
+        pendingRefundCount += 1;
+      }
+      continue;
+    }
+    if (!r.orderTime) continue;
+    if (localDateStr(new Date(Number(r.orderTime) * 1000)).slice(0, 7) !== cur) continue;
+    monthRevenue += r.orderAmount;
+    if (r.unit != null) monthCost += Math.round(r.unit * r.quantity);
+    grossOk = true;
+  }
+  const monthGross = grossOk ? monthRevenue - monthCost : null;
+  $('#fcMonthGross').textContent = monthGross === null ? '—' : fmtYuan(monthGross);
+  $('#fcMonthGross').className = 'fc-value ' + (monthGross !== null && monthGross < 0 ? 'expense' : 'income');
+  $('#fcMonthGrossSub').textContent = grossOk
+    ? ('实收 ' + fmtYuan(monthRevenue) + ' − 成本 ' + fmtYuan(monthCost))
+    : '需要订单与商品成本';
+  $('#fcPendingRefund').textContent = fmtYuan(pendingRefund);
+  $('#fcPendingRefundSub').textContent = pendingRefundCount
+    ? (pendingRefundCount + ' 单退货退款中')
+    : '当前没有在途退货';
+
+  // ④ 拿货成本：按日总额账本，卡片显示累计
+  const costTotal = Number.isFinite(Number(state.costTotal))
+    ? Number(state.costTotal)
+    : (state.costs || []).reduce((n, c) => n + (Number(c.amount) || 0), 0);
+  $('#fcCostTotal').textContent = fmtYuan(costTotal);
+  $('#fcCostTotalSub').textContent = (state.costs || []).length + ' 笔 · 累计进货';
+
+  renderCostBlock();
 
   // 分店铺
   const sb = $('#finStoreBody');
@@ -1622,6 +1581,9 @@ async function loadFinanceCosts() {
     const r = await window.pdd.financeCostList();
     if (r && r.ok) {
       state.costs = r.items || [];
+      state.costTotal = Number.isFinite(Number(r.total))
+        ? Number(r.total)
+        : (state.costs || []).reduce((n, c) => n + (Number(c.amount) || 0), 0);
       if (state.finance) renderFinance(state.finance);
     }
   } catch (_) { /* ignore */ }
@@ -1634,12 +1596,12 @@ async function loadFinanceLast() {
     if (!r || !r.ok || !r.data) return;
     state.finance = r.data;
     state.financeLastAt = Number((r.index && r.index.lastCollectedAt) || r.data.collectedAt || 0);
-    renderFinance(r.data);
     const at = (r.index && r.index.lastCollectedAt) || r.data.collectedAt;
     const dd = (r.index && r.index.dataDate) || null;
     const dm = (r.index && r.index.dataMonth) || r.data.month || null;
     $('#finSub').textContent = '上次采集 ' + financeStamp(at) +
       ' ｜ 数据' + (dd ? ('截至 ' + dd) : (dm ? ('月份 ' + dm) : '—'));
+    renderFinance(r.data);
   } catch (_) { /* ignore */ }
 }
 
@@ -1650,6 +1612,8 @@ async function loadFinanceOrderLast() {
     if (r && r.ok && r.data) {
       state.orderData = r.data;
       renderOrderContribution(r.data);
+      // 顶部「本月毛利 / 待退货金额」也算自订单，订单到位后要把卡片重画一次
+      if (state.finance) renderFinance(state.finance);
     }
   } catch (_) { /* ignore */ }
 }
@@ -1675,6 +1639,27 @@ function productCostUnit(goodsId, name) {
   return null;
 }
 
+/**
+ * 订单快照里每单都带 thumbUrl（平台 CDN）。商品贡献表优先用采集箱图，
+ * 采集箱没有（比如没采过、或采的是同款别的链接）就退到订单图，
+ * 再没有才显示首字占位。索引按 goodsId 建，name 兜底。
+ */
+function buildOrderThumbIndex(data) {
+  const byId = new Map();
+  const byName = new Map();
+  for (const s of (data && data.stores) || []) {
+    for (const o of (s.orders || [])) {
+      const u = o && o.thumbUrl;
+      if (!u) continue;
+      const id = String(o.goodsId || '');
+      if (id && !byId.has(id)) byId.set(id, u);
+      const n = String(o.goodsName || '').replace(/\s+/g, '');
+      if (n && !byName.has(n)) byName.set(n, u);
+    }
+  }
+  state._orderThumbs = { byId, byName };
+}
+
 function poolThumbFor(goodsId, name) {
   const id = String(goodsId || '');
   const n = String(name || '').replace(/\s+/g, '');
@@ -1685,8 +1670,16 @@ function poolThumbFor(goodsId, name) {
       return n && t && (t === n || n.indexOf(t) >= 0 || t.indexOf(n) >= 0);
     });
   }
-  if (!hit) return '';
-  return hit.thumb || (hit.gallery && hit.gallery[0]) || '';
+  if (hit) {
+    const u = hit.thumb || (hit.gallery && hit.gallery[0]) || '';
+    if (u) return u;
+  }
+  const idx = state._orderThumbs;
+  if (idx) {
+    if (id && idx.byId.has(id)) return idx.byId.get(id);
+    if (n && idx.byName.has(n)) return idx.byName.get(n);
+  }
+  return '';
 }
 
 function actualPlatformFee(data) {
@@ -1745,7 +1738,123 @@ function findCostUnit(name, map) {
   return null;
 }
 
+/**
+ * 订单归类。商品贡献表、顶部「本月毛利」「待退货金额」必须用同一套判断，
+ * 否则卡片和表里的数会对不上。改这里等于同时改三处口径。
+ */
+function classifyOrder(o, asMap) {
+  const asList = asMap.get(o.orderSn) || [];
+  const asType = asList.map((a) => String(a.typeName || '')).join(' ');
+  const statusText = String(o.status || '');
+  const refunded = /退款成功/.test(statusText);
+  const cancelled = /已取消/.test(statusText);
+  const isExchange = /换货/.test(asType);
+  const isOnly = /仅退款/.test(asType);
+  const isReturn = /退货/.test(asType);
+  return {
+    asList, asType, statusText, refunded, cancelled, isExchange, isOnly, isReturn,
+    excluded: refunded || cancelled || isReturn || isOnly,
+    pendingReturn: isReturn && !refunded,
+  };
+}
+
+/** orderSn -> 售后记录[]（接口只能取到待处理，已完成退款靠订单状态判断） */
+function buildAfterSaleIndex(data) {
+  const asMap = new Map();
+  for (const s of (data.stores || [])) {
+    for (const a of (s.afterSales || [])) {
+      if (!a || !a.orderSn) continue;
+      if (!asMap.has(a.orderSn)) asMap.set(a.orderSn, []);
+      asMap.get(a.orderSn).push(a);
+    }
+  }
+  return asMap;
+}
+
+/**
+ * 只算顶部卡片要的三个数：本月实收、本月成本、在途退货金额。
+ * 不走整张贡献表（那张表还要算账单分摊、退货率、DOM 渲染，卡片用不着）。
+ * 归类谓词复用 classifyOrder，保证口径一致。
+ */
+function computeContribution(data) {
+  if (data && Array.isArray(data.stores)) {
+    data = Object.assign({}, data, { stores: keepActiveStores(data.stores) });
+  }
+  const asMap = buildAfterSaleIndex(data);
+  const rows = [];
+  for (const s of (data.stores || [])) {
+    for (const o of (s.orders || [])) {
+      const f = classifyOrder(o, asMap);
+      const unit = productCostUnit(o.goodsId, o.goodsName);
+      rows.push({
+        unit,
+        orderTime: o.orderTime,
+        orderAmount: Number(o.orderAmount) || 0,
+        quantity: Number(o.quantity) || 0,
+        excluded: f.excluded,
+        pendingReturn: f.pendingReturn,
+      });
+    }
+  }
+  return { rows };
+}
+
+function renderCostBlock() {
+  const body = $('#finCostBody');
+  const totalEl = $('#costTotalInline');
+  if (!body) return;
+  const rows = (state.costs || [])
+    .slice()
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  const total = rows.reduce((n, c) => n + (Number(c.amount) || 0), 0);
+  if (totalEl) totalEl.textContent = fmtYuan(total);
+  body.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4" style="color:#7d8aa3">还没有进货记录。填上面的日期和金额，点「记一笔」。</td>';
+    body.appendChild(tr);
+    return;
+  }
+  for (const c of rows) {
+    const tr = document.createElement('tr');
+    const yi = document.createElement('input');
+    yi.type = 'number';
+    yi.className = 'fin-cost-input cost-inline-wide';
+    yi.min = '0';
+    yi.step = '0.01';
+    yi.value = (Number(c.amount) || 0) / 100;
+    yi.dataset.costId = c.id;
+    yi.dataset.orig = String((Number(c.amount) || 0) / 100);
+    yi.title = '改完失焦即保存';
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.className = 'fin-cost-input';
+    note.value = c.note || '';
+    note.placeholder = '备注';
+    note.dataset.costNoteId = c.id;
+    note.dataset.orig = c.note || '';
+    note.title = '改完失焦即保存';
+    const tdDate = document.createElement('td');
+    tdDate.textContent = c.date || '';
+    const tdAmt = document.createElement('td');
+    tdAmt.className = 'r';
+    tdAmt.appendChild(yi);
+    const tdNote = document.createElement('td');
+    tdNote.appendChild(note);
+    const tdOp = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'cost-del';
+    del.textContent = '删除';
+    del.dataset.costDel = c.id;
+    tdOp.appendChild(del);
+    tr.append(tdDate, tdAmt, tdNote, tdOp);
+    body.appendChild(tr);
+  }
+}
+
 function renderOrderContribution(data) {
+  // 先建订单缩略图索引，否则首屏会渲染成首字占位（索引此前是在 renderFinance 里才建的）
+  buildOrderThumbIndex(data);
   const sec = $('#finOrderSec');
   const body = $('#finOrderBody');
   const note = $('#finOrderNote');
@@ -1775,36 +1884,29 @@ function renderOrderContribution(data) {
         orders: 0, qty: 0, costQty: 0, lossQty: 0, revenue: 0, afterSale: 0, lastSaleAt: 0,
         totalQty: 0, totalOrders: 0,
         billValidOrders: 0, nonBillRevenue: 0,
-        refundedOrders: 0, pendingReturn: 0, cancelledCount: 0, excludedOrders: 0, returnCount: 0, onlyRefundCount: 0, exchangeCount: 0, refundAmount: 0, returnEvents: 0,
+        refundedOrders: 0, pendingReturn: 0, cancelledCount: 0, excludedOrders: 0, returnCount: 0, onlyRefundCount: 0, exchangeCount: 0, refundAmount: 0, pendingRefundAmount: 0, returnEvents: 0,
       });
       const g = groups.get(key);
-      const asList = asMap.get(o.orderSn) || [];
-      const asType = asList.map((a) => String(a.typeName || '')).join(' ');
-      const statusText = String(o.status || '');
-      const refunded = /退款成功/.test(statusText);
-      const cancelled = /已取消/.test(statusText);
-      const isExchange = /换货/.test(asType);
-      const isOnly = /仅退款/.test(asType);
-      const isReturn = /退货/.test(asType);
-      const excluded = refunded || cancelled || isReturn || isOnly;
+      const f = classifyOrder(o, asMap);
 
       g.orders += 1;
-      if (isExchange) g.exchangeCount += 1;
-      if (isOnly) g.onlyRefundCount += 1;
-      else if (isReturn) g.returnCount += 1;
-      if (refunded) g.refundedOrders += 1;
-      if (cancelled) g.cancelledCount += 1;
-      if (isReturn && !refunded) g.pendingReturn += 1;
+      if (f.isExchange) g.exchangeCount += 1;
+      if (f.isOnly) g.onlyRefundCount += 1;
+      else if (f.isReturn) g.returnCount += 1;
+      if (f.refunded) g.refundedOrders += 1;
+      if (f.cancelled) g.cancelledCount += 1;
+      if (f.pendingReturn) g.pendingReturn += 1;
       // 退货事件：一单只记一次（退款/在途退货/仅退款 可能同时命中多个标记，不能相加）
-      if (refunded || isReturn || isOnly) g.returnEvents += 1;
+      if (f.refunded || f.isReturn || f.isOnly) g.returnEvents += 1;
       // 总销量/总成交单：剔除取消单（未成交），退款单仍算进总销量，用来算退货率
-      if (!cancelled) {
+      if (!f.cancelled) {
         g.totalQty += Number(o.quantity) || 0;
         g.totalOrders += 1;
       }
-      if (excluded) {
+      if (f.excluded) {
         g.excludedOrders += 1;
         g.refundAmount += Number(o.orderAmount) || 0;
+        if (f.pendingReturn) g.pendingRefundAmount += Number(o.orderAmount) || 0;
       } else {
         g.qty += Number(o.quantity) || 0;
         g.revenue += Number(o.orderAmount) || 0;
@@ -1815,8 +1917,8 @@ function renderOrderContribution(data) {
         if (Number(o.quantity) > 0 && o.orderTime) g.lastSaleAt = Math.max(g.lastSaleAt, Number(o.orderTime));
       }
       // 仅退款：钱退了但货没回来，拿货成本按货损计入；其余退款/取消不计成本
-      if (!excluded) g.costQty += Number(o.quantity) || 0;
-      else if (isOnly) { g.costQty += Number(o.quantity) || 0; g.lossQty += Number(o.quantity) || 0; }
+      if (!f.excluded) g.costQty += Number(o.quantity) || 0;
+      else if (f.isOnly) { g.costQty += Number(o.quantity) || 0; g.lossQty += Number(o.quantity) || 0; }
       if (o.afterSaleStatus !== null && o.afterSaleStatus !== undefined) g.afterSale += 1;
     }
   }
@@ -2557,7 +2659,67 @@ async function maybeAutoCollectFinance() {
 setInterval(maybeAutoCollectFinance, 30 * 60 * 1000);
 
 $('#btnFinCollect') && $('#btnFinCollect').addEventListener('click', () => collectFinance());
-$('#btnFinCost') && $('#btnFinCost').addEventListener('click', () => openCostDialog());
+$('#btnFinCost') && $('#btnFinCost').addEventListener('click', () => focusCostBar());
+
+// ---- 拿货成本：记一笔 / 改金额 / 改备注 / 删 ----
+const costAddBtn = $('#costAddBtn');
+if (costAddBtn) {
+  const d = $('#costAddDate');
+  if (d && !d.value) d.value = localDateStr(new Date());
+  costAddBtn.addEventListener('click', async () => {
+    const date = String(($('#costAddDate') || {}).value || '').slice(0, 10);
+    const yuan = Number(($('#costAddAmount') || {}).value);
+    const note = String(($('#costAddNote') || {}).value || '').trim();
+    if (!date) return logWarn('请选择日期');
+    if (!Number.isFinite(yuan) || yuan <= 0) return logWarn('金额必须大于 0');
+    const r = await window.pdd.financeCostAdd({ date, amount: Math.round(yuan * 100), note });
+    if (!r || !r.ok) return logWarn('记账失败：' + ((r && r.error) || '未知'));
+    logOk('已记一笔拿货成本 ' + date + ' ' + fmtYuan(Math.round(yuan * 100)));
+    if ($('#costAddAmount')) $('#costAddAmount').value = '';
+    if ($('#costAddNote')) $('#costAddNote').value = '';
+    await loadFinanceCosts();
+  });
+}
+
+// 改金额 / 改备注：失焦即保存。事件委托到 tbody，重渲染后不用重新绑。
+const costBodyEl = $('#finCostBody');
+if (costBodyEl) {
+  const saveCost = async (el, patch) => {
+    const id = el.dataset.costId || el.dataset.costNoteId;
+    if (!id) return;
+    const r = await window.pdd.financeCostUpdate(Object.assign({ id }, patch));
+    if (!r || !r.ok) {
+      logWarn('保存失败：' + ((r && r.error) || '未知'));
+      el.value = el.dataset.orig || '';
+      return;
+    }
+    await loadFinanceCosts();
+  };
+  costBodyEl.addEventListener('change', (ev) => {
+    const el = ev.target;
+    if (el.dataset && el.dataset.costId) {
+      const yuan = Number(el.value);
+      if (!Number.isFinite(yuan) || yuan <= 0) {
+        logWarn('金额必须大于 0');
+        el.value = el.dataset.orig || '';
+        return;
+      }
+      if (String(yuan) === String(el.dataset.orig)) return;
+      saveCost(el, { amount: Math.round(yuan * 100) });
+    } else if (el.dataset && el.dataset.costNoteId) {
+      if (String(el.value) === String(el.dataset.orig || '')) return;
+      saveCost(el, { note: String(el.value || '').trim() });
+    }
+  });
+  costBodyEl.addEventListener('click', async (ev) => {
+    const id = ev.target && ev.target.dataset && ev.target.dataset.costDel;
+    if (!id) return;
+    const r = await window.pdd.financeCostDelete(id);
+    if (!r || !r.ok) return logWarn('删除失败：' + ((r && r.error) || '未知'));
+    logOk('已删除一条拿货成本记录');
+    await loadFinanceCosts();
+  });
+}
 $('#finReturnBody') && $('#finReturnBody').addEventListener('change', async (e) => {
   const el = e.target;
   if (!el || !el.dataset || !el.dataset.orderSn) return;

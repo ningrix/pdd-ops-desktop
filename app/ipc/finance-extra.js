@@ -323,11 +323,40 @@ ipcMain.handle('finance:feeSet', (_e, x) => {
   catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });
 
-/** 拿货成本账本（本地 JSON，简单模式：采购当天计入现金成本） */
+/**
+ * 拿货成本账本 —— 按「日总额」记账，不按商品/数量/单价。
+ *
+ * 为什么改：真实采购是一天打一笔给供应商，事先并不知道拆到哪个商品上；
+ * 按商品录单价反而要人二次分摊。所以这里只记「某天进了多少钱的货」。
+ * 单品毛利在商品贡献表用 product-costs.json 的单位成本算，两本账互不干扰。
+ *
+ * 落盘 app/userdata/finance/costs.json，数组，金额单位「分」。
+ * 老数据（有 totalCost 没有 amount）读取时自动归一化，不丢账。
+ */
+function normalizeCostRow(r) {
+  const amount = Number.isFinite(Number(r && r.amount))
+    ? Math.round(Number(r.amount))
+    : Math.round(Number((r && r.totalCost) || 0));
+  return {
+    id: String((r && r.id) || ('cost_' + Math.random().toString(36).slice(2, 10))),
+    date: String((r && r.date) || '').slice(0, 10),
+    amount,
+    note: String((r && (r.note || r.supplier || r.productTitle)) || '').slice(0, 200),
+    createdAt: Number((r && r.createdAt) || 0) || null,
+    updatedAt: Number((r && r.updatedAt) || 0) || null,
+  };
+}
+
+function listCosts() {
+  const rows = loadFinanceCosts().map(normalizeCostRow).filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date));
+  rows.sort((a, b) => String(b.date).localeCompare(String(a.date)) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  const total = rows.reduce((n, r) => n + r.amount, 0);
+  return { rows, total };
+}
+
 ipcMain.handle('finance:costList', () => {
-  const rows = loadFinanceCosts();
-  rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
-  return { ok: true, items: rows };
+  const { rows, total } = listCosts();
+  return { ok: true, items: rows, total };
 });
 
 ipcMain.handle('finance:costAdd', (_e, entry) => {
@@ -335,26 +364,48 @@ ipcMain.handle('finance:costAdd', (_e, entry) => {
     const e = entry || {};
     const date = String(e.date || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: '日期格式必须是 YYYY-MM-DD' };
-    const quantity = Number(e.quantity);
-    const unitCost = Math.round(Number(e.unitCost));
-    if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, error: '数量必须大于 0' };
-    if (!Number.isFinite(unitCost) || unitCost < 0) return { ok: false, error: '单价必须是非负金额' };
-    const rows = loadFinanceCosts();
+    const amount = Math.round(Number(e.amount));
+    if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: '金额必须大于 0' };
+    const rows = loadFinanceCosts().map(normalizeCostRow);
     const item = {
       id: 'cost_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      date,
-      mallId: e.mallId || null,
-      productTitle: String(e.productTitle || '').slice(0, 120),
-      quantity,
-      unitCost,
-      totalCost: Math.round(quantity * unitCost),
-      supplier: String(e.supplier || '').slice(0, 80),
+      date, amount,
       note: String(e.note || '').slice(0, 200),
-      createdAt: Date.now(),
+      createdAt: Date.now(), updatedAt: null,
     };
     rows.push(item);
     saveFinanceCosts(rows);
-    return { ok: true, item };
+    const { total } = listCosts();
+    return { ok: true, item, total };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+/** 修改某一笔的金额 / 备注 / 日期，改完可以把总额一起带回去 */
+ipcMain.handle('finance:costUpdate', (_e, entry) => {
+  try {
+    const e = entry || {};
+    const id = String(e.id || '');
+    if (!id) return { ok: false, error: '缺少记录 id' };
+    const rows = loadFinanceCosts().map(normalizeCostRow);
+    const hit = rows.find((r) => r.id === id);
+    if (!hit) return { ok: false, error: '找不到这条记录' };
+    if (e.amount !== undefined) {
+      const amount = Math.round(Number(e.amount));
+      if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: '金额必须大于 0' };
+      hit.amount = amount;
+    }
+    if (e.date !== undefined) {
+      const date = String(e.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: '日期格式必须是 YYYY-MM-DD' };
+      hit.date = date;
+    }
+    if (e.note !== undefined) hit.note = String(e.note || '').slice(0, 200);
+    hit.updatedAt = Date.now();
+    saveFinanceCosts(rows);
+    const { total } = listCosts();
+    return { ok: true, item: hit, total };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
@@ -362,10 +413,11 @@ ipcMain.handle('finance:costAdd', (_e, entry) => {
 
 ipcMain.handle('finance:costDelete', (_e, id) => {
   try {
-    const rows = loadFinanceCosts();
+    const rows = loadFinanceCosts().map(normalizeCostRow);
     const next = rows.filter((x) => x.id !== id);
     saveFinanceCosts(next);
-    return { ok: true, removed: rows.length - next.length };
+    const { total } = listCosts();
+    return { ok: true, removed: rows.length - next.length, total };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
