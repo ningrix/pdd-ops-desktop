@@ -220,7 +220,10 @@ html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-moon { display: n
 .btn {
   border: 1px solid var(--line); background: var(--bg3); color: var(--text);
   padding: 7px 12px; border-radius: 7px; font-size: 12.5px;
-  cursor: pointer; transition: .15s; font-family: inherit;
+  cursor: pointer;
+  /* emil-design-eng：不用 transition:all，只声明真正会变的属性 */
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 160ms ease-out;
+  font-family: inherit;
 }
 .btn:hover { background: #24304a; border-color: #35456a; }
 .btn:active { transform: translateY(1px); }
@@ -1025,7 +1028,7 @@ html[data-theme="light"] .cc-sub { color: #66748b; }
   --m-slow: 280ms;
   --m-spring: 420ms;
   --ease-std: cubic-bezier(.4, 0, .2, 1);
-  --ease-decel: cubic-bezier(0, 0, .2, 1);
+  --ease-decel: cubic-bezier(.23, 1, .32, 1);   /* emil：内置曲线太弱 */
   --ease-accel: cubic-bezier(.3, 0, .8, .15);
   --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
   --accent-strong: #3b5fd9;
@@ -1302,8 +1305,10 @@ html[data-theme="light"] .fin-table tbody tr:hover td { background: #f2f6fc; }
                     color var(--m-fast) var(--ease-std), transform var(--m-fast) var(--ease-std); }
 .btn:active { transform: scale(.96); }
 #pane-finance .fin-card { transition: transform var(--m-fast) var(--ease-std), box-shadow var(--m-fast) var(--ease-std); }
-#pane-finance .fin-card:hover { transform: translateY(-2px); }
-html[data-theme="light"] #pane-finance .fin-card:hover { box-shadow: 0 4px 12px rgba(16, 32, 64, .08); }
+@media (hover: hover) and (pointer: fine) {
+  #pane-finance .fin-card:hover { transform: translateY(-2px); }
+  html[data-theme="light"] #pane-finance .fin-card:hover { box-shadow: 0 4px 12px rgba(16, 32, 64, .08); }
+}
 
 /* ② 分段胶囊滑块：售后三页签，thumb 只动 transform/width */
 .rt-tabs { position: relative; }
@@ -1354,3 +1359,18 @@ html[data-theme="light"] .rt-tabs html[data-theme="dark"] .rt-tabs #pane-finance
 .rt-tab { padding: 9px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .rt-tab.active { color: var(--text); border-bottom-color: var(--brand); font-weight: 600; }
 html[data-theme="light"] .rt-tab.active { color: #17233a; border-bottom-color: #3b6fe0; }
+
+
+/* UI-F1 prefers-reduced-motion：减少动态 ≠ 全部静止
+   emil-design-eng：保留 opacity 与颜色过渡（帮助理解状态变化），只去掉位移。 */
+@keyframes row-fade-only { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #pane-finance #finOrderBody.go tr,
+  #pane-finance #finOrderOtherBody.go tr,
+  #pane-returns #finReturnBody.anim-in tr,
+  #pane-pool #poolBody tr {
+    animation: row-fade-only 160ms ease !important;
+  }
+  #pane-finance .fin-card:hover { transform: none !important; }
+  .btn:active { transform: none !important; }
+}
