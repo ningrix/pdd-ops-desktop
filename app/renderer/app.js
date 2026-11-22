@@ -1302,10 +1302,10 @@ function setMoney(el, value) {
   if (from === null || reduce || from === to) { el.textContent = fmtYuan(to); return; }
   if (el._moneyRaf) cancelAnimationFrame(el._moneyRaf);
   const t0 = performance.now();
-  const DUR = 360;
+  const DUR = 500;   // 原型：500ms ease-std
   const step = (now) => {
     const k = Math.min(1, (now - t0) / DUR);
-    const eased = 1 - Math.pow(1 - k, 3);
+    const eased = k * k * (3 - 2 * k);   // smoothstep，近似 cubic-bezier(.4,0,.2,1)
     el.textContent = fmtYuan(Math.round(from + (to - from) * eased));
     if (k < 1) el._moneyRaf = requestAnimationFrame(step);
     else { el._moneyRaf = null; el.textContent = fmtYuan(to); }
@@ -2061,7 +2061,7 @@ function renderOrderContribution(data) {
   const otherRows = rows.filter((r) => !activeRows.includes(r));
   const appendRow = (target, r, i) => {
     const tr = document.createElement('tr');
-    tr.style.setProperty('--i', String(Math.min(i == null ? 0 : i, 12)));
+    tr.style.setProperty('--i', String(Math.min(i == null ? 0 : i, 7)));   // 7×40ms=280ms，封顶 300ms
     const thumb = poolThumbFor(r.goodsId, r.name);
     const thumbHtml = thumb
       ? '<img class="order-thumb" loading="lazy" src="' + esc(thumb) + '" alt="" />'
@@ -2098,6 +2098,11 @@ function renderOrderContribution(data) {
     target.appendChild(tr);
   };
   activeRows.forEach((r, i) => appendRow(body, r, i));
+  // 只在首次渲染播 stagger（原型：渲染后容器加 .go）；之后重渲染不重播
+  if (activeRows.length && !body.classList.contains('go')) {
+    body.classList.add('go');
+    setTimeout(() => body.classList.remove('go'), 700);
+  }
   if (!activeRows.length) {
     body.innerHTML = '<tr><td colspan="8" style="color:#7d8aa3">暂无近 21 天动销商品</td></tr>';
   }

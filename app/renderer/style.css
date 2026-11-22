@@ -1069,17 +1069,17 @@ html[data-theme="light"] .theme-toggle .sun-morph .moon { opacity: 1; transform:
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
-#pane-finance #finOrderBody tr,
-#pane-finance #finOrderOtherBody tr,
+#pane-finance #finOrderBody.go tr,
+#pane-finance #finOrderOtherBody.go tr,
 #pane-returns #finReturnBody.anim-in tr,
 #pane-pool #poolBody tr {
   animation: row-in var(--m-base) var(--ease-decel) backwards;
-  animation-delay: calc(var(--i, 0) * 18ms);
+  animation-delay: calc(var(--i, 0) * 40ms);   /* 原型：每行 40ms，总量封顶 300ms */
 }
 /* 系统开了「减少动态效果」就全部静态，不做位移与滚动 */
 @media (prefers-reduced-motion: reduce) {
-  #pane-finance #finOrderBody tr,
-  #pane-finance #finOrderOtherBody tr,
+  #pane-finance #finOrderBody.go tr,
+  #pane-finance #finOrderOtherBody.go tr,
   #pane-returns #finReturnBody.anim-in tr,
   #pane-pool #poolBody tr {
     animation: none !important;
