@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('pdd', {
   financeReturnSet: (entry) => ipcRenderer.invoke('finance:returnSet', entry),
   financeReturnTrace: (opts) => ipcRenderer.invoke('finance:returnTrace', opts),
   financeReturnRemove: (orderSn) => ipcRenderer.invoke('finance:returnRemove', orderSn),
+  returnsExport: (payload) => ipcRenderer.invoke('returns:export', payload),
   financeFeeGet: () => ipcRenderer.invoke('finance:feeGet'),
   financeFeeSet: (x) => ipcRenderer.invoke('finance:feeSet', x),
   financeCostList: () => ipcRenderer.invoke('finance:costList'),

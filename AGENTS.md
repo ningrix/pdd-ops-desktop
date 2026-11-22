@@ -90,6 +90,8 @@
 | `app/lib/orders.js` | 订单/售后接口注入脚本：`recentOrderList`（订单分页）、`afterSales/queryList`（售后单）。走 `window.__mms.fetch.sync` | 可改 |
 | `app/lib/cashier.js` | 资金中心注入脚本。**只能读 DOM 表格**：cashier 是独立域，接口带 Anti-Content 动态签名，回放无效 | 可改 |
 | `app/lib/finance-core.js` | 资金纯计算层：订单分页的终止/`orderSn` 去重/截断判定。零依赖，可离线断言（`work\test-finance.mjs`） | 可改 |
+| `app/lib/xlsx.js` | 极简 XLSX 生成器：零依赖、store 方式打 zip、inlineStr 存文本。只用于导出，不改任何已有数据 | 可改 |
+| `app/lib/returns-export.js` | 退货跟进表 → 二维数组（表头/列宽/分转元/是否完成留空）。纯函数零依赖，可离线断言（`test/test-returns-export.mjs`，10 条） | 可改 |
 | `app/lib/aftersale-detail.js` | 售后详情页文本解析 + 分诊建议（`parseDetail` / `triage`）。纯函数零依赖，可离线断言（`work\test-aftersale-detail.mjs`，20 条） | 可改 |
 | `app/lib/aftersale/` | B 线售后对账的设计实现（`triage` / `reconcile` / `appeal` / `model` + `fixtures`）。**尚未接进 IPC 与界面**，是设计稿落地 | 可改 |
 | `app/lib/inspect.js` | 商品检测·规则层（纯 Node 零依赖，不读图） | 可改 |
@@ -223,6 +225,7 @@
 | 打单页面路由 | 实测 | 打单中心 = `https://mms.pinduoduo.com/print/order/list`（待发货订单）；首页 `/print/home`。左侧导航「打单工具5 → /print/home」 |
 | 商家客户端自带打印 | 实测 | 已装「拼多多商家工作台 3.7.4」（`C:\Program Files (x86)\pinduoduo\3.7.4.6\PddWorkbench.exe`，CEF 内核）自己打印，**不监听 5000/18653**。`PddService.exe` 监听 127.0.0.1:16482 / 16582，是客户端自己的 IPC，不是浏览器打印桥 |
 | 改 UA 会踢登录 | 实测（2026-11-22） | 把内嵌视图 UA 写死成干净 Chrome（去掉 `Electron/` 与 `pdd-ops-desktop/`）后，**阿泽made 当场掉登录**，回滚 UA 也不会自动恢复——会话已被服务端作废。**UA 参与平台会话指纹，不要为了「看起来像真浏览器」去改它** |
+| 退货导出用 xlsx 不用 CSV | 实现约定（2026-11-22） | 订单号是 18 位长数字，CSV 用 Excel 打开会被转成科学计数法（2.61111E+20），对账就没法用。xlsx 里按 inlineStr 存才能保住原样。生成器零依赖（`app/lib/xlsx.js`），不引入原生编译库。**「是否完成」列已完成写「是」，未完成必须留空**，不写「未完成」 |
 
 ---
 

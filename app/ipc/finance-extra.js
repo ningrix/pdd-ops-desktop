@@ -17,7 +17,7 @@
  */
 module.exports = function registerFinanceextra(ctx) {
   const {
-    ipcMain, fs, path, FINANCE_DIR, FINANCE_COSTS_FILE,
+    ipcMain, app, fs, path, dialog, getMainWindow, FINANCE_DIR, FINANCE_COSTS_FILE,
     FINANCE_PRODUCT_COSTS_FILE, FINANCE_FEES_FILE, FINANCE_RETURNS_FILE, FINANCE_TRACES_FILE, FINANCE_CARRIER_FILE,
     CARRIER_BY_ID, malls, currentMall, createHiddenMallWindow, withPlatform,
     sleep, trace, writeJsonAtomic, loadCarrierLearned, saveCarrierLearned,
@@ -25,6 +25,9 @@ module.exports = function registerFinanceextra(ctx) {
     parseReturnTrace, loadFinanceCosts, saveFinanceCosts, loadProductCosts, saveProductCosts,
     readFinanceFees, saveFinanceFees, readFinanceOrders,
   } = ctx;
+
+  const xlsx = require('../lib/xlsx');
+  const returnsExport = require('../lib/returns-export');
 
   /** 人工补录的退货单号 / 快递 / 完成标记（returns-manual.json）。 */
   function loadReturnsManual() {
@@ -373,6 +376,57 @@ ipcMain.handle('finance:productCostDelete', (_e, entry) => {
     const next = rows.filter((x) => !(goodsId ? x.goodsId === goodsId : String(x.productName || '').replace(/\s+/g, '') === productName));
     saveProductCosts(next);
     return { ok: true, removed: rows.length - next.length };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+});
+
+/**
+ * 导出退货跟进表为 Excel。
+ *
+ * 为什么在主进程写文件：渲染层是 file:// 页面，没有 fs；而且要用系统「另存为」
+ * 对话框让用户选位置。xlsx 由 lib/xlsx.js 零依赖生成（见那里的注释：CSV 会把
+ * 18 位订单号转成科学计数法）。
+ *
+ * 「是否完成」列：已完成写「是」，未完成**留空**（用户明确要求，不要写「未完成」）。
+ */
+ipcMain.handle('returns:export', async (_e, payload) => {
+  try {
+    const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+    if (!rows.length) return { ok: false, error: '没有可导出的行' };
+
+    const table = returnsExport.buildRows(rows);
+    if (table.length <= 1) return { ok: false, error: '没有可导出的行' };
+
+    const stamp = (() => {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    })();
+
+    // 传了 filePath 就直接写（自动化/批量导出用），否则弹「另存为」
+    let target = (payload && typeof payload.filePath === 'string' && payload.filePath.trim()) || '';
+    if (!target) {
+      const opts = {
+        title: '导出退货跟进',
+        defaultPath: path.join(app.getPath('downloads'), '退货跟进_' + stamp + '.xlsx'),
+        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      };
+      const parent = typeof getMainWindow === 'function' ? getMainWindow() : null;
+      const picked = parent
+        ? await dialog.showSaveDialog(parent, opts)
+        : await dialog.showSaveDialog(opts);
+      if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
+      target = picked.filePath;
+    }
+
+    const buf = xlsx.build({
+      sheetName: '退货跟进',
+      columns: returnsExport.COLUMNS,
+      rows: table,
+    });
+    fs.writeFileSync(target, buf);
+    return { ok: true, file: target, count: rows.length };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }

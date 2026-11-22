@@ -15,7 +15,7 @@ function trace(m) {
 try { fs.writeFileSync(TRACE_FILE, ''); } catch (_) { /* ignore */ }
 trace('module start');
 
-const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, screen } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, screen, dialog } = require('electron');
 trace('electron required');
 
 // 本环境必须关闭 Chromium 沙箱与 GPU，否则 Electron 原生层会访问违例
@@ -3313,7 +3313,7 @@ require('./ipc/aftersale')({
 });
 
 require('./ipc/finance-extra')({
-  ipcMain, fs, path, FINANCE_DIR, FINANCE_COSTS_FILE,
+  ipcMain, app, fs, path, dialog, getMainWindow: () => mainWindow, FINANCE_DIR, FINANCE_COSTS_FILE,
   FINANCE_PRODUCT_COSTS_FILE, FINANCE_FEES_FILE, FINANCE_RETURNS_FILE, FINANCE_TRACES_FILE, FINANCE_CARRIER_FILE,
   CARRIER_BY_ID, malls, currentMall, createHiddenMallWindow, withPlatform,
   sleep, trace, writeJsonAtomic, loadCarrierLearned, saveCarrierLearned,

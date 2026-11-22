@@ -1998,6 +1998,8 @@ function renderReturns(data) {
   const byMall = state.returnsMall ? all.filter((r) => r.mallName === state.returnsMall) : all;
   const onlyRecent = $('#rtWithin21') ? $('#rtWithin21').checked : true;
   const filtered = onlyRecent ? byMall.filter((r) => r.within21) : byMall;
+  // 导出用「过滤后的全集」，不是分页渲染出来的那一截
+  state.returnsFiltered = filtered;
   // 懒渲染：110 行 × 18 节点 ≈ 1980，占满整页 DOM 预算。
   // 默认只渲染前 30 行，其余点「显示更多」再插入。
   const RETURNS_PAGE = 30;
@@ -2598,6 +2600,27 @@ $('#finReturnBody') && $('#finReturnBody').addEventListener('click', async (e) =
 
 $('#btnFinOrders') && $('#btnFinOrders').addEventListener('click', () => collectOrderContribution());
 $('#btnReturnRefresh') && $('#btnReturnRefresh').addEventListener('click', () => loadReturns());
+
+// 导出当前筛选结果（不是只导当前渲染的 30 行）
+$('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async () => {
+  const btn = $('#btnReturnExport');
+  const rows = state.returnsFiltered || [];
+  if (!rows.length) { addLog('没有可导出的退货行'); return; }
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '导出中…';
+  try {
+    const r = await window.pdd.returnsExport({ rows });
+    if (r && r.ok) addLog('已导出 ' + r.count + ' 行 → ' + r.file);
+    else if (r && r.canceled) addLog('已取消导出');
+    else logErr('导出失败：' + ((r && r.error) || '未知错误'));
+  } catch (e) {
+    logErr('导出失败：' + ((e && e.message) || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
       $('#finReturnMore') && $('#finReturnMore').addEventListener('click', () => {
         state.returnsShowAll = !state.returnsShowAll;
         if (state.returns) renderReturns(state.returns);
