@@ -1288,3 +1288,8 @@ html[data-theme="light"] .fin-table tbody tr:hover td { background: #f2f6fc; }
    原生 WebContentsView 的 getBoundingClientRect() 漂移、setBounds 贴错位置。
    这里加一条硬护栏，防止以后又把整屏动画加回来。 */
 #pane-browser, #pane-print { animation: none !important; transform: none !important; }
+
+/* UI-D4a 按压反馈（原型：组件样张-动效与玻璃 L139「按钮按压 scale(.96)」）
+   只加一条规则，复用 .btn 已有的 transition:.15s，不新增过渡属性、
+   不给卡片加 hover 变换 —— 主题切换要重算的样式量不变。 */
+.btn:active { transform: scale(.96); }
