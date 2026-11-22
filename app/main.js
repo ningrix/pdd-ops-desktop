@@ -1961,6 +1961,12 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
 
   // 汇总
   const curMonth = financeMonth();
+    // 循环结束补发满格进度，让环显示 2/2 再消失
+    try {
+      if (_e && _e.sender && !_e.sender.isDestroyed()) {
+        _e.sender.send('finance:progress', { done: results.length, total: list.length, mallName: null });
+      }
+    } catch (_) { /* ignore */ }
   const agg = { income: 0, expense: 0, profit: 0, stores: results.length, months: {} };
   for (const r of results) {
     if (!r.months) continue;

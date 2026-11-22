@@ -2731,8 +2731,12 @@ async function collectFinance() {
     financeBusy = false;
     btn.disabled = false;
     btn.textContent = old;
-    setRing(0, 0);
     showSkeleton(false);
+    // 先亮满格再收：2/2 只存在几毫秒的话肉眼根本看不到
+    const totalMalls = (state.malls || []).length;
+    if (totalMalls) setRing(totalMalls, totalMalls);
+    if (window._ringHoldTimer) clearTimeout(window._ringHoldTimer);
+    window._ringHoldTimer = setTimeout(() => setRing(0, 0), 600);
   }
 }
 
