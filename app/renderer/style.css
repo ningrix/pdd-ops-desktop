@@ -1019,3 +1019,51 @@ html[data-theme="light"] .cc-sub { color: #66748b; }
 #pane-finance .order-product { gap: 7px; }
 #pane-finance .fin-table .fin-sub { font-size: 9.5px; line-height: 1.35; }
 #pane-finance .cost-total { font-size: 9.5px; margin-top: 1px; }
+
+/* UI-P0 动效与组件 token（值来源：原型/上货中台-组件样张-按钮与胶囊.html / 动效与玻璃.html，勿改值） */
+:root {
+  --m-fast: 120ms;
+  --m-base: 220ms;
+  --m-slow: 280ms;
+  --m-spring: 420ms;
+  --ease-std: cubic-bezier(.4, 0, .2, 1);
+  --ease-decel: cubic-bezier(0, 0, .2, 1);
+  --ease-accel: cubic-bezier(.3, 0, .8, .15);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --accent-strong: #3b5fd9;
+  --r-lg: 10px; --r-md: 8px; --r-sm: 6px;
+}
+
+/* UI-P1 键盘焦点环：补回被摘掉的 outline（HIG 键盘可达；值来源：按钮与胶囊样张） */
+.btn:focus-visible,
+.nav-item:focus-visible,
+.tab:focus-visible,
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(90, 130, 255,.55);
+}
+
+/* UI-P2 主题图标形变（结构来源：图标与切换动效样张；由 html[data-theme] 驱动） */
+.theme-toggle .sun-morph { width: 15px; height: 15px; overflow: visible; display: block; }
+.theme-toggle .sun-morph .sun { transform-origin: 12px 12px; transition: opacity var(--m-base) var(--ease-std), transform var(--m-base) var(--ease-std); }
+.theme-toggle .sun-morph .sun .ray { transform-origin: 12px 12px; }
+.theme-toggle .sun-morph .moon { transform-origin: 12px 12px; opacity: 0; transform: rotate(-90deg) scale(.4); transition: opacity var(--m-base) var(--ease-std), transform var(--m-base) var(--ease-std); }
+html[data-theme="light"] .theme-toggle .sun-morph .sun { opacity: 0; transform: scale(.4) rotate(90deg); }
+html[data-theme="light"] .theme-toggle .sun-morph .moon { opacity: 1; transform: none; }
+
+/* UI-P3 完成勾描画：dashoffset 30→0 + 现有 rt-pop 保留（值来源：图标样张 8.x） */
+.rt-check svg path { stroke-dasharray: 30; stroke-dashoffset: 30; }
+.rt-check.done svg path { animation: rt-draw 300ms var(--ease-decel) 160ms forwards; }
+@keyframes rt-draw { to { stroke-dashoffset: 0; } }
+
+/* UI-P4 页签入场：切到某页时该页 220ms decel 滑入（退场不做——display:none 硬切是现行结构，入场动画已消除跳变感） */
+.pane.active { animation: pane-in var(--m-base) var(--ease-decel); }
+@keyframes pane-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+
+/* UI-P5 顶栏假玻璃：三层叠加配方（零 backdrop-filter；值来源：动效与玻璃样张） */
+.topbar {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.05), rgba(255,255,255,0) 40%),
+    var(--topbar-bg);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+}
