@@ -651,6 +651,15 @@ async function refreshPool() {
   }
   empty.style.display = 'none';
   tbl.style.display = 'table';
+  // FLIP First：记下渲染前每行的位置（按采集箱 id）
+  const _poolPrevRects = new Map();
+  const _poolReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!_poolReduce) {
+    for (const _tr of tb.querySelectorAll('tr')) {
+      const _cb = _tr.querySelector('[data-sel]');
+      if (_cb) _poolPrevRects.set(_cb.dataset.sel, _tr.getBoundingClientRect());
+    }
+  }
   tb.innerHTML = '';
   for (const it of items) {
     // 骨架预分配状态：采集时就算了「能不能上架、用哪个骨架」
@@ -677,6 +686,7 @@ async function refreshPool() {
     }
 
     const tr = document.createElement('tr');
+    tr.dataset.id = it.id;
     tr.innerHTML =
       '<td><input type="checkbox" data-sel="' + esc(it.id) + '"' +
         (state.poolSel.has(it.id) ? ' checked' : '') + ' /></td>' +
@@ -714,6 +724,44 @@ async function refreshPool() {
       logInfo('已从采集箱移除');
     });
     tb.appendChild(tr);
+  }
+
+  // FLIP Last/Invert/Play：老行飞回原位，新行淡入
+  if (!_poolReduce) {
+    const _poolFlipPlayed = true;
+    const _toPlay = [];
+    for (const _tr of tb.querySelectorAll('tr')) {
+      const _id = _tr.dataset.id;
+      const _prev = _poolPrevRects.get(_id);
+      const _now = _tr.getBoundingClientRect();
+      if (_prev) {
+        const _dx = _prev.left - _now.left;
+        const _dy = _prev.top - _now.top;
+        if (Math.abs(_dx) + Math.abs(_dy) > 1) {
+          _tr.style.transition = 'none';
+          _tr.style.transform = 'translate(' + _dx + 'px,' + _dy + 'px)';
+          _toPlay.push(_tr);
+        }
+      } else {
+        _tr.style.opacity = '0';
+        _tr.style.transform = 'scale(.96)';
+        _toPlay.push(_tr);
+      }
+    }
+    requestAnimationFrame(() => {
+      for (const _tr of _toPlay) {
+        if (_tr.style.transform.indexOf('translate(') === 0) {
+          _tr.style.transition = 'transform 300ms cubic-bezier(.23,1,.32,1)';
+        } else {
+          _tr.style.transition = 'opacity 220ms ease, transform 220ms cubic-bezier(.23,1,.32,1)';
+          _tr.style.opacity = '1';
+        }
+        _tr.style.transform = '';
+      }
+      setTimeout(() => {
+        for (const _tr of _toPlay) { _tr.style.transition = ''; _tr.style.transform = ''; _tr.style.opacity = ''; }
+      }, 340);
+    });
   }
   updateSelCount();
   if (state.orderData) renderOrderContribution(state.orderData);
