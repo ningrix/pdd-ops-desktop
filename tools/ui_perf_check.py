@@ -119,7 +119,15 @@ def main():
         longTasks: long,
         sidebar: { client: s.clientHeight, scroll: s.scrollHeight },
         themeIcons: {
-          dark: (() => { const b = document.querySelector('#btnTheme'); return [getComputedStyle(b.querySelector('.ic-moon')).display, getComputedStyle(b.querySelector('.ic-sun')).display]; })(),
+          // PH2 之后主题按钮里是单个 sun-morph svg（.sun / .moon 两组），
+          // 旧的 .ic-moon / .ic-sun 已移除；读不到就返回 null，不让整个探针抛错。
+          dark: (() => {
+            const b = document.querySelector('#btnTheme');
+            if (!b) return null;
+            const s = b.querySelector('.sun-morph .sun');
+            const m = b.querySelector('.sun-morph .moon');
+            return (s && m) ? [getComputedStyle(s).opacity, getComputedStyle(m).opacity] : null;
+          })(),
         },
         themeNow: document.documentElement.dataset.theme,
       };

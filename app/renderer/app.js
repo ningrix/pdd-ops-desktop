@@ -39,7 +39,7 @@ const state = {
   financeLastAt: 0,
   feeSettings: { platformRate: 0.006, promotionPerOrder: 0, shippingPerOrder: 0, packagingPerOrder: 0 },
   orderShowAll: false,
-  returnsShowAll: false,
+  returnsLimit: 0,   // 0 = 用默认页长；点「再显示」每次 +30
   appealScenes: [],
   appealTemplates: [],
   rtTab: 'list',
@@ -234,6 +234,12 @@ function setTab(name) {
   }
   scheduleSync();
   if (name === 'collect') setTimeout(scheduleSync, 300);
+  // 离开售后页时把「再显示」的展开状态收回第一页：
+  // 展开到 60 单时该 pane 有 1382 个节点（预算 1200），而且离开后留着也没人看。
+  if (prev === 'returns' && name !== 'returns' && (state.returnsLimit || 0) > 30) {
+    state.returnsLimit = 0;
+    if (state.returns) renderReturns(state.returns);
+  }
   if (name === 'finance') setTimeout(maybeAutoCollectFinance, 800);
   if (name === 'returns') setTimeout(() => {
     // 切页签时把滚动位置归零，否则表头会停在视野外
@@ -2106,7 +2112,8 @@ function renderReturns(data) {
   // 懒渲染：110 行 × 18 节点 ≈ 1980，占满整页 DOM 预算。
   // 默认只渲染前 30 行，其余点「显示更多」再插入。
   const RETURNS_PAGE = 30;
-  const rows = state.returnsShowAll ? filtered : filtered.slice(0, RETURNS_PAGE);
+  const limit = Math.max(RETURNS_PAGE, state.returnsLimit || RETURNS_PAGE);
+  const rows = filtered.slice(0, limit);
   if (!filtered.length) {
     sec.style.display = 'none';
     body.innerHTML = '';
@@ -2137,11 +2144,12 @@ function renderReturns(data) {
   if (note) note.textContent = parts.join(' · ');
   const more = $('#finReturnMore');
   if (more) {
-    if (rest > 0 || state.returnsShowAll) {
+    if (rest > 0) {
       more.style.display = 'inline-block';
-      more.textContent = state.returnsShowAll
-        ? '收起，只显示前 ' + RETURNS_PAGE + ' 单'
-        : '显示其余 ' + rest + ' 单';
+      more.textContent = '再显示 ' + Math.min(RETURNS_PAGE, rest) + ' 单（还有 ' + rest + ' 单）';
+    } else if (limit > RETURNS_PAGE) {
+      more.style.display = 'inline-block';
+      more.textContent = '收起，只显示前 ' + RETURNS_PAGE + ' 单';
     } else {
       more.style.display = 'none';
     }
@@ -2809,7 +2817,9 @@ $('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async (
   }
 });
       $('#finReturnMore') && $('#finReturnMore').addEventListener('click', () => {
-        state.returnsShowAll = !state.returnsShowAll;
+        const total = (state.returnsFiltered || []).length;
+  const cur = Math.max(30, state.returnsLimit || 30);
+  state.returnsLimit = (cur >= total) ? 0 : (cur + 30);
         if (state.returns) renderReturns(state.returns);
       });
 $('#rtWithin21') && $('#rtWithin21').addEventListener('change', () => {
