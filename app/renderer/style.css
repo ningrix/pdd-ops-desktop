@@ -1071,7 +1071,7 @@ html[data-theme="light"] .theme-toggle .sun-morph .moon { opacity: 1; transform:
 }
 #pane-finance #finOrderBody tr,
 #pane-finance #finOrderOtherBody tr,
-#pane-returns #finReturnBody tr,
+#pane-returns #finReturnBody.anim-in tr,
 #pane-pool #poolBody tr {
   animation: row-in var(--m-base) var(--ease-decel) backwards;
   animation-delay: calc(var(--i, 0) * 18ms);
@@ -1080,7 +1080,7 @@ html[data-theme="light"] .theme-toggle .sun-morph .moon { opacity: 1; transform:
 @media (prefers-reduced-motion: reduce) {
   #pane-finance #finOrderBody tr,
   #pane-finance #finOrderOtherBody tr,
-  #pane-returns #finReturnBody tr,
+  #pane-returns #finReturnBody.anim-in tr,
   #pane-pool #poolBody tr {
     animation: none !important;
   }

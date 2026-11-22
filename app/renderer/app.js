@@ -245,6 +245,7 @@ function setTab(name) {
     // 切页签时把滚动位置归零，否则表头会停在视野外
     const fb = document.querySelector('#pane-returns .fin-body');
     if (fb) fb.scrollTop = 0;
+    state.returnsAnimPending = true;   // 本次进入只播一次行动画
     loadReturns();
   }, 120);
 }
@@ -2221,6 +2222,14 @@ function renderReturns(data) {
         '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>' +
       '</button></td>';
     body.appendChild(tr);
+  }
+
+  // 只在「刚进入售后页签」的第一次渲染播一次行动画；
+  // 之后无论是 display 切换还是重复渲染都不再播（否则一次进入会播两遍）。
+  if (state.returnsAnimPending) {
+    state.returnsAnimPending = false;
+    body.classList.add('anim-in');
+    setTimeout(() => body.classList.remove('anim-in'), 620);
   }
 }
 
