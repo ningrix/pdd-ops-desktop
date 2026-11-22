@@ -985,40 +985,39 @@ html[data-theme="light"] .cc-sub { color: #66748b; }
    目标：同屏尽量多看几行，但不删任何一列信息。
    做法：缩小卡片/表格的行高与间距，把「小字第二行」改成行内紧跟。
    作用域限定 #pane-finance，不影响其它页。 */
-#pane-finance .fin-body { padding: 10px 12px; }
-#pane-finance .fin-cards { gap: 8px; margin-bottom: 12px; }
-#pane-finance .fin-card { padding: 9px 12px; border-radius: 8px; }
-#pane-finance .fc-label { font-size: 11px; margin-bottom: 3px; }
-#pane-finance .fc-value { font-size: 19px; }
-#pane-finance .fc-sub { font-size: 10.5px; margin-top: 3px; }
-#pane-finance .fin-sec { margin-bottom: 12px; }
-#pane-finance .fin-sec-h { margin-bottom: 6px; }
-#pane-finance .fin-table th { padding: 5px 8px; }
-#pane-finance .fin-table td { padding: 5px 8px; }
-#pane-finance .fin-fee-bar { padding: 5px 9px; margin-bottom: 6px; gap: 12px; }
-#pane-finance .cost-add-bar { padding: 5px 9px; margin-bottom: 6px; }
-#pane-finance .fin-order-more { margin-top: 5px; }
+#pane-finance .fin-body { padding: 16px 20px; }
+#pane-finance .fin-cards { gap: 12px; margin-bottom: 16px; }
+#pane-finance .fin-card { padding: 16px 18px; border-radius: 10px; }
+#pane-finance .fc-label { font-size: 12.5px; margin-bottom: 7px; }
+#pane-finance .fc-value { font-size: 26px; letter-spacing: .2px; }
+#pane-finance .fc-sub { font-size: 11.5px; margin-top: 7px; }
+#pane-finance .fin-sec { margin-bottom: 18px; }
+#pane-finance .fin-sec-h { margin-bottom: 10px; }
+#pane-finance .fin-table th { padding: 9px 12px; }
+#pane-finance .fin-table td { padding: 10px 12px; }
+#pane-finance .fin-fee-bar { padding: 8px 12px; margin-bottom: 10px; gap: 14px; }
+#pane-finance .cost-add-bar { padding: 8px 12px; margin-bottom: 10px; }
+#pane-finance .fin-order-more { margin-top: 8px; }
 
 /* 商品名 + 货号同一行：货号靠右、小字、不换行 */
-#pane-finance .order-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 300px; }
+#pane-finance .order-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; max-width: 320px; }
 #pane-finance .order-name {
   flex: 0 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #pane-finance .order-id {
-  font-size: 10px; color: #7d8aa3; flex: none;
+  font-size: 10.5px; color: var(--muted); flex: none;
   font-variant-numeric: tabular-nums; letter-spacing: .2px;
 }
 /* 行内小字（销量 /26、退货率 23/26、毛利率 29.9%） */
 #pane-finance .fin-sub-in {
-  font-size: 10px; color: #7d8aa3; margin-left: 5px;
+  font-size: 10.5px; color: var(--muted); margin-left: 6px;
   font-variant-numeric: tabular-nums;
 }
-/* 缩略图缩到 26，行高再降一档 */
-#pane-finance .order-thumb { width: 26px; height: 26px; border-radius: 5px; }
-#pane-finance .order-product { gap: 7px; }
-#pane-finance .fin-table .fin-sub { font-size: 9.5px; line-height: 1.35; }
-#pane-finance .cost-total { font-size: 9.5px; margin-top: 1px; }
+#pane-finance .order-thumb { width: 32px; height: 32px; border-radius: 7px; }
+#pane-finance .order-product { gap: 9px; }
+#pane-finance .fin-table .fin-sub { font-size: 10.5px; line-height: 1.4; }
+#pane-finance .cost-total { font-size: 10.5px; margin-top: 2px; }
 
 /* UI-P0 动效与组件 token（值来源：原型/上货中台-组件样张-按钮与胶囊.html / 动效与玻璃.html，勿改值） */
 :root {
@@ -1133,3 +1132,68 @@ html[data-theme="light"] .fin-skeleton .sk-row {
   background-size: 400% 100%;
 }
 html[data-theme="light"] .fin-ring .ring-bg { stroke: #d6dfec; }
+
+/* UI-R1 参考稿对齐：表面处理、表格观感、导航选中态、下划线输入
+   颜色仍走既有语义变量（income/loss/warn 已过 AA），这里只调表面与比例。 */
+html[data-theme="light"] .fin-card {
+  background: #ffffff;
+  border-color: #e6ebf3;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+html[data-theme="light"] .fin-table { background: #ffffff; }
+html[data-theme="light"] .fin-table th {
+  background: #f8fafc;
+  border-bottom: 1px solid #e6ebf3;
+  color: #66748b;
+}
+html[data-theme="light"] .fin-table td { border-bottom: 1px solid #eef1f6; }
+html[data-theme="light"] .fin-table tbody tr:hover td { background: #f7faff; }
+
+/* 左侧导航选中：浅品牌底 + 品牌色 + 左侧竖条（参考稿的观感） */
+.side .nav-item.active {
+  background: rgba(75, 123, 236, .14);
+  color: #ffffff;
+  border-left-color: var(--brand);
+}
+html[data-theme="light"] .side .nav-item.active {
+  background: #eef3ff;
+  color: #1b4bc4;
+  border-left-color: #3b6fe0;
+  font-weight: 600;
+}
+
+/* 拿货成本：表格内输入改成下划线式，不再画方框 */
+#pane-finance .fin-cost-input,
+#pane-finance .cost-inline {
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed #c8d3e4;
+  border-radius: 0;
+  padding: 1px 2px;
+}
+#pane-finance .fin-cost-input:focus,
+#pane-finance .cost-inline:focus {
+  border-bottom-color: var(--brand);
+  border-bottom-style: solid;
+  outline: none;
+}
+html[data-theme="dark"] #pane-finance .fin-cost-input,
+html[data-theme="dark"] #pane-finance .cost-inline,
+:root:not([data-theme="light"]) #pane-finance .fin-cost-input,
+:root:not([data-theme="light"]) #pane-finance .cost-inline {
+  border-bottom-color: #3b4a63;
+}
+
+/* UI-R1 修：三处
+   ① .fin-ring 用了 display:inline-flex，会盖掉 [hidden] 的 display:none，导致环永远显示
+   ② 列宽加起来超过容器，扣费后被裁 —— 收窄商品列与单元格横向内边距
+   ③ 下划线改实线浅灰，虚线太抢眼 */
+.fin-ring[hidden], .fin-skeleton[hidden] { display: none !important; }
+#pane-finance .order-main { max-width: 264px; }
+#pane-finance .fin-table th, #pane-finance .fin-table td { padding-left: 10px; padding-right: 10px; }
+#pane-finance .fin-table { table-layout: auto; }
+#pane-finance #finOrderSec th:last-child,
+#pane-finance #finOrderSec td:last-child { min-width: 78px; }
+#pane-finance .fin-cost-input, #pane-finance .cost-inline { border-bottom-style: solid; }
+html[data-theme="light"] #pane-finance .fin-cost-input,
+html[data-theme="light"] #pane-finance .cost-inline { border-bottom-color: #dde4ee; }
