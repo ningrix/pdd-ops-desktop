@@ -246,6 +246,7 @@ function setTab(name) {
     const fb = document.querySelector('#pane-returns .fin-body');
     if (fb) fb.scrollTop = 0;
     state.returnsAnimPending = true;   // 本次进入只播一次行动画
+    setTimeout(() => { if (window.__rtThumbMove) window.__rtThumbMove(); }, 60);
     loadReturns();
   }, 120);
 }
@@ -383,7 +384,7 @@ function askText({ title = '输入', placeholder = '', value = '' } = {}) {
     focusInput(input, true);
 
     const done = (v) => {
-      mask.classList.remove('on');
+      closeMaskAnimated(mask);
       $('#modalOk').onclick = null;
       $('#modalCancel').onclick = null;
       input.onkeydown = null;
@@ -778,7 +779,7 @@ async function openInspect(it) {
     $('#inspErr').textContent = '';
     mask.classList.add('on');
     $('#inspDeep').disabled = true;
-    $('#inspClose').onclick = () => { mask.classList.remove('on'); };
+    $('#inspClose').onclick = () => { closeMaskAnimated(mask); };
 
     // 先跑规则层（快）
     const r = await window.pdd.inspectItem({ id: it.id, withImages: false });
@@ -846,7 +847,7 @@ async function openWatermark(it) {
     $('#wmOpacity').oninput = syncOpacity;
 
     mask.classList.add('on');
-    $('#wmCancel').onclick = () => mask.classList.remove('on');
+    $('#wmCancel').onclick = () => closeMaskAnimated(mask);
     $('#wmOk').disabled = false;
     $('#wmOk').textContent = '生成水印图';
     $('#wmOk').onclick = async () => {
@@ -1088,7 +1089,7 @@ function openCopyDialog(item) {
     $('#copyOk').textContent = '开始复制';
 
     const close = () => {
-      mask.classList.remove('on');
+      closeMaskAnimated(mask);
       $('#copyCancel').onclick = null;
       $('#copyOk').onclick = null;
       resolve(null);
@@ -2429,7 +2430,7 @@ function openTplDialog(tpl) {
     setTimeout(() => { try { $('#tplTitle').focus(); } catch (_) { /* ignore */ } }, 80);
 
     const done = (v) => {
-      mask.classList.remove('on');
+      closeMaskAnimated(mask);
       $('#tplSave').onclick = null;
       $('#tplCancel').onclick = null;
       resolve(v);
@@ -3172,3 +3173,34 @@ $('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction
   setTab('goods');
   if (!state.malls.length) logInfo('第一步：点左上「＋ 添加店铺」，在右侧浏览器里扫码登录');
 })();
+
+
+// 售后三页签的分段胶囊滑块：一个绝对定位元素跟着 active 走，只动 transform/width
+(function initRtThumb() {
+  const bar = document.querySelector('.rt-tabs');
+  if (!bar) return;
+  const thumb = document.createElement('span');
+  thumb.className = 'rt-thumb';
+  bar.insertBefore(thumb, bar.firstChild);
+  const move = () => {
+    const on = bar.querySelector('.rt-tab.active');
+    if (!on || !on.offsetWidth) return;
+    thumb.style.width = on.offsetWidth + 'px';
+    thumb.style.transform = 'translateX(' + on.offsetLeft + 'px)';
+  };
+  window.__rtThumbMove = move;
+  bar.addEventListener('click', () => setTimeout(move, 0));
+  window.addEventListener('resize', move);
+  move();
+})();
+
+
+// 弹层退场 150ms：先挂 .closing 播完再真正摘掉 .on（离场比进场快，原型 L241）
+function closeMaskAnimated(mask) {
+  if (!mask || !mask.classList.contains('on')) return;
+  mask.classList.add('closing');
+  setTimeout(() => {
+    mask.classList.remove('closing');
+    mask.classList.remove('on');
+  }, 150);
+}

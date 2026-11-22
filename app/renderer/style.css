@@ -1293,3 +1293,41 @@ html[data-theme="light"] .fin-table tbody tr:hover td { background: #f2f6fc; }
    只加一条规则，复用 .btn 已有的 transition:.15s，不新增过渡属性、
    不给卡片加 hover 变换 —— 主题切换要重算的样式量不变。 */
 .btn:active { transform: scale(.96); }
+
+/* UI-D4 四块交互动效（原型：组件样张-动效与玻璃 L125-260）
+   全部只用 transform/opacity，面积小，软件渲染零压力。 */
+
+/* ① 悬浮与按压：120ms ease-std，同一手势同一曲线 */
+.btn { transition: background var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std),
+                    color var(--m-fast) var(--ease-std), transform var(--m-fast) var(--ease-std); }
+.btn:active { transform: scale(.96); }
+#pane-finance .fin-card { transition: transform var(--m-fast) var(--ease-std), box-shadow var(--m-fast) var(--ease-std); }
+#pane-finance .fin-card:hover { transform: translateY(-2px); }
+html[data-theme="light"] #pane-finance .fin-card:hover { box-shadow: 0 4px 12px rgba(16, 32, 64, .08); }
+
+/* ② 分段胶囊滑块：售后三页签，thumb 只动 transform/width */
+.rt-tabs { position: relative; }
+.rt-thumb {
+  position: absolute; top: 0; left: 0; height: 100%; border-radius: 999px;
+  background: rgba(90, 130, 255, .22); border: 1px solid rgba(90, 130, 255, .45);
+  transition: transform var(--m-spring) var(--ease-spring), width var(--m-spring) var(--ease-spring);
+  pointer-events: none; z-index: 0;
+}
+.rt-tabs .rt-tab { position: relative; z-index: 1; transition: color var(--m-fast) var(--ease-std); }
+.rt-tabs .rt-tab.active { color: #c3d2ff; }
+html[data-theme="light"] .rt-thumb { background: #dbe7ff; border-color: #b9ccf5; }
+html[data-theme="light"] .rt-tabs .rt-tab.active { color: #1b4bc4; }
+
+/* ④ 弹层：进 280ms decel，退 150ms accel（离场更快） */
+@keyframes mask-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mask-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(.99); } }
+.modal-mask.on { animation: mask-in 280ms var(--ease-decel); }
+.modal-mask.on .modal { animation: panel-in 280ms var(--ease-decel); }
+.modal-mask.closing { animation: mask-out 150ms var(--ease-accel) forwards; }
+.modal-mask.closing .modal { animation: panel-out 150ms var(--ease-accel) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, #pane-finance .fin-card, .rt-thumb, .modal-mask, .modal-mask .modal { transition: none !important; animation: none !important; }
+}
