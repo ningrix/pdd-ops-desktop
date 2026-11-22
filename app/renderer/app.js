@@ -246,7 +246,6 @@ function setTab(name) {
     const fb = document.querySelector('#pane-returns .fin-body');
     if (fb) fb.scrollTop = 0;
     state.returnsAnimPending = true;   // 本次进入只播一次行动画
-    setTimeout(() => { if (window.__rtThumbMove) window.__rtThumbMove(); }, 60);
     loadReturns();
   }, 120);
 }
@@ -3182,24 +3181,6 @@ $('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction
 })();
 
 
-// 售后三页签的分段胶囊滑块：一个绝对定位元素跟着 active 走，只动 transform/width
-(function initRtThumb() {
-  const bar = document.querySelector('.rt-tabs');
-  if (!bar) return;
-  const thumb = document.createElement('span');
-  thumb.className = 'rt-thumb';
-  bar.insertBefore(thumb, bar.firstChild);
-  const move = () => {
-    const on = bar.querySelector('.rt-tab.active');
-    if (!on || !on.offsetWidth) return;
-    thumb.style.width = on.offsetWidth + 'px';
-    thumb.style.transform = 'translateX(' + on.offsetLeft + 'px)';
-  };
-  window.__rtThumbMove = move;
-  bar.addEventListener('click', () => setTimeout(move, 0));
-  window.addEventListener('resize', move);
-  move();
-})();
 
 
 // 弹层退场 150ms：先挂 .closing 播完再真正摘掉 .on（离场比进场快，原型 L241）

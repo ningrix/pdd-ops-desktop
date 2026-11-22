@@ -1307,17 +1307,8 @@ html[data-theme="light"] #pane-finance .fin-card:hover { box-shadow: 0 4px 12px 
 
 /* ② 分段胶囊滑块：售后三页签，thumb 只动 transform/width */
 .rt-tabs { position: relative; }
-.rt-thumb {
-  position: absolute; top: 0; left: 0; height: 100%; border-radius: 999px;
-  background: rgba(90, 130, 255, .22); border: 1px solid rgba(90, 130, 255, .45);
-  transition: transform var(--m-spring) var(--ease-spring), width var(--m-spring) var(--ease-spring);
-  pointer-events: none; z-index: 0;
-}
 .rt-tabs .rt-tab { position: relative; z-index: 1; transition: color var(--m-fast) var(--ease-std); }
-.rt-tabs .rt-tab.active { color: #c3d2ff; }
-html[data-theme="light"] .rt-thumb { background: #dbe7ff; border-color: #b9ccf5; }
-html[data-theme="light"] .rt-tabs .rt-tab.active { color: #1b4bc4; }
-
+html[data-theme="light"] html[data-theme="light"] 
 /* ④ 弹层：进 280ms decel，退 150ms accel（离场更快） */
 @keyframes mask-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mask-out { from { opacity: 1; } to { opacity: 0; } }
@@ -1345,35 +1336,21 @@ html[data-theme="light"] .rt-tabs .rt-tab.active { color: #1b4bc4; }
 #pane-finance .fc-sub { font-size: 12px; margin-top: 8px; }
 
 /* 分段滑块：白药丸 + 轻阴影（iOS segmented），去掉蓝底蓝边 */
-.rt-thumb {
-  background: #ffffff;
-  border: none;
-  box-shadow: 0 1px 2px rgba(16, 32, 64, .12), 0 0 0 1px rgba(16, 32, 64, .04);
-  border-radius: 999px;
-}
-html[data-theme="dark"] .rt-thumb {
-  background: rgba(255, 255, 255, .10);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
-}
-.rt-tabs .rt-tab.active { color: var(--text); font-weight: 600; }
-html[data-theme="light"] .rt-tabs .rt-tab.active { color: #17233a; }
-/* UI-E1 修2：
+html[data-theme="dark"] html[data-theme="light"] /* UI-E1 修2：
    ① 滑块底色被更早的 html[data-theme="light"] .rt-thumb 覆盖（特异性更高），
       这里用同特异性重写，改成白药丸
    ② 卡片副行在窄卡里仍会折行，直接 nowrap */
-html[data-theme="light"] .rt-tabs .rt-thumb {
-  background: #ffffff;
-  border: none;
-  box-shadow: 0 1px 2px rgba(16, 32, 64, .12), 0 0 0 1px rgba(16, 32, 64, .04);
-}
-html[data-theme="dark"] .rt-tabs .rt-thumb {
-  background: rgba(255, 255, 255, .10);
-  border: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
-}
-#pane-finance .fin-card .fc-sub,
+html[data-theme="light"] .rt-tabs html[data-theme="dark"] .rt-tabs #pane-finance .fin-card .fc-sub,
 #pane-finance .fc-sub {
   white-space: nowrap !important;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* UI-E3 售后页签回到原生下划线式
+   原本就是 border-bottom + active 变品牌色，我塞的药丸滑块和它叠成两个选中标识。
+   这里只把间距调回原设计的节奏，不加任何新控件。 */
+.rt-tabs { padding: 0 14px; border-bottom: 1px solid var(--line); }
+.rt-tab { padding: 9px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.rt-tab.active { color: var(--text); border-bottom-color: var(--brand); font-weight: 600; }
+html[data-theme="light"] .rt-tab.active { color: #17233a; border-bottom-color: #3b6fe0; }
