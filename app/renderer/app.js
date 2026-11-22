@@ -3,6 +3,19 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
+/**
+ * 只保留「当前还在店铺列表里」的店铺数据。
+ *
+ * 资金快照、订单快照、售后分诊都是落盘的，里面可能留着已经移除的店铺
+ * （例如布丁2）。不移除的话，移除店铺后资金页仍会显示它的行和错误，
+ * 用户会以为那个店还在被访问。
+ */
+function keepActiveStores(stores) {
+  const ids = new Set((state.malls || []).map((m) => m.id));
+  if (!ids.size) return stores || [];
+  return (stores || []).filter((s) => !s || !s.mallId || ids.has(s.mallId));
+}
+
 // 打单中心直接落到「打单发货 · 待发货」列表；回店铺后台时切回首页。
 const PRINT_LIST_URL = 'https://mms.pinduoduo.com/print/order/list';
 const MMS_HOME_URL = 'https://mms.pinduoduo.com/home/';
@@ -484,6 +497,13 @@ async function refreshMalls(selectId) {
   }
   const pb = $('#pane-browser');
   if (pb) pb.classList.toggle('browser-on', state.tab === 'browser' && !!state.malls.length);
+  const pp = $('#pane-print');
+  if (pp) pp.classList.toggle('browser-on', state.tab === 'print' && !!state.malls.length);
+  // 店铺增减后，落盘的快照里可能还留着已移除店铺的行，重绘一次让过滤生效
+  if (state.finance) renderFinance(state.finance);
+  if (state.orderData) renderOrderContribution(state.orderData);
+  if (state.returns) renderReturns(state.returns);
+  if (state.triage) renderTriage(state.triage);
   scheduleSync();
   scheduleStatus(60);
 }
@@ -1319,6 +1339,10 @@ function renderFinance(data, month) {
   const body = $('#finBody');
   const empty = $('#finEmpty');
   const content = $('#finContent');
+  // 快照可能含已移除的店铺，渲染前统一过滤，避免移除后仍显示它的行
+  if (data && Array.isArray(data.stores)) {
+    data = Object.assign({}, data, { stores: keepActiveStores(data.stores) });
+  }
   if (!data || !data.stores || !data.stores.length) {
     empty.style.display = 'flex';
     content.style.display = 'none';
@@ -1726,6 +1750,10 @@ function renderOrderContribution(data) {
   const body = $('#finOrderBody');
   const note = $('#finOrderNote');
   if (!sec || !body) return;
+  // 同上：订单快照也可能含已移除店铺
+  if (data && Array.isArray(data.stores)) {
+    data = Object.assign({}, data, { stores: keepActiveStores(data.stores) });
+  }
   // 账单平台费只覆盖账单里出现的日期。先算出来，供下面按日期分段使用。
   const billFee = actualPlatformFee(state.finance);
   const billDates = billFee ? billFee.dates : null;
@@ -1953,7 +1981,9 @@ function renderReturns(data) {
   const note = $('#finReturnNote');
   const empty = $('#returnEmpty');
   if (!sec || !body) return;
-  const all = (data && data.rows) || [];
+  // 退货清单是落盘的，可能含已移除店铺
+  const activeIds = new Set((state.malls || []).map((m) => m.id));
+  const all = ((data && data.rows) || []).filter((r) => !r || !r.mallId || !activeIds.size || activeIds.has(r.mallId));
   // 店铺筛选下拉：选项从数据里生成，保留当前选择
   const sel = $('#rtMallFilter');
   if (sel) {
@@ -2320,7 +2350,9 @@ function renderTriage(data) {
   const empty = $('#triageEmpty');
   const note = $('#rtTriageNote');
   if (!body || !sec) return;
-  const rows = (data && data.rows) || [];
+  // 分诊结果是落盘的，可能含已移除店铺
+  const activeIds = new Set((state.malls || []).map((m) => m.id));
+  const rows = ((data && data.rows) || []).filter((r) => !r || !r.mallId || !activeIds.size || activeIds.has(r.mallId));
   if (note) {
     const when = data && data.at
       ? (data.fromCache ? '上次分诊 ' : '分诊于 ') + financeStamp(data.at)
