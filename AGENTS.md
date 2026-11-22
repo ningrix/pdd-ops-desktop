@@ -226,6 +226,7 @@
 | 商家客户端自带打印 | 实测 | 已装「拼多多商家工作台 3.7.4」（`C:\Program Files (x86)\pinduoduo\3.7.4.6\PddWorkbench.exe`，CEF 内核）自己打印，**不监听 5000/18653**。`PddService.exe` 监听 127.0.0.1:16482 / 16582，是客户端自己的 IPC，不是浏览器打印桥 |
 | 改 UA 会踢登录 | 实测（2026-11-22） | 把内嵌视图 UA 写死成干净 Chrome（去掉 `Electron/` 与 `pdd-ops-desktop/`）后，**阿泽made 当场掉登录**，回滚 UA 也不会自动恢复——会话已被服务端作废。**UA 参与平台会话指纹，不要为了「看起来像真浏览器」去改它** |
 | 退货导出用 xlsx 不用 CSV | 实现约定（2026-11-22） | 订单号是 18 位长数字，CSV 用 Excel 打开会被转成科学计数法（2.61111E+20），对账就没法用。xlsx 里按 inlineStr 存才能保住原样。生成器零依赖（`app/lib/xlsx.js`），不引入原生编译库。**「是否完成」列已完成写「是」，未完成必须留空**，不写「未完成」 |
+| 导出不弹系统「另存为」 | 实测（2026-11-22） | 这台机器上文件对话框会在 Documents 报「你没有权限在此位置中保存文件」，但同一目录用 Python 写是成功的 —— 是对话框/系统保护在挡，不是文件系统。Electron 进程对 `~/Downloads`、`~/Documents` 的写探针也都失败。所以 `returns:export` **不弹对话框**：`pickExportDir()` 依次探测 `app.getPath('downloads')` → `~/Downloads` → `app/userdata/exports`，取第一个真能写的；写完后 `shell.showItemInFolder()` 打开文件夹 |
 
 ---
 
