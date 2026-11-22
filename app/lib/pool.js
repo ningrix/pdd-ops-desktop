@@ -65,6 +65,9 @@ function list() {
     id: it.id,
     title: it.title,
     sourceMallName: it.sourceMallName,
+    // 源店铺已被删除时置 true：界面据此标注「（已删除）」，
+    // 也提醒用户这条的类目需要手动确认（骨架反查会查不到）。
+    sourceMallGone: !!it.sourceMallGone,
     sourceGoodsId: it.sourceGoodsId,
     catId: it.catId || null,
     price: it.price,

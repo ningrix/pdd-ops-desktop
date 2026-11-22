@@ -142,6 +142,34 @@ function loadMalls() {
 
 let lastSaveError = null;
 
+/**
+ * 把采集箱条目的源店铺与当前店铺列表对齐。
+ * 源店已不存在时：清掉 sourceMallId、保留 sourceMallName、置 sourceMallGone。
+ * 这样删店 / 改名 / 换新店都不会留下指向空店的死引用，也不需要人工改 JSON。
+ */
+function reconcilePoolSourceMalls() {
+  try {
+    const poolMod = require('./lib/pool');
+    const live = new Set(malls.keys());
+    let changed = 0;
+    // 注意：pool.list() 返回的是脱敏形状，不含 sourceMallId，必须读原始文件。
+    const rawFile = path.join(DATA_DIR, 'pool.json');
+    const rawList = JSON.parse(fs.readFileSync(rawFile, 'utf8'));
+    for (const it of (Array.isArray(rawList) ? rawList : [])) {
+      const srcId = it.sourceMallId;
+      if (srcId && !live.has(srcId) && !it.sourceMallGone) {
+        poolMod.update(it.id, { sourceMallId: null, sourceMallGone: true });
+        changed += 1;
+      }
+    }
+    if (changed) log('warn', '采集箱里有 ' + changed + ' 条的源店铺已删除，已标记');
+    return changed;
+  } catch (e) {
+    trace('reconcilePoolSourceMalls FAIL: ' + ((e && e.message) || e));
+    return 0;
+  }
+}
+
 function saveMalls() {
   try {
     const p = STORE_FILE();
@@ -662,6 +690,9 @@ ipcMain.handle('malls:remove', (_e, id) => {
   }
   try { m.view.webContents.close(); } catch (_) { /* ignore */ }
   malls.delete(id);
+  // 采集箱里指向这个店的条目降级：清 id、留名字、打标记。
+  // 否则旧条目的 sourceMallId 永远指向一个不存在的店（AGENTS §8）。
+  reconcilePoolSourceMalls();
   if (activeId === id) activeId = malls.keys().next().value || null;
   saveMalls();
   attachView();
@@ -745,7 +776,12 @@ ipcMain.handle('ops:submit', (_e, { goods, commit }) => runInMall((ops) => ops.s
 // ---------------------------------------------------------------- 采集箱
 const pool = require('./lib/pool');
 
-ipcMain.handle('pool:list', () => pool.list());
+ipcMain.handle('pool:list', () => {
+  // 每次列采集箱前对齐一次源店铺：此时 malls 一定已加载，
+  // 比在启动阶段调更可靠（启动早期 malls 还是空的）。
+  reconcilePoolSourceMalls();
+  return pool.list();
+});
 
 ipcMain.handle('pool:collect', async (_e, { index, goodsId }) => {
   const m = currentMall();
@@ -799,7 +835,11 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
 
   const target = mallId ? malls.get(mallId) : currentMall();
   if (!target) return { ok: false, error: '目标店铺不存在' };
-  if (target.id === it.sourceMallId) {
+  // 同店判断：优先按 id；源店的 id 已失效（删过店）时退回按名字比，
+  // 这样「删掉再重加同名店」也能被正确识别，不会误放行产生重复链接。
+  const sameStore = (target.id === it.sourceMallId)
+    || (!it.sourceMallId && !!it.sourceMallName && it.sourceMallName === target.name);
+  if (sameStore) {
     const others = Array.from(malls.values()).filter((x) => x.id !== target.id).map((x) => x.name);
     return {
       ok: false, blocked: 'same-store',

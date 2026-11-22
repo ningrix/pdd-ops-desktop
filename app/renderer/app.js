@@ -692,7 +692,9 @@ async function refreshPool() {
         (state.poolSel.has(it.id) ? ' checked' : '') + ' /></td>' +
       '<td>' + (it.thumb ? '<img src="' + esc(it.thumb) + '" />' : '') + '</td>' +
       '<td class="ttl" title="' + esc(it.title) + '">' + esc(it.title) + '</td>' +
-      '<td>' + esc(it.sourceMallName || '-') + '</td>' +
+      '<td>' + (it.sourceMallGone
+        ? '<span class="src-gone" title="源店铺已删除，类目需手动确认">' + esc(it.sourceMallName || '已删除') + '（已删除）</span>'
+        : esc(it.sourceMallName || '-')) + '</td>' +
       '<td class="price">' + money(it.price) + '</td>' +
       '<td>' + (it.skus == null ? '-' : it.skus) + '</td>' +
       '<td>' + (it.images == null ? '-' : it.images) + '</td>' +

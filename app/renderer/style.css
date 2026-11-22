@@ -1375,3 +1375,6 @@ html[data-theme="light"] .rt-tab.active { color: #17233a; border-bottom-color: #
   #pane-finance .fin-card:hover { transform: none !important; }
   .btn:active { transform: none !important; }
 }
+/* UI-H1 源店铺已删除的标注（采集箱「店铺」列） */
+.src-gone { color: var(--muted); }
+.src-gone::after { content: ''; }
