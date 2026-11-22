@@ -1368,6 +1368,7 @@ function renderFinance(data, month) {
   $('#fcCostTotal').textContent = fmtYuan(costTotal);
   $('#fcCostTotalSub').textContent = (state.costs || []).length + ' 笔 · 累计进货';
 
+  if (state.orderData) renderOrderContribution(state.orderData);
   renderCostBlock();
 
   // 分店铺
@@ -2024,16 +2025,20 @@ function renderOrderContribution(data) {
     const thumbHtml = thumb
       ? '<img class="order-thumb" loading="lazy" src="' + esc(thumb) + '" alt="" />'
       : '<span class="order-thumb order-thumb-empty">' + esc(String(r.name || '?').slice(0, 1)) + '</span>';
+    const rateTitle = '退款 ' + r.refundedOrders + ' · 在途 ' + r.pendingReturn + ' · 仅退 ' + r.onlyRefundCount +
+      ' · 取消 ' + r.cancelledCount + '（取消不计入退货率）';
+    const rateCls = r.returnRate == null ? '' : (r.returnRate >= 0.6 ? ' expense' : (r.returnRate >= 0.3 ? ' fin-rate-warn' : ''));
     tr.innerHTML =
       '<td><div class="order-product">' + thumbHtml +
-        '<div style="min-width:0"><div class="order-name" title="' + esc(r.name) + '">' + esc(r.name.slice(0, 26)) + '</div>' +
-        '<div style="color:#7d8aa3;font-size:10px">' + (r.goodsId ? 'ID ' + esc(r.goodsId) : '') + '</div></div></div></td>' +
+        '<div class="order-main">' +
+          '<span class="order-name" title="' + esc(r.name) + '">' + esc(r.name) + '</span>' +
+          (r.goodsId ? '<span class="order-id">' + esc(r.goodsId) + '</span>' : '') +
+        '</div></div></td>' +
       '<td class="fin-store" title="' + esc(r.mallName) + '">' + esc(r.mallName) + '</td>' +
-      '<td class="r">' + r.qty + '<div class="fin-sub">总 ' + r.totalQty + '</div></td>' +
-      '<td class="r' + (r.returnRate == null ? '' : (r.returnRate >= 0.6 ? ' expense' : (r.returnRate >= 0.3 ? ' fin-rate-warn' : ''))) + '" title="' +
-        esc('退款 ' + r.refundedOrders + ' · 在途 ' + r.pendingReturn + ' · 仅退 ' + r.onlyRefundCount + ' · 取消 ' + r.cancelledCount + '（取消不计入退货率）') + '">' +
+      '<td class="r">' + r.qty + '<span class="fin-sub-in">/' + r.totalQty + '</span></td>' +
+      '<td class="r' + rateCls + '" title="' + esc(rateTitle) + '">' +
         (r.returnRate == null ? '—' : (r.returnRate * 100).toFixed(1) + '%') +
-        '<div class="fin-sub">退 ' + r.returnOrders + '</div></td>' +
+        '<span class="fin-sub-in">' + r.returnOrders + '/' + r.totalOrders + '</span></td>' +
       '<td class="r income">' + fmtYuan(r.revenue) +
         (r.refundAmount
           ? '<div class="fin-sub">−' + fmtYuan(r.refundAmount) + '</div>'
@@ -2042,9 +2047,12 @@ function renderOrderContribution(data) {
         '<span class="cost-inline-wrap"><input class="cost-inline" type="number" min="0" step="0.01" ' +
           'data-goods-id="' + esc(r.goodsId || '') + '" data-name="' + esc(r.name) + '" ' +
           'value="' + (r.unit == null ? '' : (r.unit / 100).toFixed(2)) + '" placeholder="单价" /></span>' +
-        '<div class="cost-total ' + (r.hasCost ? '' : 'muted') + '">' + (r.hasCost ? fmtYuan(r.cost) : '未填') + (r.loss != null ? ' <span class="expense">货损 ' + fmtYuan(r.loss) + '</span>' : '') + '</div>' +
+        '<div class="cost-total ' + (r.hasCost ? '' : 'muted') + '">' + (r.hasCost ? fmtYuan(r.cost) : '未填') +
+          (r.loss != null ? ' <span class="expense">货损 ' + fmtYuan(r.loss) + '</span>' : '') + '</div>' +
       '</td>' +
-      '<td class="r ' + (r.gross != null && r.gross < 0 ? 'expense' : 'income') + '">' + (r.gross == null ? '—' : fmtYuan(r.gross)) + (r.margin == null ? '' : '<div class="fin-sub">毛利 ' + (r.margin * 100).toFixed(1) + '%</div>') + '</td>' +
+      '<td class="r ' + (r.gross != null && r.gross < 0 ? 'expense' : 'income') + '">' +
+        (r.gross == null ? '—' : fmtYuan(r.gross)) +
+        (r.margin == null ? '' : '<span class="fin-sub-in">' + (r.margin * 100).toFixed(1) + '%</span>') + '</td>' +
       '<td class="r ' + (r.net != null && r.net < 0 ? 'expense' : 'income') + '">' + (r.net == null ? '—' : fmtYuan(r.net)) + '</td>';
     target.appendChild(tr);
   };

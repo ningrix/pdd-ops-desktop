@@ -960,3 +960,42 @@ html[data-theme="light"] .hint,
 html[data-theme="light"] .mini-hint,
 html[data-theme="light"] .collect-tip,
 html[data-theme="light"] .cc-sub { color: #66748b; }
+
+/* ------------------------------------------------------------------ 资金复盘：紧凑化
+   目标：同屏尽量多看几行，但不删任何一列信息。
+   做法：缩小卡片/表格的行高与间距，把「小字第二行」改成行内紧跟。
+   作用域限定 #pane-finance，不影响其它页。 */
+#pane-finance .fin-body { padding: 10px 12px; }
+#pane-finance .fin-cards { gap: 8px; margin-bottom: 12px; }
+#pane-finance .fin-card { padding: 9px 12px; border-radius: 8px; }
+#pane-finance .fc-label { font-size: 11px; margin-bottom: 3px; }
+#pane-finance .fc-value { font-size: 19px; }
+#pane-finance .fc-sub { font-size: 10.5px; margin-top: 3px; }
+#pane-finance .fin-sec { margin-bottom: 12px; }
+#pane-finance .fin-sec-h { margin-bottom: 6px; }
+#pane-finance .fin-table th { padding: 5px 8px; }
+#pane-finance .fin-table td { padding: 5px 8px; }
+#pane-finance .fin-fee-bar { padding: 5px 9px; margin-bottom: 6px; gap: 12px; }
+#pane-finance .cost-add-bar { padding: 5px 9px; margin-bottom: 6px; }
+#pane-finance .fin-order-more { margin-top: 5px; }
+
+/* 商品名 + 货号同一行：货号靠右、小字、不换行 */
+#pane-finance .order-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 300px; }
+#pane-finance .order-name {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#pane-finance .order-id {
+  font-size: 10px; color: #7d8aa3; flex: none;
+  font-variant-numeric: tabular-nums; letter-spacing: .2px;
+}
+/* 行内小字（销量 /26、退货率 23/26、毛利率 29.9%） */
+#pane-finance .fin-sub-in {
+  font-size: 10px; color: #7d8aa3; margin-left: 5px;
+  font-variant-numeric: tabular-nums;
+}
+/* 缩略图缩到 26，行高再降一档 */
+#pane-finance .order-thumb { width: 26px; height: 26px; border-radius: 5px; }
+#pane-finance .order-product { gap: 7px; }
+#pane-finance .fin-table .fin-sub { font-size: 9.5px; line-height: 1.35; }
+#pane-finance .cost-total { font-size: 9.5px; margin-top: 1px; }

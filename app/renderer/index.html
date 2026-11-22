@@ -278,26 +278,6 @@
               </div>
             </div>
 
-            <div class="fin-sec" id="finCostSec">
-              <div class="fin-sec-h">
-                <span>拿货成本</span>
-                <span class="fin-sec-note" id="finCostNote">按日总额记账，不在商品上分摊</span>
-              </div>
-              <div class="cost-add-bar">
-                <input type="date" id="costAddDate" />
-                <input type="number" id="costAddAmount" min="0" step="0.01" placeholder="当日进货金额（元）" />
-                <input type="text" id="costAddNote" placeholder="备注（可选）" />
-                <button class="btn primary" id="costAddBtn">记一笔</button>
-                <span class="cost-add-total">累计 <b id="costTotalInline">—</b></span>
-              </div>
-              <table class="fin-table" id="finCostTable">
-                <thead><tr>
-                  <th>日期</th><th class="r">金额（元）</th><th>备注</th><th class="rt-col-check"></th>
-                </tr></thead>
-                <tbody id="finCostBody"></tbody>
-              </table>
-            </div>
-
             <div class="fin-sec" id="finOrderSec" style="display:none">
               <div class="fin-sec-h">
                 <span>商品贡献</span>
@@ -320,6 +300,26 @@
                 <tbody id="finOrderOtherBody" style="display:none"></tbody>
               </table>
               <button class="fin-order-more" id="finOrderMore" style="display:none">展开其他商品</button>
+            </div>
+
+            <div class="fin-sec" id="finCostSec">
+              <div class="fin-sec-h">
+                <span>拿货成本</span>
+                <span class="fin-sec-note" id="finCostNote">按日总额记账，不在商品上分摊</span>
+              </div>
+              <div class="cost-add-bar">
+                <input type="date" id="costAddDate" />
+                <input type="number" id="costAddAmount" min="0" step="0.01" placeholder="当日进货金额（元）" />
+                <input type="text" id="costAddNote" placeholder="备注（可选）" />
+                <button class="btn primary" id="costAddBtn">记一笔</button>
+                <span class="cost-add-total">累计 <b id="costTotalInline">—</b></span>
+              </div>
+              <table class="fin-table" id="finCostTable">
+                <thead><tr>
+                  <th>日期</th><th class="r">金额（元）</th><th>备注</th><th class="rt-col-check"></th>
+                </tr></thead>
+                <tbody id="finCostBody"></tbody>
+              </table>
             </div>
 
             <div class="fin-sec">
