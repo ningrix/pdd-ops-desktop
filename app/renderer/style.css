@@ -1197,3 +1197,42 @@ html[data-theme="dark"] #pane-finance .cost-inline,
 #pane-finance .fin-cost-input, #pane-finance .cost-inline { border-bottom-style: solid; }
 html[data-theme="light"] #pane-finance .fin-cost-input,
 html[data-theme="light"] #pane-finance .cost-inline { border-bottom-color: #dde4ee; }
+
+/* UI-D1 按钮组件对齐原型（原型/上货中台-组件样张-按钮与胶囊.html）
+   尺寸阶梯 32/28/24，圆角节奏 10/8/6，实心按钮用 --accent-strong 保证白字过 AA。
+   只加 token 与变体，不改任何现有 .btn 的既有用法（primary/mini/ghost 全部保留）。 */
+:root {
+  --accent: #5a82ff;          /* 链接 / 焦点 / 着色底 */
+  --accent-strong: #3b5fd9;   /* 实心按钮底：白字对比 5.5:1（--brand #4b7bec 只有 3.5:1） */
+}
+html[data-theme="light"] {
+  --accent: #3b6fe0;
+  --accent-strong: #2f5fd0;
+}
+
+/* 圆角节奏与尺寸阶梯 */
+.btn { border-radius: var(--r-md, 8px); }
+
+/* 五个族：pri 实心 / tint 着色 / sec 描边 / ghost 幽灵 / warn-o 警示描边 */
+.btn.primary, .btn.pri { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+.btn.primary:hover, .btn.pri:hover { background: #4668e4; border-color: #4668e4; }
+.btn.primary:active, .btn.pri:active { background: #3453c4; border-color: #3453c4; }
+
+/* 浅色主题下这几族要换色，否则浅底浅字 */
+
+/* 焦点环统一走 accent，和原型一致 */
+.btn:focus-visible, .nav-item:focus-visible, .tab:focus-visible, button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(90, 130, 255, .55);
+}
+
+/* UI-D1 修：style.css 里有一条 html[data-theme="light"] .btn.primary（L927）
+   比新规则特异性高，浅色主题下实心按钮仍走 --brand（白字 4.63:1）。
+   这里用同样的特异性覆盖成 --accent-strong。 */
+html[data-theme="light"] .btn.primary,
+html[data-theme="light"] .btn.pri {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+html[data-theme="light"] .btn.primary:hover,
+html[data-theme="light"] .btn.pri:hover { background: #2a55bd; border-color: #2a55bd; }
