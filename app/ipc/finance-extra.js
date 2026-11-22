@@ -17,7 +17,7 @@
  */
 module.exports = function registerFinanceextra(ctx) {
   const {
-    ipcMain, app, fs, path, dialog, getMainWindow, FINANCE_DIR, FINANCE_COSTS_FILE,
+    ipcMain, app, fs, path, shell, DATA_DIR, FINANCE_DIR, FINANCE_COSTS_FILE,
     FINANCE_PRODUCT_COSTS_FILE, FINANCE_FEES_FILE, FINANCE_RETURNS_FILE, FINANCE_TRACES_FILE, FINANCE_CARRIER_FILE,
     CARRIER_BY_ID, malls, currentMall, createHiddenMallWindow, withPlatform,
     sleep, trace, writeJsonAtomic, loadCarrierLearned, saveCarrierLearned,
@@ -28,6 +28,32 @@ module.exports = function registerFinanceextra(ctx) {
 
   const xlsx = require('../lib/xlsx');
   const returnsExport = require('../lib/returns-export');
+
+  /**
+   * 选一个「确实能写」的导出目录。
+   *
+   * 这台机器上 Windows 的「另存为」对话框会在 Documents 报
+   * 「你没有权限在此位置中保存文件」，虽然进程自己写 Documents 是成功的
+   * （Python 实测可写）—— 是对话框/系统保护在挡，不是文件系统。
+   * 所以不能盲信 app.getPath('downloads')，逐个探测：能建目录 + 能写探针文件才算数。
+   */
+  function pickExportDir() {
+    const cands = [];
+    try { cands.push(app.getPath('downloads')); } catch (_) { /* ignore */ }
+    try { cands.push(path.join(app.getPath('home'), 'Downloads')); } catch (_) { /* ignore */ }
+    cands.push(path.join(DATA_DIR, 'exports'));
+    for (const d of cands) {
+      if (!d) continue;
+      try {
+        fs.mkdirSync(d, { recursive: true });
+        const probe = path.join(d, '.write_probe');
+        fs.writeFileSync(probe, 'x');
+        fs.unlinkSync(probe);
+        return d;
+      } catch (_) { /* 试下一个 */ }
+    }
+    return DATA_DIR;
+  }
 
   /** 人工补录的退货单号 / 快递 / 完成标记（returns-manual.json）。 */
   function loadReturnsManual() {
@@ -404,20 +430,19 @@ ipcMain.handle('returns:export', async (_e, payload) => {
       return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
     })();
 
-    // 传了 filePath 就直接写（自动化/批量导出用），否则弹「另存为」
+    // 落点：优先 Downloads（不存在/不可写则退到 userdata/exports）
+    // 不弹系统「另存为」：这台机器的文件对话框会在 Documents 报「没有权限」，
+    // 但进程自己写 Documents 是成功的（实测），是对话框/系统保护在挡。
+    // 直接写 + 自动打开文件夹，少一个失败点。
     let target = (payload && typeof payload.filePath === 'string' && payload.filePath.trim()) || '';
     if (!target) {
-      const opts = {
-        title: '导出退货跟进',
-        defaultPath: path.join(app.getPath('downloads'), '退货跟进_' + stamp + '.xlsx'),
-        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
-      };
-      const parent = typeof getMainWindow === 'function' ? getMainWindow() : null;
-      const picked = parent
-        ? await dialog.showSaveDialog(parent, opts)
-        : await dialog.showSaveDialog(opts);
-      if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
-      target = picked.filePath;
+      const dir = pickExportDir();
+      const base = '退货跟进_' + stamp;
+      target = path.join(dir, base + '.xlsx');
+      // 同名不覆盖：加 (2) (3)…
+      for (let n = 2; fs.existsSync(target) && n < 100; n++) {
+        target = path.join(dir, base + ' (' + n + ').xlsx');
+      }
     }
 
     const buf = xlsx.build({
@@ -426,11 +451,13 @@ ipcMain.handle('returns:export', async (_e, payload) => {
       rows: table,
     });
     fs.writeFileSync(target, buf);
+    // 导完直接把文件所在文件夹弹出来，省得用户找不到（默认目录可能不是桌面/下载）
+    try { shell.showItemInFolder(target); } catch (_) { /* ignore */ }
     return { ok: true, file: target, count: rows.length };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
 });
 
-  return {  };
+  return { pickExportDir };
 };

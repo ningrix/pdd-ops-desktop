@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>花里家精油袜 3980 预存款 决策报告</title>
+<style>
+  :root{
+    --paper:#F6F3EC; --ink:#1C1C1C; --muted:#6E6A62; --line:#DCD5C6;
+    --red:#B3352B; --amber:#A9701B; --green:#2C6E52; --card:#FFFDF8;
+  }
+  *{box-sizing:border-box;-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:17px;line-height:1.8;letter-spacing:.2px;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:26px 18px 60px}
+  .tag{font-size:13px;color:var(--muted);letter-spacing:2px}
+  h1{font-size:30px;line-height:1.35;margin:10px 0 4px;font-weight:800}
+  h1 small{display:block;font-size:16px;font-weight:500;color:var(--muted);margin-top:8px;letter-spacing:1px}
+  h2{font-size:21px;margin:44px 0 14px;padding-top:16px;border-top:2px solid var(--ink);font-weight:800}
+  h2 span{color:var(--red);margin-right:8px}
+  p{margin:8px 0}
+  .verdict{
+    margin:24px 0 10px;padding:26px 22px;background:var(--red);color:#fff;border-radius:6px;
+  }
+  .verdict .big{font-size:56px;font-weight:900;line-height:1;letter-spacing:6px}
+  .verdict p{margin:12px 0 0;font-size:18px;line-height:1.9}
+  .verdict .small{font-size:15px;opacity:.92;margin-top:10px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px 14px 12px}
+  .card b{display:block;font-size:26px;line-height:1.1;font-weight:900}
+  .card em{display:block;font-style:normal;font-size:13px;color:var(--muted);margin-top:6px}
+  .card.red b{color:var(--red)}
+  table{width:100%;border-collapse:collapse;margin:12px 0 8px;background:var(--card);font-size:15px}
+  th,td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+  th{background:#EFE9DC;font-weight:700;font-size:14px;color:#3A362E}
+  td.k{width:34%;color:var(--muted);font-weight:600}
+  .note{font-size:14px;color:var(--muted);margin:6px 0 0}
+  .callout{
+    margin:14px 0;padding:14px 16px;background:#FBEEE9;border-left:5px solid var(--red);
+    font-size:16px;line-height:1.85
+  }
+  .callout.green{background:#EAF3EE;border-left-color:var(--green)}
+  .callout.amber{background:#FBF2E2;border-left-color:var(--amber)}
+  .chart{margin:14px 0 4px}
+  .row{display:grid;grid-template-columns:112px 1fr 62px;gap:8px;align-items:center;margin:7px 0;font-size:14px}
+  .row .lab{color:#3A362E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .track{background:#E8E2D4;height:18px;border-radius:3px;overflow:hidden}
+  .row .bar{height:18px;background:#8C8577;border-radius:3px}
+  .row .bar.red{background:var(--red)}
+  .row .bar.green{background:var(--green)}
+  .row .val{text-align:right;font-variant-numeric:tabular-nums;color:#3A362E}
+  .tree{margin:12px 0}
+  .q{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--ink);padding:12px 14px;margin:8px 0;font-size:15px;line-height:1.7}
+  .q b{display:block;font-size:16px;margin-bottom:4px}
+  .q .no{color:var(--red);font-weight:700}
+  .tl{margin:14px 0 0}
+  .tli{display:flex;gap:12px;padding-bottom:14px}
+  .tli .y{width:72px;flex:none;color:var(--red);font-weight:800;font-size:14px;padding-top:2px}
+  .tli .c{position:relative;padding-left:20px;border-left:2px solid var(--line);padding-bottom:2px}
+  .tli .c:before{content:"";position:absolute;left:-6px;top:7px;width:10px;height:10px;border-radius:50%;background:var(--red)}
+  .tli .c b{display:block;font-size:16px}
+  .tli .c span{display:block;font-size:14px;color:#4A463E;line-height:1.7}
+  .stack{display:flex;height:34px;border-radius:4px;overflow:hidden;margin:8px 0 10px}
+  .stack div{height:34px}
+  .legend{font-size:14px}
+  .legend .li{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .legend .sw{width:14px;height:14px;border-radius:2px;flex:none}
+  .legend .nm{flex:1}
+  .legend .vl{font-weight:700;font-variant-numeric:tabular-nums}
+  ol,ul{padding-left:22px;margin:8px 0}
+  li{margin:7px 0}
+  .risk td:first-child{width:56px;font-weight:800;text-align:center}
+  .risk .r{color:var(--red)} .risk .y{color:var(--amber)} .risk .g{color:var(--green)}
+  footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.7}
+  @media (max-width:420px){
+    .cards{grid-template-columns:1fr 1fr}
+    .card b{font-size:22px}
+    h1{font-size:26px}
+    .verdict .big{font-size:48px}
+    .row{grid-template-columns:96px 1fr 54px;font-size:13px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="tag">2026 11 22 ｜ 数据可核验 ｜ 决策报告</div>
+  <h1>花里家精油袜<small>3980 预存款 一件代发 值不值得做</small></h1>
+
+  <div class="verdict">
+    <div class="big">不交</div>
+    <p>货可以卖<br>钱不能先给</p>
+    <p class="small">3980 买不到独家 也买不到更低的进货价</p>
+    <p class="small">1688 价格与淘宝 拼多多 基本持平</p>
+    <p class="small">品牌自己开店 300 多个同行在卖</p>
+    <p class="small">你的利润来自运营 不来自这张授权</p>
+  </div>
+
+  <div class="cards">
+    <div class="card red"><b>4 人</b><em>公司规模 2025</em></div>
+    <div class="card red"><b>0 人</b><em>社保参保 2023 2024</em></div>
+    <div class="card red"><b>0 件</b><em>花里家名下专利</em></div>
+    <div class="card"><b>321 个</b><em>淘宝在售链接</em></div>
+    <div class="card"><b>4.3 到 17.1</b><em>单双零售价 元</em></div>
+    <div class="card"><b>130 到 170</b><em>全淘宝月销估算 单</em></div>
+  </div>
+
+  <h2><span>01</span>主体 一家 4 个人的公司</h2>
+  <table>
+    <tr><td class="k">公司</td><td>花里家 杭州 科技有限公司</td></tr>
+    <tr><td class="k">信用代码</td><td>91330106MA7CKQX27A</td></tr>
+    <tr><td class="k">成立</td><td>2021 11 05</td></tr>
+    <tr><td class="k">注册资本</td><td>100 万 认缴</td></tr>
+    <tr><td class="k">法人</td><td>徐杭 名下 11 家企业法人 5 家控股</td></tr>
+    <tr><td class="k">地址</td><td>杭州上城区桃花湖金座 3 幢 201 室</td></tr>
+    <tr><td class="k">员工</td><td>4 人 2025</td></tr>
+    <tr><td class="k">社保</td><td>2023 年 0 人 2024 年 0 人</td></tr>
+    <tr><td class="k">规模</td><td>微型企业</td></tr>
+  </table>
+  <p class="note">同名公司 广州花里家网络科技 2017 年 1000 万 18 人 不是同一家 别被资料混用</p>
+
+  <h2><span>02</span>专利 是别人的</h2>
+  <table>
+    <tr><th>项目</th><th>实际内容</th></tr>
+    <tr><td>宣传</td><td>花里家团队研发 EOMC 专利 ZL202010249173.2</td></tr>
+    <tr><td>公开号</td><td>CN111363522B</td></tr>
+    <tr><td>名称</td><td>多层储热保温微胶囊及其制备方法</td></tr>
+    <tr><td>权利人</td><td>迈科凯普 杭州 生物科技有限公司</td></tr>
+    <tr><td>发明人</td><td>黄寅福</td></tr>
+    <tr><td>技术方向</td><td>相变储热保暖 不是精油</td></tr>
+    <tr><td>花里家名下</td><td>专利 0 件</td></tr>
+  </table>
+  <div class="callout">
+    专利真实 技术方也真实<br>
+    但不属于花里家<br>
+    拿储热专利给精油背书 是偷换概念<br>
+    你写进详情页 举证责任在你
+  </div>
+
+  <h2 style="border-top:none;padding-top:0;margin-top:30px">时间线 为什么是现在</h2>
+  <div class="tl">
+    <div class="tli"><div class="y">2020</div><div class="c"><b>专利</b><span>迈科凯普申请 储热微胶囊 与精油无关</span></div></div>
+    <div class="tli"><div class="y">2021</div><div class="c"><b>花里家成立</b><span>第一波软文 4 项专利就为一双袜子</span></div></div>
+    <div class="tli"><div class="y">2024</div><div class="c"><b>社群起量</b><span>抖音 微店 10 双 42.9 元 单双 4.3</span></div></div>
+    <div class="tli"><div class="y">2025</div><div class="c"><b>展会背书</b><span>自述 数千人 4.99 分 无第三方证据</span></div></div>
+    <div class="tli"><div class="y">2026 03</div><div class="c"><b>第二波软文</b><span>搜狐 汽车指南集 福建 与品类无关</span></div></div>
+    <div class="tli"><div class="y">2026 11</div><div class="c"><b>收预存款</b><span>零售没爆发 转向渠道收钱</span></div></div>
+  </div>
+  <p class="note">五年 零售端没有指数增长 开始向渠道收钱 这是零售见顶的信号</p>
+
+  <h2><span>03</span>价格 4 倍差</h2>
+  <div class="chart">
+    <div class="row"><div class="lab">微店 10 双</div><div class="track"><div class="bar red" style="width:25%"></div></div><div class="val">4.3</div></div>
+    <div class="row"><div class="lab">淘宝 5 双 49</div><div class="track"><div class="bar" style="width:57%"></div></div><div class="val">9.8</div></div>
+    <div class="row"><div class="lab">淘宝 5 双 59</div><div class="track"><div class="bar" style="width:69%"></div></div><div class="val">11.8</div></div>
+    <div class="row"><div class="lab">京东 5 双 79</div><div class="track"><div class="bar" style="width:92%"></div></div><div class="val">15.8</div></div>
+    <div class="row"><div class="lab">淘宝 5 双 79.9</div><div class="track"><div class="bar" style="width:94%"></div></div><div class="val">16.0</div></div>
+    <div class="row"><div class="lab">淘宝 2 双 34.2</div><div class="track"><div class="bar red" style="width:100%"></div></div><div class="val">17.1</div></div>
+  </div>
+  <p class="note">单位 元 双 ｜ 同一品牌 4.3 到 17.1 跨度 4 倍 没有控价体系</p>
+
+  <h2><span>04</span>销量 头部是品牌自己</h2>
+  <div class="chart">
+    <div class="row"><div class="lab">品牌自营店</div><div class="track"><div class="bar red" style="width:100%"></div></div><div class="val">2000+</div></div>
+    <div class="row"><div class="lab">1 个链接</div><div class="track"><div class="bar" style="width:35%"></div></div><div class="val">700</div></div>
+    <div class="row"><div class="lab">2 个链接</div><div class="track"><div class="bar" style="width:30%"></div></div><div class="val">600</div></div>
+    <div class="row"><div class="lab">1 个链接</div><div class="track"><div class="bar" style="width:25%"></div></div><div class="val">500</div></div>
+    <div class="row"><div class="lab">5 个链接</div><div class="track"><div class="bar" style="width:20%"></div></div><div class="val">400</div></div>
+    <div class="row"><div class="lab">10 个链接</div><div class="track"><div class="bar" style="width:10%"></div></div><div class="val">100 到 300</div></div>
+    <div class="row"><div class="lab">其余 300+</div><div class="track"><div class="bar" style="width:2%"></div></div><div class="val">0 到 100</div></div>
+  </div>
+  <p class="note">淘宝 321 个链接 累计约 8000 单 折合每月 130 到 170 单 头部 1 个链接占 25%</p>
+
+  <h2><span>05</span>3980 的账</h2>
+  <table>
+    <tr><th>情形</th><th>售价</th><th>代发价</th><th>毛利</th><th>净利</th><th>回本单量</th></tr>
+    <tr><td>代发 75%</td><td>49</td><td>36.8</td><td>12.2</td><td>3 到 5</td><td>800 到 1300</td></tr>
+    <tr><td>代发 65%</td><td>49</td><td>31.9</td><td>17.1</td><td>8 到 10</td><td>400 到 500</td></tr>
+    <tr><td>代发 55%</td><td>49</td><td>27.0</td><td>22.0</td><td>13 到 15</td><td>270 到 300</td></tr>
+    <tr><td>拼多多 35</td><td>35</td><td>26.3</td><td>8.7</td><td>0 到 2</td><td>不可能</td></tr>
+  </table>
+
+  <p class="note" style="font-weight:700;color:#3A362E">49 元怎么分 按代发 75%</p>
+  <div class="stack">
+    <div style="width:75.1%;background:#8C8577"></div>
+    <div style="width:1.2%;background:#BEB7A9"></div>
+    <div style="width:10.2%;background:#A9701B"></div>
+    <div style="width:4.1%;background:#B3352B"></div>
+    <div style="width:9.4%;background:#2C6E52"></div>
+  </div>
+  <div class="legend">
+    <div class="li"><span class="sw" style="background:#8C8577"></span><span class="nm">代发价</span><span class="vl">36.8 元 75%</span></div>
+    <div class="li"><span class="sw" style="background:#BEB7A9"></span><span class="nm">平台费 支付</span><span class="vl">0.6 元 1%</span></div>
+    <div class="li"><span class="sw" style="background:#A9701B"></span><span class="nm">推广</span><span class="vl">5.0 元 10%</span></div>
+    <div class="li"><span class="sw" style="background:#B3352B"></span><span class="nm">仅退款货损</span><span class="vl">2.0 元 4%</span></div>
+    <div class="li"><span class="sw" style="background:#2C6E52"></span><span class="nm">净利</span><span class="vl">4.6 元 9%</span></div>
+  </div>
+  <div class="callout">
+    按你说的 1688 没有价格优势<br>
+    代发价大概率在零售价 7 折以上<br>
+    每单净利 3 到 5 元<br>
+    3980 要 800 到 1300 单<br>
+    按 50 单每月 16 到 26 个月<br>
+    若 3980 是授权费 不退 这笔钱基本回不来
+  </div>
+
+  <h2><span>06</span>风险清单</h2>
+  <table class="risk">
+    <tr><td class="r">红</td><td>3980 收款主体不明 个人账户 无合同相对方</td></tr>
+    <tr><td class="r">红</td><td>专利张冠李戴 已证实 虚假宣传 发布者连带</td></tr>
+    <tr><td class="r">红</td><td>授权链不明 可能是二级代理 随时断</td></tr>
+    <tr><td class="r">红</td><td>价格体系崩 品牌自营是销冠 你无优势</td></tr>
+    <tr><td class="r">红</td><td>功效无检测报告 有链接写治疗脚气 违规</td></tr>
+    <tr><td class="y">黄</td><td>4 人公司 0 社保 履约能力弱</td></tr>
+    <tr><td class="y">黄</td><td>发货地未答 时效与退货地址不明</td></tr>
+    <tr><td class="y">黄</td><td>售后责任未定 破损 色差 尺码谁承担</td></tr>
+    <tr><td class="y">黄</td><td>预存款退款条款不明 能否抵 能否退</td></tr>
+    <tr><td class="y">黄</td><td>无特许经营备案 若签加盟合同可据此退款</td></tr>
+    <tr><td class="g">绿</td><td>产品真实 材质合格 80.2% 棉</td></tr>
+    <tr><td class="g">绿</td><td>脚臭需求真实 复购成立</td></tr>
+    <tr><td class="g">绿</td><td>一件代发模式合规 1688 公开可做</td></tr>
+    <tr><td class="g">绿</td><td>技术方有 11 项专利 不是凭空捏造</td></tr>
+  </table>
+
+  <h2><span>07</span>五步决策树</h2>
+  <div class="tree">
+    <div class="q"><b>Q1 授权书</b>花里家盖章 被授权方是公司 类目含 25 类袜<br><span class="no">否 停</span></div>
+    <div class="q"><b>Q2 收款</b>3980 打对公 合同写可全额抵 可随时退<br><span class="no">否 停</span></div>
+    <div class="q"><b>Q3 价差</b>代发价不高于零售价 55%<br><span class="no">否 停</span></div>
+    <div class="q"><b>Q4 试单</b>接受先卖 20 单 用货款抵<br><span class="no">否 停</span></div>
+    <div class="q"><b>Q5 合规</b>若为授权费 有特许备案 两店满一年<br><span class="no">否 只小规模试</span></div>
+  </div>
+
+  <h2><span>08</span>七个问题</h2>
+  <ol>
+    <li>3980 打给公司还是个人 收款公司全称是什么</li>
+    <li>有没有花里家盖章授权书 被授权方写公司 类目含袜</li>
+    <li>有没有正式价格表 代发价 建议零售价 控价规则 起订量</li>
+    <li>发货地在哪 多久发 超时怎么赔</li>
+    <li>质量问题 色差 尺码 退货运费谁出 退货地址给我</li>
+    <li>3980 能否全额抵货款 能否随时退 合同写不写</li>
+    <li>能否先合作 20 单 用货款抵 不行就在 1688 拿货</li>
+  </ol>
+  <p class="note">七个问题有两个答不上来 就不是要不要做 是对方是不是正经做生意</p>
+
+  <h2><span>09</span>替代方案</h2>
+  <table>
+    <tr><th>方案</th><th>成本</th><th>优点</th><th>缺点</th></tr>
+    <tr><td>1688 代发</td><td>0 预存</td><td>零风险 随时停</td><td>无授权 价可能略高</td></tr>
+    <tr><td>诸暨白牌</td><td>50 到 100 双起订 5 到 8 元 双</td><td>可做自己品牌 可控价</td><td>要自己拍图写详情</td></tr>
+    <tr><td>先测款</td><td>几百元推广</td><td>用真实数据说话</td><td>需要 2 周</td></tr>
+    <tr><td>社群团购</td><td>0</td><td>现金流好</td><td>需要私域</td></tr>
+  </table>
+  <p class="note">推荐顺序 先测款 再 1688 代发 最后才考虑白牌</p>
+
+  <h2><span>10</span>未确认</h2>
+  <ul>
+    <li>1688 阶梯价与代发价</li>
+    <li>实际发货地与仓库</li>
+    <li>对方是品牌方 一级 还是二级</li>
+    <li>3980 的合同性质</li>
+    <li>特许经营备案</li>
+    <li>商标注册状态</li>
+    <li>抗菌检测报告编号</li>
+    <li>抖音 拼多多 实际月销</li>
+  </ul>
+
+  <div class="callout green">
+    货可以卖 钱不能先给<br>
+    先卖 20 单 用货款抵<br>
+    对方不同意 说明他要的不是销量 是你的 3980
+  </div>
+
+  <footer>
+    来源 企查查 爱企查 启信宝 Google Patents 淘宝 京东 微店 1688<br>
+    数据抓取 2026 11 22 ｜ 仅作决策参考
+  </footer>
+</div>
+</body>
+</html>
