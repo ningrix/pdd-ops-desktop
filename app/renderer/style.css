@@ -1331,3 +1331,49 @@ html[data-theme="light"] .rt-tabs .rt-tab.active { color: #1b4bc4; }
 @media (prefers-reduced-motion: reduce) {
   .btn, #pane-finance .fin-card, .rt-thumb, .modal-mask, .modal-mask .modal { transition: none !important; animation: none !important; }
 }
+
+/* UI-E1 标题栏瘦身 + 指标卡放大 + 滑块重做 */
+#pane-finance .fin-title,
+#pane-returns .fin-title { display: none; }
+#pane-finance .fin-bar,
+#pane-returns .fin-bar { padding-top: 6px; padding-bottom: 6px; }
+
+/* 四张指标卡放大：值 20 → 30px，内边距 12/14 → 18/20 */
+#pane-finance .fin-card { padding: 18px 20px; border-radius: 10px; }
+#pane-finance .fc-label { font-size: 13px; margin-bottom: 8px; }
+#pane-finance .fc-value { font-size: 30px; letter-spacing: -.2px; }
+#pane-finance .fc-sub { font-size: 12px; margin-top: 8px; }
+
+/* 分段滑块：白药丸 + 轻阴影（iOS segmented），去掉蓝底蓝边 */
+.rt-thumb {
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 2px rgba(16, 32, 64, .12), 0 0 0 1px rgba(16, 32, 64, .04);
+  border-radius: 999px;
+}
+html[data-theme="dark"] .rt-thumb {
+  background: rgba(255, 255, 255, .10);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+.rt-tabs .rt-tab.active { color: var(--text); font-weight: 600; }
+html[data-theme="light"] .rt-tabs .rt-tab.active { color: #17233a; }
+/* UI-E1 修2：
+   ① 滑块底色被更早的 html[data-theme="light"] .rt-thumb 覆盖（特异性更高），
+      这里用同特异性重写，改成白药丸
+   ② 卡片副行在窄卡里仍会折行，直接 nowrap */
+html[data-theme="light"] .rt-tabs .rt-thumb {
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 2px rgba(16, 32, 64, .12), 0 0 0 1px rgba(16, 32, 64, .04);
+}
+html[data-theme="dark"] .rt-tabs .rt-thumb {
+  background: rgba(255, 255, 255, .10);
+  border: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+#pane-finance .fin-card .fc-sub,
+#pane-finance .fc-sub {
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

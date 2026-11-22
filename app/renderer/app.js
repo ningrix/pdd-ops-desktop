@@ -1360,17 +1360,24 @@ function renderFinance(data, month) {
   cashDailyRows.sort((a, b) => b.date.localeCompare(a.date));
   const lastCashDaily = cashDailyRows[0] || null;
 
-  // ① 待到账 = 各店（货款余额 − 可提现余额）。余额都是「分」。
-  let pending = 0, pendingOk = false;
-  for (const s of (data.stores || [])) {
-    const b = s.balance;
-    if (b && b.cash != null && b.cashAvailable != null) {
-      pending += Math.max(0, (Number(b.cash) || 0) - (Number(b.cashAvailable) || 0));
-      pendingOk = true;
+  // ① 未结算金额 = 已发货待收货 + 已收货（且未退款/未取消）的订单金额合计。
+  //    口径说明：平台没有在货款账户页给「待结算」这一个数（实测页面只有
+  //    「资金限制中」），精确值只在「对账中心」按单列出。这里按订单状态估算，
+  //    卡片副行会写明「按订单估算」，不冒充平台口径。
+  let pending = 0, pendingOk = false, pendingOrders = 0;
+  for (const s of ((state.orderData && state.orderData.stores) || [])) {
+    for (const o of (s.orders || [])) {
+      const st = String(o.status || '');
+      if (/退款|取消/.test(st)) continue;
+      if (/已发货|已收货|待收货/.test(st)) {
+        pending += Number(o.orderAmount) || 0;
+        pendingOrders += 1;
+        pendingOk = true;
+      }
     }
   }
   setMoney($('#fcPending'), pendingOk ? pending : null);
-  $('#fcPendingSub').textContent = pendingOk ? '货款已入账 · 未到可提现' : '采集余额后显示';
+  $('#fcPendingSub').textContent = pendingOk ? (pendingOrders + ' 单在途 · 按订单估算') : '读取订单后显示';
 
   // ②③ 本月毛利 / 待退货金额：都从订单明细算，和商品贡献表同一套口径
   buildOrderThumbIndex(state.orderData);
