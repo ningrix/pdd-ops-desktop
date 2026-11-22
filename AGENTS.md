@@ -297,6 +297,23 @@ AftersaleOrder {
   appeal: { state: none|drafted|submitted|won|lost, at, evidenceMissing[] }
 }
 
+// 拿货成本账本（app/userdata/finance/costs.json，数组）—— 2026-11-22 改版
+CostEntry {
+  id, date,            // 'YYYY-MM-DD'，一天可以有多笔
+  amount,              // 分。按「日总额」记，不按商品/数量/单价
+  note,                // 备注，最多 200 字
+  createdAt, updatedAt
+}
+// 为什么按日总额：真实采购是一天打一笔给供应商，事先不知道拆到哪个商品，
+// 按商品录单价反而要人二次分摊。单品毛利在商品贡献表用下一条的 product-costs 算，两本账互不干扰。
+// 老数据（有 totalCost 没有 amount）读取时自动归一化成 amount，不丢账。
+
+// 商品单位拿货成本（app/userdata/finance/product-costs.json，数组）—— 已实现
+ProductCost {
+  goodsId, productName,
+  unitCost            // 分/件
+}
+
 // 对账条目（B 线，未实现）
 BillEntry {
   date, orderSn, category, amount, traceable
