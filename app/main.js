@@ -800,10 +800,13 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
   const target = mallId ? malls.get(mallId) : currentMall();
   if (!target) return { ok: false, error: '目标店铺不存在' };
   if (target.id === it.sourceMallId) {
+    const others = Array.from(malls.values()).filter((x) => x.id !== target.id).map((x) => x.name);
     return {
       ok: false, blocked: 'same-store',
-      error: '目标店铺和源店铺是同一个。',
-      advice: '同店上架会在同一个店里产生重复链接。请选择另一个店铺。',
+      error: '目标店铺是「' + target.name + '」，和这条商品的源店铺是同一个。',
+      advice: '上架目标 = 左侧当前激活的店铺。这条商品是从「' + (it.sourceMallName || target.name) + '」采集的，'
+        + '所以要在别的店里上架，得先在左侧点一下目标店铺把它切成当前店铺。'
+        + (others.length ? ('当前可选的其它店铺：' + others.join('、') + '。') : '目前没有其它店铺，先添加一个。'),
     };
   }
 
