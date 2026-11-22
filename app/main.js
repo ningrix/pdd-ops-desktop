@@ -1282,13 +1282,15 @@ async function poolPublishImpl({ id, mallId, stock, factor, dryRun }) {
 ipcMain.handle('pool:publish', (_e, args) => poolPublishImpl(args || {}));
 
 /** 用系统文件管理器打开目录（让用户直接看到成品） */
-ipcMain.handle('shell:openPath', (_e, p) => {
+ipcMain.handle('shell:openPath', async (_e, p) => {
   try {
     if (!p || !fs.existsSync(p)) return { ok: false, error: '路径不存在' };
-    shell.openPath(p);
-    return { ok: true };
+    // shell.openPath 返回 Promise<string>：空串=成功，非空=系统错误描述。
+    // 之前没 await，永远回 ok:true，把真实失败吞掉了。
+    const err = await shell.openPath(p);
+    return err ? { ok: false, error: err } : { ok: true };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: String((e && e.message) || e) };
   }
 });
 

@@ -2773,8 +2773,14 @@ $('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async (
     hint.className = 'rt-export-hint' + (isErr ? ' err' : '');
     hint.innerHTML = html;
     hint.style.display = 'flex';
-    const op = hint.querySelector('[data-open]');
-    if (op) op.addEventListener('click', () => window.pdd.openPath(op.getAttribute('data-open')).catch(() => {}));
+    // 统一走 shell.openPath（实测能成）。不用 showItemInFolder：
+    // 它内部是 explorer /select,，在这个工作区目录上会被权限挡掉。
+    hint.querySelectorAll('[data-open]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const r = await window.pdd.openPath(b.getAttribute('data-open')).catch((e) => ({ ok: false, error: String(e) }));
+        if (r && r.ok === false) say('打不开：' + esc(r.error || '未知原因') + '<br><span class="path">' + esc(b.getAttribute('data-open')) + '</span>', true);
+      });
+    });
   };
   if (!rows.length) { say('没有可导出的退货行', true); return; }
   const label = btn.textContent;
@@ -2783,8 +2789,9 @@ $('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async (
   try {
     const r = await window.pdd.returnsExport({ rows });
     if (r && r.ok) {
-      // 文件落在应用目录里，用户很难自己找；这里给出完整路径 + 一键打开
+      // 文件落在应用目录里，用户很难自己找；给出完整路径 + 两个打开入口
       say('已导出 ' + r.count + ' 行 · <span class="path">' + esc(r.file) + '</span>' +
+          '<button class="btn" data-open="' + esc(r.file) + '">打开文件</button>' +
           '<button class="btn" data-open="' + esc(r.dir || '') + '">打开文件夹</button>');
       addLog('已导出 ' + r.count + ' 行 → ' + r.file);
     } else if (r && r.canceled) {

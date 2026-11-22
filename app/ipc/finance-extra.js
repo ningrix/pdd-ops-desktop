@@ -507,8 +507,10 @@ ipcMain.handle('returns:export', async (_e, payload) => {
       rows: table,
     });
     fs.writeFileSync(target, buf);
-    // 文件落在应用目录里，用户很难自己找到；把所在文件夹弹出来
-    try { shell.showItemInFolder(target); } catch (_) { /* ignore */ }
+    // 注意：不要用 shell.showItemInFolder 自动弹窗。
+    // 它走 `explorer /select,<file>`，而工作区目录带 Low 完整性标签（NW），
+    // 普通权限的 Explorer 会弹「Windows 无法访问指定设备、路径或文件」。
+    // 改为由界面提供「打开文件 / 打开文件夹」两个按钮，走 shell.openPath（实测返回成功）。
     return { ok: true, file: target, dir, count: rows.length };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
