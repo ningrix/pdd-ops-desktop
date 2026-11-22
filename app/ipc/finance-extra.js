@@ -485,16 +485,20 @@ ipcMain.handle('returns:export', async (_e, payload) => {
     // 落点：优先 Downloads（不存在/不可写则退到 userdata/exports）
     // 不弹系统「另存为」：这台机器的文件对话框会在 Documents 报「没有权限」，
     // 但进程自己写 Documents 是成功的（实测），是对话框/系统保护在挡。
-    // 直接写 + 自动打开文件夹，少一个失败点。
+    // 直接写 + 界面给出可见的路径与「打开文件夹」，少一个失败点。
     let target = (payload && typeof payload.filePath === 'string' && payload.filePath.trim()) || '';
+    let dir = '';
     if (!target) {
-      const dir = pickExportDir();
-      const base = '退货跟进_' + stamp;
-      target = path.join(dir, base + '.xlsx');
-      // 同名不覆盖：加 (2) (3)…
-      for (let n = 2; fs.existsSync(target) && n < 100; n++) {
-        target = path.join(dir, base + ' (' + n + ').xlsx');
-      }
+      dir = pickExportDir();
+      const hm = (() => {
+        const d = new Date();
+        const p = (n) => String(n).padStart(2, '0');
+        return p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+      })();
+      // 带时分秒：同一天多次导出不会堆成 (2)(3)(4)，也不会互相覆盖
+      target = path.join(dir, '退货跟进_' + stamp + '_' + hm + '.xlsx');
+    } else {
+      dir = path.dirname(target);
     }
 
     const buf = xlsx.build({
@@ -503,9 +507,9 @@ ipcMain.handle('returns:export', async (_e, payload) => {
       rows: table,
     });
     fs.writeFileSync(target, buf);
-    // 导完直接把文件所在文件夹弹出来，省得用户找不到（默认目录可能不是桌面/下载）
+    // 文件落在应用目录里，用户很难自己找到；把所在文件夹弹出来
     try { shell.showItemInFolder(target); } catch (_) { /* ignore */ }
-    return { ok: true, file: target, count: rows.length };
+    return { ok: true, file: target, dir, count: rows.length };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }

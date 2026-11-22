@@ -2766,17 +2766,35 @@ $('#btnReturnRefresh') && $('#btnReturnRefresh').addEventListener('click', () =>
 // 导出当前筛选结果（不是只导当前渲染的 30 行）
 $('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async () => {
   const btn = $('#btnReturnExport');
+  const hint = $('#rtExportHint');
   const rows = state.returnsFiltered || [];
-  if (!rows.length) { addLog('没有可导出的退货行'); return; }
+  const say = (html, isErr) => {
+    if (!hint) return;
+    hint.className = 'rt-export-hint' + (isErr ? ' err' : '');
+    hint.innerHTML = html;
+    hint.style.display = 'flex';
+    const op = hint.querySelector('[data-open]');
+    if (op) op.addEventListener('click', () => window.pdd.openPath(op.getAttribute('data-open')).catch(() => {}));
+  };
+  if (!rows.length) { say('没有可导出的退货行', true); return; }
   const label = btn.textContent;
   btn.disabled = true;
   btn.textContent = '导出中…';
   try {
     const r = await window.pdd.returnsExport({ rows });
-    if (r && r.ok) addLog('已导出 ' + r.count + ' 行 → ' + r.file);
-    else if (r && r.canceled) addLog('已取消导出');
-    else logErr('导出失败：' + ((r && r.error) || '未知错误'));
+    if (r && r.ok) {
+      // 文件落在应用目录里，用户很难自己找；这里给出完整路径 + 一键打开
+      say('已导出 ' + r.count + ' 行 · <span class="path">' + esc(r.file) + '</span>' +
+          '<button class="btn" data-open="' + esc(r.dir || '') + '">打开文件夹</button>');
+      addLog('已导出 ' + r.count + ' 行 → ' + r.file);
+    } else if (r && r.canceled) {
+      say('已取消导出');
+    } else {
+      say('导出失败：' + esc((r && r.error) || '未知错误'), true);
+      logErr('导出失败：' + ((r && r.error) || '未知错误'));
+    }
   } catch (e) {
+    say('导出失败：' + esc((e && e.message) || e), true);
     logErr('导出失败：' + ((e && e.message) || e));
   } finally {
     btn.disabled = false;
