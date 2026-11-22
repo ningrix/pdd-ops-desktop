@@ -396,13 +396,6 @@ function askText({ title = '输入', placeholder = '', value = '' } = {}) {
 }
 
 // ------------------------------------------------------------------ 拿货成本录入
-/** 「＋ 拿货成本」按钮：滚到成本块并聚焦金额框，不再弹窗 */
-function focusCostBar() {
-  const sec = $('#finCostSec');
-  if (sec) sec.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  const amt = $('#costAddAmount');
-  if (amt) setTimeout(() => { try { amt.focus(); } catch (_) { /* ignore */ } }, 120);
-}
 
 // ------------------------------------------------------------------ 店铺
 async function refreshMalls(selectId) {
@@ -2659,7 +2652,6 @@ async function maybeAutoCollectFinance() {
 setInterval(maybeAutoCollectFinance, 30 * 60 * 1000);
 
 $('#btnFinCollect') && $('#btnFinCollect').addEventListener('click', () => collectFinance());
-$('#btnFinCost') && $('#btnFinCost').addEventListener('click', () => focusCostBar());
 
 // ---- 拿货成本：记一笔 / 改金额 / 改备注 / 删 ----
 const costAddBtn = $('#costAddBtn');
