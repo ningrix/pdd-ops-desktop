@@ -1630,9 +1630,11 @@ function classifyBatchResult(r) {
     return { state: 'failed_unknown', errorMsg: String(r.error || '状态未知') };
   }
   if (r && r.blocked) {
-    // blocked（同店/无骨架等拦截）：按 lead 决策归入 failed_unknown ——
-    // getRunnable 会跳过它，不浪费重试次数，也不会被自动重试。
-    return { state: 'failed_unknown', errorMsg: String((r.error || r.blocked) || '已被拦截').slice(0, 160) };
+    // blocked（同店 / 无骨架）都是「创建之前」就被拦下，远端没有任何资产，
+    // 按 AGENTS §5 属 failed_known（确定失败），不是 failed_unknown。
+    // 但它不会自己好，所以带 noRetry，getRunnable 不会自动重试。
+    return { state: 'failed_known', errorCode: r.blocked, noRetry: true,
+             errorMsg: String((r.error || r.blocked) || '已被拦截').slice(0, 160) };
   }
   const det = (r && r.detail) || {};
   const code = det.error_code || det.errorCode || null;
@@ -2819,6 +2821,17 @@ async function runInMall(build) {
 
   const js = build(ops);
   const wc = m.view.webContents;
+
+  // 守卫：视图可能停在「打单中心」（/print/...），那个页面不暴露 window.__mms，
+  // 所有 ops 注入都会报「页面未就绪」。先导航回商家后台首页。
+  try {
+    const cur = wc.getURL() || "";
+    if (/\/print\//.test(cur)) {
+      trace("runInMall: 视图停在打单页，先回首页 " + m.name);
+      await wc.loadURL(MMS_HOME);
+      await sleep(900);
+    }
+  } catch (_) { /* ignore */ }
 
   return withPlatform('runInMall', async () => {
     const deadline = Date.now() + 20000;

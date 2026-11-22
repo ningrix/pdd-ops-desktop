@@ -83,7 +83,7 @@ function getRunnable(maxAttempts) {
   const out = [];
   mem.items.forEach((it, i) => {
     if (it.state === 'queued') out.push({ index: i, item: it });
-    else if (it.state === 'failed_known' && (it.attempts || 0) < cap) out.push({ index: i, item: it });
+    else if (it.state === 'failed_known' && !it.noRetry && (it.attempts || 0) < cap) out.push({ index: i, item: it });
     // failed_unknown 与 done 一律跳过 —— 前者必须人工核对，后者已完成
   });
   return out;
