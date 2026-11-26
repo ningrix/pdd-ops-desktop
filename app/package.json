@@ -1,6 +1,6 @@
 {
   "name": "pdd-ops-desktop",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "拼多多自有店铺上货中台 —— 桌面版",
   "main": "main.js",
   "private": true,

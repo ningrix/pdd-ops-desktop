@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('pdd', {
   musicSave: (patch) => ipcRenderer.invoke('music:save', patch),
   musicResize: (w, h) => ipcRenderer.invoke('music:resize', { w, h }),
   musicCapsule: () => ipcRenderer.invoke('music:capsule'),
+  musicTheme: (theme) => ipcRenderer.invoke('music:theme', theme),
+  musicThemeState: () => ipcRenderer.invoke('music:themeState'),
+  onMusicTheme: (cb) => {
+    const h = (_e, theme) => cb(theme);
+    ipcRenderer.on('music:theme', h);
+    return () => ipcRenderer.removeListener('music:theme', h);
+  },
   addMall: (name) => ipcRenderer.invoke('malls:add', name),
   removeMall: (id) => ipcRenderer.invoke('malls:remove', id),
   activateMall: (id) => ipcRenderer.invoke('malls:activate', id),
@@ -99,6 +106,7 @@ contextBridge.exposeInMainWorld('pdd', {
   aftersaleTriage: (opts) => ipcRenderer.invoke('aftersale:triage', opts),
   aftersaleTriageLast: () => ipcRenderer.invoke('aftersale:triageLast'),
   financeReturns: () => ipcRenderer.invoke('finance:returns'),
+  returnsRefresh: () => ipcRenderer.invoke('returns:refresh'),
   financeReturnSet: (entry) => ipcRenderer.invoke('finance:returnSet', entry),
   financeReturnTrace: (opts) => ipcRenderer.invoke('finance:returnTrace', opts),
   financeReturnRemove: (orderSn) => ipcRenderer.invoke('finance:returnRemove', orderSn),

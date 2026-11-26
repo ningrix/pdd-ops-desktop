@@ -125,6 +125,30 @@ const money = (fen) => (fen === undefined || fen === null ? '-' : (Number(fen) /
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// ------------------------------------------------------------------ 商品 ID 复制
+const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+function idCopyBtn(id) {
+  const v = String(id == null ? '' : id).trim();
+  if (!v) return '';
+  return '<button type="button" class="id-copy" data-copy="' + esc(v) + '" title="复制商品 ID" aria-label="复制商品 ID">' + COPY_SVG + '</button>';
+}
+document.addEventListener('click', async (e) => {
+  const btn = e.target && e.target.closest ? e.target.closest('.id-copy') : null;
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const text = btn.dataset.copy || '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 900);
+    logInfo('已复制商品 ID：' + text);
+  } catch (err) {
+    logWarn('复制失败：' + ((err && err.message) || err));
+  }
+});
+
 // ------------------------------------------------------------------ 原生视图遮挡
 // 原生 WebContentsView 一旦被点过就会持有原生键盘焦点。摘掉它之后主窗口
 // 不会自动拿回焦点，表现是弹窗里 input 是 activeElement 但打不进字。
@@ -1335,30 +1359,54 @@ const _moneyPrev = new Map();
 function setMoney(el, value) {
   if (!el) return;
   const to = Number.isFinite(Number(value)) ? Number(value) : null;
-  if (to === null) { el.textContent = '—'; _moneyPrev.delete(el); return; }
+  if (to === null) { el.textContent = '—'; _moneyPrev.delete(el); el._moneyNow = null; return; }
   const key = el.id || el;
-  const from = _moneyPrev.has(key) ? _moneyPrev.get(key) : null;
+  // 从「当前屏幕上正在显示的值」续算，避免连续两次渲染时跳变
+  const from = (typeof el._moneyNow === 'number')
+    ? el._moneyNow
+    : (_moneyPrev.has(key) ? _moneyPrev.get(key) : 0);
   _moneyPrev.set(key, to);
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (from === null || reduce || from === to) { el.textContent = fmtYuan(to); return; }
+  if (reduce) { el.textContent = fmtYuan(to); el._moneyNow = to; return; }
+  if (from === to) {
+    // 同一目标值被重复渲染时，别打断正在跑的动画
+    if (!el._moneyRaf) { el.textContent = fmtYuan(to); el._moneyNow = to; }
+    return;
+  }
   if (el._moneyRaf) cancelAnimationFrame(el._moneyRaf);
-  const t0 = performance.now();
-  const DUR = 500;   // 原型：500ms ease-std
+  if (el._moneyTimer) clearTimeout(el._moneyTimer);
+  const DUR = 520;
+  // 关键：t0 在「第一帧真正跑起来」时才记。
+  // 月份切换会同步重渲染整页，主线程被占满时 rAF 可能在 500ms 后才轮到，
+  // 若按调用时刻计时会立刻 k=1、动画直接跳过。
+  let started = false;
+  let t0 = 0;
   const step = (now) => {
+    if (!started) { started = true; t0 = now; }
     const k = Math.min(1, (now - t0) / DUR);
-    const eased = k * k * (3 - 2 * k);   // smoothstep，近似 cubic-bezier(.4,0,.2,1)
-    el.textContent = fmtYuan(Math.round(from + (to - from) * eased));
-    if (k < 1) el._moneyRaf = requestAnimationFrame(step);
-    else { el._moneyRaf = null; el.textContent = fmtYuan(to); }
+    const eased = k * k * (3 - 2 * k);   // smoothstep
+    const cur = Math.round(from + (to - from) * eased);
+    el._moneyNow = cur;
+    el.textContent = fmtYuan(cur);
+    if (k < 1) {
+      el._moneyRaf = requestAnimationFrame(step);
+    } else {
+      el._moneyRaf = null;
+      el._moneyNow = to;
+      el.textContent = fmtYuan(to);
+      if (el._moneyTimer) { clearTimeout(el._moneyTimer); el._moneyTimer = null; }
+    }
   };
   el._moneyRaf = requestAnimationFrame(step);
-  // 兜底：窗口在后台时 rAF 可能被节流到不触发，必须保证终值一定落下
-  if (el._moneyTimer) clearTimeout(el._moneyTimer);
+  // 兜底只处理「一帧都没跑起来」的情况（窗口被完全节流），不能抢在动画前落终值
   el._moneyTimer = setTimeout(() => {
     el._moneyTimer = null;
-    if (el._moneyRaf) { cancelAnimationFrame(el._moneyRaf); el._moneyRaf = null; }
-    el.textContent = fmtYuan(to);
-  }, DUR + 80);
+    if (!started) {
+      if (el._moneyRaf) { cancelAnimationFrame(el._moneyRaf); el._moneyRaf = null; }
+      el._moneyNow = to;
+      el.textContent = fmtYuan(to);
+    }
+  }, DUR + 1200);
 }
 
 /**
@@ -1964,6 +2012,26 @@ function initMetricCards() {
 }
 initMetricCards();
 
+// 四张指标卡可以整体收起：把屏幕让给下面的表格。状态记在 localStorage。
+const FIN_HIDE_KEY = 'pdd.hideFinCards';
+let finCardsHidden = false;
+try { finCardsHidden = localStorage.getItem(FIN_HIDE_KEY) === '1'; } catch (_) { /* ignore */ }
+function applyFinCardsHidden(hidden) {
+  const cards = document.querySelector('#pane-finance .fin-cards');
+  if (cards) cards.classList.toggle('collapsed', hidden);
+  const btn = $('#btnFinHide');
+  if (btn) {
+    btn.textContent = hidden ? '显示指标' : '隐藏指标';
+    btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+  }
+}
+applyFinCardsHidden(finCardsHidden);
+$('#btnFinHide') && $('#btnFinHide').addEventListener('click', () => {
+  finCardsHidden = !finCardsHidden;
+  applyFinCardsHidden(finCardsHidden);
+  try { localStorage.setItem(FIN_HIDE_KEY, finCardsHidden ? '1' : '0'); } catch (_) { /* ignore */ }
+});
+
 
 function financeStamp(ts) {
   if (!ts) return '—';
@@ -2437,7 +2505,7 @@ function renderOrderContribution(data) {
       '<td><div class="order-product">' + thumbHtml +
         '<div class="order-main">' +
           '<span class="order-name" title="' + esc(r.name) + '">' + esc(r.name) + '</span>' +
-          (r.goodsId ? '<span class="order-id">' + esc(r.goodsId) + '</span>' : '') +
+          (r.goodsId ? '<span class="order-id">' + esc(r.goodsId) + idCopyBtn(r.goodsId) + '</span>' : '') +
         '</div></div></td>' +
       '<td class="fin-store" title="' + esc(r.mallName) + '">' + esc(r.mallName) + '</td>' +
       '<td class="r">' + r.qty + '<span class="fin-sub-in">/' + r.totalQty + '</span></td>' +
@@ -2638,6 +2706,37 @@ async function loadReturns() {
     const r = await window.pdd.financeReturns();
     if (r && r.ok) { state.returns = r; renderReturns(r); }
   } catch (_) { /* ignore */ }
+}
+
+/** 售后退货页的「刷新」：真正重拉售后单（不是重读本地快照），带按钮动画 */
+async function refreshReturns() {
+  if (returnsBusy) return;
+  const btn = $('#btnReturnRefresh');
+  if (!btn || !window.pdd.returnsRefresh) { await loadReturns(); return; }
+  returnsBusy = true;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '刷新中';
+  try {
+    const r = await window.pdd.returnsRefresh();
+    if (!r || !r.ok) {
+      logWarn((r && r.error) || '售后刷新失败');
+      await loadReturns();
+      return;
+    }
+    await loadReturns();
+    const n = (r.stores || []).reduce((a, s) => a + (Number(s.count) || 0), 0);
+    logOk('售后已刷新：' + n + ' 单');
+    (r.stores || []).filter((s) => s.error).forEach((s) => logWarn(s.mallName + '：' + s.error));
+  } catch (e) {
+    logWarn('售后刷新异常：' + ((e && e.message) || e));
+  } finally {
+    returnsBusy = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = old;
+  }
 }
 
 // ------------------------------------------------------------------ 申诉文案库
@@ -3265,7 +3364,7 @@ $('#finReturnBody') && $('#finReturnBody').addEventListener('click', async (e) =
 });
 
 $('#btnFinOrders') && $('#btnFinOrders').addEventListener('click', () => collectOrderContribution());
-$('#btnReturnRefresh') && $('#btnReturnRefresh').addEventListener('click', () => loadReturns());
+$('#btnReturnRefresh') && $('#btnReturnRefresh').addEventListener('click', () => refreshReturns());
   // 顶栏音符：开关悬浮胶囊播放器
   $('#btnMusic') && $('#btnMusic').addEventListener('click', () => {
     if (window.pdd.musicCapsule) window.pdd.musicCapsule().catch(() => {});
@@ -3456,7 +3555,7 @@ function renderRiskTable(r) {
         : '<span class="risk-thumb"></span>';
       tr.innerHTML =
         '<td>' + img + '</td>' +
-        '<td class="risk-id">' + esc(g.goodsId || '—') + '</td>' +
+        '<td class="risk-id">' + esc(g.goodsId || '—') + idCopyBtn(g.goodsId) + '</td>' +
         '<td><div class="risk-name" title="' + esc(g.goodsName) + '">' + esc(g.goodsName || '—') + '</div></td>' +
         '<td class="r"><span class="risk-badge">初步判定为假货</span></td>';
       body.appendChild(tr);
@@ -3532,6 +3631,8 @@ function applyTheme(theme) {
   // 设置页里的「当前主题」也要跟着变（顶栏切换时不会走 initSettings 的 sync）
   const now = $('#setThemeNow');
   if (now) now.textContent = theme === 'light' ? '浅色' : '深色';
+  // 独立的音乐小窗也要跟着换色
+  try { if (window.pdd.musicTheme) window.pdd.musicTheme(theme); } catch (_) { /* ignore */ }
 }
 function switchTheme(theme, originEl) {
   if (theme === currentTheme()) return;
@@ -3670,6 +3771,8 @@ $('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction
 (async () => {
   initCollector();
   await initSettings();
+  // 启动时把当前主题告诉主进程，音乐窗打开/换色才有依据
+  try { if (window.pdd.musicTheme) window.pdd.musicTheme(currentTheme()); } catch (_) { /* ignore */ }
   logInfo('界面已就绪');
   await refreshMalls();
   await refreshPool();

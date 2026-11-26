@@ -2191,3 +2191,86 @@ html[data-theme="light"] .log-seg .drawer-tab.active {
   line-height: 1.65;
 }
 .log .ln .t { color: var(--muted); opacity: .7; }
+
+/* ============================================================================
+   V5 · 指标卡收起 + 设置卡片入场（2026-11-27）
+   ========================================================================== */
+#pane-finance .fin-cards {
+  max-height: 220px;
+  transition: opacity 200ms var(--ease-std), transform 200ms var(--ease-std),
+              max-height 260ms var(--ease-decel), margin-bottom 260ms var(--ease-decel);
+}
+#pane-finance .fin-cards.collapsed {
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+@keyframes set-card-in {
+  from { opacity: 0; transform: translateY(10px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+#pane-settings.active .set-card {
+  animation: set-card-in 260ms var(--ease-decel) backwards;
+}
+#pane-settings.active .set-card:nth-child(2) { animation-delay: 35ms; }
+#pane-settings.active .set-card:nth-child(3) { animation-delay: 70ms; }
+#pane-settings.active .set-card:nth-child(4) { animation-delay: 105ms; }
+#pane-settings.active .set-card:nth-child(5) { animation-delay: 140ms; }
+@media (prefers-reduced-motion: reduce) {
+  #pane-settings.active .set-card { animation: none; }
+  #pane-finance .fin-cards { transition: none; }
+}
+
+/* 商品 ID 旁的小复制按钮 */
+.id-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: -3px;
+  opacity: .55;
+  transition: opacity 120ms var(--ease-std), background 120ms var(--ease-std), color 120ms var(--ease-std);
+}
+.id-copy:hover { opacity: 1; background: var(--hover); color: var(--text); }
+.id-copy.copied { opacity: 1; color: var(--ok); }
+.id-copy svg { width: 11px; height: 11px; display: block; }
+
+/* 统一圆角：所有有底色的容器都收圆，不再留直角 */
+.table-wrap { border-radius: 18px; }
+.table-wrap table { border-radius: 18px; overflow: hidden; }
+.batch-bar { border-radius: 14px; }
+.batch-stat { border-radius: 12px; }
+.batch-panel { border-top: none; border-radius: 16px; overflow: hidden; }
+.bp-head { border-radius: 16px 16px 0 0; }
+.cc-wrap { border-radius: 18px; }
+.cost-inline { border-radius: 8px; }
+.win-controls button { border-radius: 8px; }
+
+/* 按钮加载态：转圈 + 文案 */
+.btn.loading { pointer-events: none; opacity: .8; }
+.btn.loading::before {
+  content: '';
+  display: inline-block;
+  width: 12px; height: 12px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.loading::before { animation: none; }
+}

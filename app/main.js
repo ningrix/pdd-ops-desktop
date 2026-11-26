@@ -797,6 +797,13 @@ function createWindow() {
     trace('window shown');
   });
 
+  // 音乐胶囊固定在主窗口右下角：主窗移动/缩放/最大化时跟着走
+  mainWindow.on('move', scheduleCapsuleAnchor);
+  mainWindow.on('resize', scheduleCapsuleAnchor);
+  mainWindow.on('maximize', scheduleCapsuleAnchor);
+  mainWindow.on('unmaximize', scheduleCapsuleAnchor);
+  mainWindow.on('restore', scheduleCapsuleAnchor);
+
   mainWindow.on('closed', () => {
     // 胶囊是独立窗口：不关掉的话主窗没了进程还活着，只剩一个看不见的音乐窗。
     if (capsuleWin && !capsuleWin.isDestroyed()) {
@@ -2206,6 +2213,82 @@ ipcMain.handle('finance:collect', async (_e, opts) => {
 /** 读取上次保存的资金快照（应用重启后仍可展示） */
 ipcMain.handle('finance:last', () => readFinanceSnapshot());
 
+/**
+ * 轮询等订单页的 __mms.fetch.sync 就绪，就绪即返回，最多等 timeoutMs。
+ * 以前是固定 sleep(8000)，快的时候白等 6-7 秒/店；慢的时候 8 秒又不够。
+ */
+async function waitForOrderApi(wc, timeoutMs) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    let ok = false;
+    try {
+      ok = await Promise.race([
+        wc.executeJavaScript('!!(window.__mms && window.__mms.fetch && typeof window.__mms.fetch.sync === "function")', true),
+        sleep(1000).then(() => false),
+      ]);
+    } catch (_) { /* ignore */ }
+    if (ok) return Date.now() - t0;
+    await sleep(250);
+  }
+  return -1;
+}
+
+/**
+ * 售后单全量拉取（含已完成 status=5），按 id 去重。
+ * 关键：不带 quickSearchType 的 queryList 返回**全部**售后；其余 2/4/7/8/18 是
+ * 「待处理」筛选，补跑只为兜住极端情况。每个 qs 独立计数，不能拿累计数判终止。
+ */
+async function fetchAfterSalesForStore(wc) {
+  const out = [];
+  const seenAs = new Set();
+  for (const qs of [null, 2, 4, 7, 8, 18]) {
+    let qsCount = 0;
+    for (let p = 1; p <= 5; p++) {
+      const body = { pageSize: 50, pageNumber: p, orderByCreatedAtDesc: true };
+      if (qs != null) body.quickSearchType = qs;
+      let ar = null;
+      try {
+        ar = await Promise.race([
+          wc.executeJavaScript(ordersOps.readAfterSales(body), true),
+          sleep(20000).then(() => null),
+        ]);
+      } catch (_) { ar = null; }
+      if (typeof ar === 'string') { try { ar = JSON.parse(ar); } catch (_) { ar = null; } }
+      if (!ar || ar.__blocked || ar.__error || !Array.isArray(ar.list)) break;
+      for (const a of ar.list) {
+        const key = String(a.id || a.orderSn + '|' + a.afterSalesType);
+        if (seenAs.has(key)) continue;
+        seenAs.add(key);
+        out.push({
+          id: String(a.id || ''),
+          orderSn: a.orderSn || '',
+          type: a.afterSalesType,
+          typeName: a.afterSalesTypeName || '',
+          status: a.afterSalesStatus,
+          title: a.afterSalesTitle || '',
+          refundAmount: Number(a.refundAmount) || 0,
+          goodsName: a.goodsName || '',
+          goodsNumber: Number(a.goodsNumber) || 0,
+          goodsSpec: a.goodsSpec || '',
+          reason: a.afterSalesReasonDesc || '',
+          // 退货单号：queryList 实测字段 reverseTrackingNumber
+          returnSn: a.reverseTrackingNumber || '',
+          // 退货快递只有数字 id（实测 44=顺丰快递），名称映射见 CARRIER_BY_ID
+          carrierId: a.reverseShippingId == null ? null : Number(a.reverseShippingId),
+          outSn: a.orderTrackingNumber || '',
+          createdAt: Number(a.createdAt) || null,
+          // 售后接口自带商品图，退货列表直接复用，不额外下载
+          thumbUrl: a.thumbUrl || '',
+        });
+        qsCount += 1;
+      }
+      if (!ar.list.length || (ar.total != null && qsCount >= Number(ar.total))) break;
+      await sleep(300);
+    }
+  }
+  return out;
+}
+
 /** 读取订单列表并归一化为商品贡献原始数据（只读，不改远端） */
 ipcMain.handle('finance:orders', async (_e, opts) => {
   const o = Object.assign({ days: 90, maxPages: 20, mallId: null }, opts || {});
@@ -2227,7 +2310,9 @@ ipcMain.handle('finance:orders', async (_e, opts) => {
       } catch (_) { /* ignore */ }
       const wc = temp.webContents;
       try { await wc.loadURL('https://mms.pinduoduo.com/orders/list'); } catch (_) { /* ignore */ }
-      await sleep(8000);
+      const readyMs = await waitForOrderApi(wc, 9000);
+      if (readyMs >= 0) trace('[' + mall.name + '] order api ready in ' + readyMs + 'ms');
+      else log('warn', '[' + mall.name + '] 订单接口 9 秒内未就绪，继续尝试');
 
       // 订单分页：终止/去重/截断判定在 lib/finance-core.js（可离线断言）。
       // 这里只负责取一页原始响应（Promise.race 30 秒超时），lib 做状态机。
@@ -2266,60 +2351,8 @@ ipcMain.handle('finance:orders', async (_e, opts) => {
       item.truncated = !!ord.truncated;
       if (ord.truncatedNote) item.truncatedNote = ord.truncatedNote;
       // 售后单（仅待处理类可经接口取到；已完成退款看订单状态里的「退款成功」）
-      item.afterSales = [];
-      const seenAs = new Set();
-      // 关键：不带 quickSearchType 的 queryList 会返回**全部**售后（含已完成 status=5）。
-      // 之前只查 2/4/7/8/18，那些是「待处理」筛选，所以已完成单全被漏掉，
-      // 导致已退款订单拿不到 afterSalesId、也就查不了退货物流。
-      // 现在先跑一次全量，再补跑各 quickSearchType 兜住极端情况（按 id 去重）。
-      for (const qs of [null, 2, 4, 7, 8, 18]) {
-        // 每个 quickSearchType 是独立查询，分页终止必须用「本查询已采数」判断。
-        // 之前拿跨查询累计的 item.afterSales.length 去比单个查询的 total，
-        // 第一个 qs 采满后其余 qs 会立刻被判「已够」而漏单。
-        let qsCount = 0;
-        for (let p = 1; p <= 5; p++) {
-          const body = { pageSize: 50, pageNumber: p, orderByCreatedAtDesc: true };
-          if (qs != null) body.quickSearchType = qs;
-          let ar = null;
-          try {
-            ar = await Promise.race([
-              wc.executeJavaScript(ordersOps.readAfterSales(body), true),
-              sleep(20000).then(() => null),
-            ]);
-          } catch (_) { ar = null; }
-          if (typeof ar === 'string') { try { ar = JSON.parse(ar); } catch (_) { ar = null; } }
-          if (!ar || ar.__blocked || ar.__error || !Array.isArray(ar.list)) break;
-          for (const a of ar.list) {
-            const key = String(a.id || a.orderSn + '|' + a.afterSalesType);
-            if (seenAs.has(key)) continue;
-            seenAs.add(key);
-            item.afterSales.push({
-              id: String(a.id || ''),
-              orderSn: a.orderSn || '',
-              type: a.afterSalesType,
-              typeName: a.afterSalesTypeName || '',
-              status: a.afterSalesStatus,
-              title: a.afterSalesTitle || '',
-              refundAmount: Number(a.refundAmount) || 0,
-              goodsName: a.goodsName || '',
-              goodsNumber: Number(a.goodsNumber) || 0,
-              goodsSpec: a.goodsSpec || '',
-              reason: a.afterSalesReasonDesc || '',
-              // 退货单号：queryList 实测字段 reverseTrackingNumber
-              returnSn: a.reverseTrackingNumber || '',
-              // 退货快递只有数字 id（实测 44=顺丰快递），名称映射见 CARRIER_BY_ID
-              carrierId: a.reverseShippingId == null ? null : Number(a.reverseShippingId),
-              outSn: a.orderTrackingNumber || '',
-              createdAt: Number(a.createdAt) || null,
-              // 售后接口自带商品图，退货列表直接复用，不额外下载
-              thumbUrl: a.thumbUrl || '',
-            });
-            qsCount += 1;
-          }
-          if (!ar.list.length || (ar.total != null && qsCount >= Number(ar.total))) break;
-          await sleep(300);
-        }
-      }
+      // 全量 + 各 quickSearchType 去重逻辑收在 fetchAfterSalesForStore，售后页刷新复用同一套。
+      item.afterSales = await fetchAfterSalesForStore(wc);
     } catch (e) {
       item.error = String((e && e.message) || e);
     } finally {
@@ -2336,6 +2369,47 @@ ipcMain.handle('finance:orders', async (_e, opts) => {
 
 /** 读取上次商品贡献订单快照 */
 ipcMain.handle('finance:ordersLast', () => readFinanceOrders());
+
+/**
+ * 售后退货页的「刷新」：只重拉售后单，不重拉 90 天订单。
+ * 以前刷新按钮只是重读本地快照，所以点了没反应；真正更新要等「商品贡献」跑完。
+ * 这里复用已有的订单快照（订单状态）+ 新的售后列表，几秒就能完成。
+ */
+ipcMain.handle('returns:refresh', async () => {
+  const snap = readFinanceOrders();
+  if (!snap || !snap.ok || !snap.data) {
+    return { ok: false, error: '还没有订单快照，请先在资金复盘点「商品贡献」' };
+  }
+  const data = snap.data;
+  const byId = new Map((data.stores || []).map((s) => [String(s.mallId), s]));
+  const list = Array.from(malls.values()).filter((m) => byId.has(String(m.id)));
+  if (!list.length) return { ok: false, error: '快照里的店铺都已移除' };
+
+  const results = [];
+  for (const mall of list) {
+    let temp = null;
+    try {
+      temp = createHiddenMallWindow(mall);
+      try { temp.setPosition(-10000, -10000); temp.showInactive(); } catch (_) { /* ignore */ }
+      const wc = temp.webContents;
+      try { await wc.loadURL('https://mms.pinduoduo.com/orders/list'); } catch (_) { /* ignore */ }
+      await waitForOrderApi(wc, 9000);
+      const afterSales = await fetchAfterSalesForStore(wc);
+      const store = byId.get(String(mall.id));
+      store.afterSales = afterSales;
+      results.push({ mallId: mall.id, mallName: mall.name, count: afterSales.length });
+    } catch (e) {
+      results.push({ mallId: mall.id, mallName: mall.name, error: String((e && e.message) || e) });
+    } finally {
+      if (temp) { try { if (!temp.isDestroyed()) temp.destroy(); } catch (_) { /* ignore */ } }
+    }
+    await sleep(200);
+  }
+  data.at = Date.now();
+  data.afterSalesRefreshedAt = data.at;
+  saveFinanceOrders(data);
+  return { ok: true, at: data.at, stores: results };
+});
 
 function loadReturnTraces() {
   try {
@@ -3071,30 +3145,9 @@ async function runInMall(build) {
 // 用独立无边框置顶小窗，而不是在 #pane-print 里做 HTML 浮层 ——
 // 打单页是原生 WebContentsView，任何 HTML 浮层都会被它盖住。
 let capsuleWin = null;
-const CAPSULE_POS_FILE = path.join(DATA_DIR, 'music-window.json');
+let appTheme = 'dark';
 const CAPSULE_W = 400;
 const CAPSULE_H = 76;
-let capsuleSaveTimer = 0;
-
-function readCapsulePos() {
-  try {
-    const o = JSON.parse(fs.readFileSync(CAPSULE_POS_FILE, 'utf8'));
-    if (o && Number.isFinite(o.x) && Number.isFinite(o.y)) return o;
-  } catch (_) { /* 第一次打开 */ }
-  return null;
-}
-
-/** 位置只在拖动/缩放停下后写盘，避免每帧 IO */
-function saveCapsulePos() {
-  if (!capsuleWin || capsuleWin.isDestroyed()) return;
-  clearTimeout(capsuleSaveTimer);
-  capsuleSaveTimer = setTimeout(() => {
-    try {
-      const b = capsuleWin.getBounds();
-      writeJsonAtomic(CAPSULE_POS_FILE, { x: b.x, y: b.y });
-    } catch (_) { /* ignore */ }
-  }, 400);
-}
 
 /** 夹到当前显示器工作区内，防止换分辨率后胶囊跑到屏幕外 */
 function clampToWorkArea(x, y, w, h) {
@@ -3109,41 +3162,65 @@ function clampToWorkArea(x, y, w, h) {
   };
 }
 
+/** 右下角固定锚点（跟随主窗口移动/缩放） */
+function capsuleAnchor(w, h) {
+  const b = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow.getBounds()
+    : { x: 100, y: 100, width: 1280, height: 860 };
+  const W = Math.max(300, Math.min(620, Math.round(w || CAPSULE_W)));
+  const H = Math.max(72, Math.min(1000, Math.round(h || CAPSULE_H)));
+  const at = clampToWorkArea(b.x + b.width - W - 20, b.y + b.height - H - 20, W, H);
+  return { x: at.x, y: at.y, width: W, height: H };
+}
+
+function positionCapsule() {
+  if (!capsuleWin || capsuleWin.isDestroyed()) return;
+  try {
+    const b = capsuleWin.getBounds();
+    capsuleWin.setBounds(capsuleAnchor(b.width, b.height));
+  } catch (_) { /* ignore */ }
+}
+
+let capsuleMoveTimer = 0;
+function scheduleCapsuleAnchor() {
+  clearTimeout(capsuleMoveTimer);
+  capsuleMoveTimer = setTimeout(positionCapsule, 60);
+}
+
 function createCapsuleWindow() {
-  if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.show(); capsuleWin.focus(); return { ok: true, visible: true }; }
-  const b = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 200, y: 200, width: 1280, height: 860 };
-  const pos = readCapsulePos();
-  const init = pos
-    ? { x: pos.x, y: pos.y }
-    : { x: b.x + b.width - CAPSULE_W - 24, y: b.y + b.height - CAPSULE_H - 24 };
-  const at = clampToWorkArea(init.x, init.y, CAPSULE_W, CAPSULE_H);
+  if (capsuleWin && !capsuleWin.isDestroyed()) {
+    try { capsuleWin.show(); } catch (_) { /* ignore */ }
+    positionCapsule();
+    return { ok: true, visible: true };
+  }
+  const at = capsuleAnchor(CAPSULE_W, CAPSULE_H);
   capsuleWin = new BrowserWindow({
-    width: CAPSULE_W, height: CAPSULE_H,
+    width: at.width, height: at.height,
     x: at.x, y: at.y,
-    frame: false, transparent: true, resizable: false, movable: true,
-    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    frame: false, transparent: true, resizable: false, movable: false,
+    alwaysOnTop: false, skipTaskbar: true, hasShadow: false, show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: false,
     },
   });
-  capsuleWin.setAlwaysOnTop(true, 'screen-saver');
   capsuleWin.loadFile(path.join(__dirname, 'renderer', 'music.html'));
-  capsuleWin.once('ready-to-show', () => { try { capsuleWin.showInactive(); } catch (_) { /* ignore */ } });
-  capsuleWin.on('moved', saveCapsulePos);
-  capsuleWin.on('resized', saveCapsulePos);
-  capsuleWin.on('closed', () => { clearTimeout(capsuleSaveTimer); capsuleWin = null; });
+  capsuleWin.once('ready-to-show', () => {
+    try { capsuleWin.showInactive(); } catch (_) { /* ignore */ }
+    try { capsuleWin.webContents.send('music:theme', appTheme); } catch (_) { /* ignore */ }
+    positionCapsule();
+  });
+  capsuleWin.on('closed', () => { clearTimeout(capsuleMoveTimer); capsuleWin = null; });
   return { ok: true, visible: true };
 }
 
-/** 展开/收起面板：只改窗口尺寸，底边保持不动（视觉上是从胶囊向上长出来） */
+/** 展开/收起：右边和下边固定，向上长 */
 function resizeCapsule(w, h) {
   if (!capsuleWin || capsuleWin.isDestroyed()) return { ok: false };
   const W = Math.max(300, Math.min(620, Math.round(w || CAPSULE_W)));
   const H = Math.max(72, Math.min(1000, Math.round(h || CAPSULE_H)));
-  const b = capsuleWin.getBounds();
-  const at = clampToWorkArea(b.x + (b.width - W) / 2, b.y + b.height - H, W, H);
-  capsuleWin.setBounds({ x: at.x, y: at.y, width: W, height: H });
+  capsuleWin.setBounds(capsuleAnchor(W, H));
   return { ok: true, width: W, height: H };
 }
 
@@ -3151,6 +3228,16 @@ function toggleCapsuleWindow() {
   if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.close(); capsuleWin = null; return { ok: true, visible: false }; }
   return createCapsuleWindow();
 }
+
+// 音乐窗跟随主窗口右下角；主题也要同步（浅色/深色）
+ipcMain.handle('music:theme', (_e, theme) => {
+  appTheme = theme === 'light' ? 'light' : 'dark';
+  if (capsuleWin && !capsuleWin.isDestroyed()) {
+    try { capsuleWin.webContents.send('music:theme', appTheme); } catch (_) { /* ignore */ }
+  }
+  return { ok: true, theme: appTheme };
+});
+ipcMain.handle('music:themeState', () => ({ theme: appTheme }));
 
 trace('registering whenReady');
 // ---------------------------------------------------------------- IPC 注册
