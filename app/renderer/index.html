@@ -109,11 +109,16 @@
   </aside>
 
   <div id="logPanel" class="log-panel">
+    <span class="log-grip" aria-hidden="true"></span>
     <div class="log-panel-head">
-      <button class="drawer-tab active" data-drawer="log">日志</button>
-      <button class="drawer-tab" data-drawer="result">原始结果</button>
+      <div class="log-seg">
+        <button class="drawer-tab active" data-drawer="log">日志</button>
+        <button class="drawer-tab" data-drawer="result">原始结果</button>
+      </div>
       <span id="logCount" class="log-count"></span>
-      <button id="btnLogClose" class="btn mini ghost">收起</button>
+      <button id="btnLogClose" class="log-close" title="收起日志" aria-label="收起日志">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
     </div>
     <div id="drawerLog" class="drawer-body">
       <div id="log" class="log"></div>

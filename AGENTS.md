@@ -3,7 +3,7 @@
 > 本工作区的工程约定。**任何 agent 在动代码前必须读完。**
 > 与用户当次明示冲突时，以用户为准，事后回写本文档。
 >
-> 最后更新：2026-11-26 ｜ 对应应用版本：v0.5.4（顶栏一体化 + 主题圆展开 + V2 玻璃主题）
+> 最后更新：2026-11-26 ｜ 对应应用版本：v0.5.5（登录二维码清晰度 + 切页动画 + 日志抽屉）
 
 **关于定位方式**：本文档一律用**函数名 / 选择器**指位置，不写行号。`main.js` 曾在六小时内从 635 行涨到 1096 行，行号第二天就会失效。
 
@@ -32,6 +32,7 @@
 2. 多文件时每个文件整体包 IIFE，只向 `window.UI` 挂一个对象。经典 script 共享同一全局词法环境，**重名 `const` 是解析期 SyntaxError，整个文件不执行**。末尾断言命名空间齐全。
 3. **`#pane-browser` 的任何祖先元素不得使用** `transform` / `filter` / `perspective` / `will-change` / `contain:paint` / `backdrop-filter`。这些会建立新的 containing block，`getBoundingClientRect()` 返回值随之变化，`setBounds()` 会把原生浏览器视图贴到错误位置。
    **允许用真 `backdrop-filter` 的位置只有** `.topbar` / `.side` / `.modal-mask` / `.log-panel` —— 它们是 `#pane-browser` 的兄弟节点。判断方法：从 `#pane-browser` 往上到 body 是 `.panes → .main → .layout → body`，这四层一律禁止；V2 玻璃主题的模糊也只加在上述四个兄弟节点上。
+   **切页动画也只给非原生 pane**：`.pane.active` 的 `pane-in`（translateY）必须在 `#pane-browser` / `#pane-print` / `#pane-collect` 上 `animation: none`，否则动画期间 `getBoundingClientRect()` 漂移，`setBounds()` 贴错。
    另：`main.js` 顶部已 `disableHardwareAcceleration()`，毛玻璃在软件渲染下又慢又脏。
 4. **原生视图可见性唯一由 `syncBounds()` 决定。** 目标是引入 `state.suspendDepth` 计数器，`>0` 时强制隐藏。当前实现靠 `withViewHidden()` 布尔挂起，`resize` 时会被绕过（见 §8）。
 5. **任何浮层不得覆盖 `#pane-browser` 的矩形**（toast / 下拉 / tooltip 都会被原生层遮住）。全局提示放顶栏。
@@ -239,6 +240,7 @@
 | 本机 GPU 可用 | 实测（2026-11-26） | 源码态开 GPU 后应用正常启动。渲染层 `WEBGL_debug_renderer_info` 返回 `ANGLE (AMD, AMD Radeon 780M Graphics (0x00001900) Direct3D11 vs_5_0 ps_5_0, D3D11)`；`#metricBig` 展开时连续采样 `transform` 得到 `matrix(0.372…) → matrix(0.697…) → none`，证明走的是合成层过渡。**不要再按「开发关 GPU」的旧结论改回去**（见 §13） |
 | 内置音乐曲目必须可离线生成 | 实测（2026-11-26） | `app/lib/tonetrack.js` 用 22050Hz / 单声道 / PCM16 合成两首 72 秒曲目，单首生成 0.4–1.0s、3.1MB，峰值 0.66/0.70、无削波。**不要改成下载 CC0 音频打包进仓库**：会引入第三方授权核对与离线缺文件问题 |
 | 网易云下载的是 `.ncm`（DRM 容器） | 公开资料（2026-11-26 检索） | 魔数 `CTENFDAM`，音频数据用 RC4 变体加密、密钥/元数据用 AES-128-ECB + XOR。**只有网易云客户端能解；本项目不做解密**（属破解 DRM），播放器遇到 `.ncm` 只计数并提示换标准格式。抖音收藏也没有可用的官方导出（**未确认**） |
+| 登录二维码必须整数缩放 | 实测（2026-11-26） | 店铺视图固定 0.7 时，登录页二维码（120×120 CSS，canvas 背面 226×226）被缩到约 159 设备像素并做双线性重采样，模块边缘发灰，手机扫不出。登录页改 `LOGIN_ZOOM = 1` 后，显示 227 设备像素 ≈ 背面 226，1:1 不重采样；再注入 `canvas{image-rendering:crisp-edges}` 保边。试过 2.0：二维码更大，但登录页设计宽 1128 被压进 608 视口，横向滚动，弃用。账号登录不受影响 |
 
 ---
 
@@ -436,6 +438,9 @@ TriageRow {
 - **V2 玻璃主题（2026-11-26）**：深色从蓝黑改成中性近黑（`#08090c`）+ 玻璃卡，浅色改用苹果 `#f5f5f7` 家族；主色统一 `#0a84ff`（浅色 `#0071e3`）。玻璃感 = 渐变 + 内侧高光 + 柔和投影；真 `backdrop-filter` 只给 `.topbar` / `.side` / `.modal-mask` / `.log-panel`（见 §1.1.3）
 - **顶栏一体化（2026-11-26）**：顶栏与侧栏都退回页面画布（`background: transparent`，无模糊 / 无描边 / 无底色），顶栏控件只留图标、hover 才浮出浅底；主题按钮去掉文字收成 30×30
 - **主题圆展开（2026-11-26）**：切主题走 `document.startViewTransition`，以图标中心为圆心把新主题裁圆铺开（460ms）；`prefers-reduced-motion` 或不支持 View Transitions 时直接切。快照不改变布局，不影响原生视图 bounds
+- **登录二维码清晰度（2026-11-26）**：`applyMallZoom()` 按 URL 分流 —— 登录页 1.0（整数、不重采样），其它页仍 0.7；登录页额外注入 `canvas{image-rendering:crisp-edges}`。实测二维码背面 226px，显示 227 设备像素，1:1
+- **切页动画（2026-11-26）**：`.pane.active` 淡入 + 上浮 200ms；`#pane-browser` / `#pane-print` / `#pane-collect` 排除（原生视图祖先不能有 transform）
+- **日志抽屉重做（2026-11-26）**：从贴边通栏改成左下浮出的 18px 圆角卡（left/bottom 8px、宽 `side-w-16`），分段页签 + 计数 + 收起图标；dock 改为圆角胶囊。注意 `.log-dock` 的 `margin-top:auto` 不能丢，否则不会贴底
 - **设置页重做（2026-11-26）**：改卡片网格 + 自绘开关（`.set-card` / `.set-switch`）；顶栏切主题时 `applyTheme()` 同步「当前主题」，不再停在旧值
 - **商品检测重做（2026-11-26）**：去掉「原因」列，统一显示「初步判定为假货」徽标（`.risk-badge`）；分组、缩略图、表头重排。`g.reason` 仍保留在数据里，只是不再展示
 - **按钮精简（2026-11-26）**：删除顶栏「刷新页面」（`#btnReload`）与日志抽屉「清空」（`#btnClearLog`），对应 JS 监听一并移除；批量记录里的「清空记录」是另一个功能，保留

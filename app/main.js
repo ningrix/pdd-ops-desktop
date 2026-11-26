@@ -12,6 +12,41 @@ const BOOT_FILE = (!process.defaultApp && process.resourcesPath)
   ? path.join(path.dirname(process.execPath), 'boot.log')
   : null;
 const MALL_ZOOM = 0.7; // 店铺后台视图默认缩放：页面内容更紧凑，一屏看更多
+/**
+ * 登录页必须用整数缩放，且只能用 1.0。
+ *
+ * 0.7 会让 Chromium 对页面里的位图（登录二维码）做双线性重采样，
+ * 二维码模块边缘被插值成灰边；登录页二维码本身只有 120×120 CSS，
+ * 0.7 缩放下设备像素只剩 ~159，手机上很难扫。
+ * 1.0 时约 227 设备像素且不重采样；试过 2.0，二维码更大但登录页
+ * 设计宽度 1128 会被压进 608 的视口，出现横向滚动，弃用。
+ * 另：登录页额外注入 canvas{image-rendering:crisp-edges} 保边。
+ */
+const LOGIN_ZOOM = 1;
+const loginCssInjected = new WeakSet();
+function ensureLoginQrCss(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  let login = false;
+  try { login = isLoginUrl(wc.getURL()); } catch (_) { /* ignore */ }
+  if (!login || loginCssInjected.has(wc)) return;
+  loginCssInjected.add(wc);
+  try {
+    const p = wc.insertCSS('canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;}', { cssOrigin: 'user' });
+    if (p && p.catch) p.catch(() => { /* ignore */ });
+  } catch (_) { /* ignore */ }
+}
+function isLoginUrl(u) {
+  return /\/login(?:[\/?#]|$)/i.test(String(u || ''));
+}
+function mallZoomFor(url) {
+  return isLoginUrl(url) ? LOGIN_ZOOM : MALL_ZOOM;
+}
+function applyMallZoom(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  let z = MALL_ZOOM;
+  try { z = mallZoomFor(wc.getURL()); } catch (_) { /* ignore */ }
+  try { wc.setZoomFactor(z); } catch (_) { /* ignore */ }
+}
 function trace(m) {
   const line = new Date().toISOString().slice(11, 23) + ' ' + m + '\n';
   try {
@@ -542,15 +577,22 @@ function createMall(name, forcedId) {
   try {
     stripElectronUA(view.webContents);
   } catch (_) { /* ignore */ }
-  try { view.webContents.setZoomFactor(MALL_ZOOM); } catch (_) { /* ignore */ }
+  try { applyMallZoom(view.webContents); } catch (_) { /* ignore */ }
 
   view.webContents.on('did-finish-load', () => {
-    // 不同子域（mms / cashier）会重置 zoom，每次加载完成都重新压回 80%
-    try { view.webContents.setZoomFactor(MALL_ZOOM); } catch (_) { /* ignore */ }
+    // 不同子域（mms / cashier）会重置 zoom，每次加载完成都重新压回；
+    // 登录页例外：整数缩放，二维码才不会被重采样糊掉
+    applyMallZoom(view.webContents);
+    ensureLoginQrCss(view.webContents);
     log('info', '[' + name + '] 加载完成: ' + view.webContents.getURL().slice(0, 90));
   });
   view.webContents.on('did-navigate', (_e, url) => {
     log('info', '[' + name + '] 导航: ' + String(url).slice(0, 110));
+    // 登录成功后会跳到 /home/，这里要把 0.7 重新套回去
+    applyMallZoom(view.webContents);
+  });
+  view.webContents.on('did-navigate-in-page', () => {
+    applyMallZoom(view.webContents);
   });
   view.webContents.on('did-fail-load', (_e, code, desc) => {
     if (code === -3) return;
