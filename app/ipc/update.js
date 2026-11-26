@@ -139,7 +139,11 @@ module.exports = function registerUpdate(ctx) {
     }
   });
   ipcMain.handle('app:relaunch', () => {
-    setImmediate(() => { app.relaunch(); app.exit(0); });
+    // 必须走 app.quit() 而不是 app.exit(0)：exit 不触发 before-quit，
+    // main.js 里那轮 flushStorageData() 不会执行，两个店铺 + 采集会话的
+    // cookie 都来不及落盘 —— 重启后全部掉登录。relaunch 只是登记下次启动，
+    // 真正的退出交给 quit 走正常流程。
+    setImmediate(() => { app.relaunch(); app.quit(); });
     return { ok: true };
   });
 

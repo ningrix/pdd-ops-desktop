@@ -115,13 +115,21 @@ let userSettings = {};
 try { userSettings = JSON.parse(fs.readFileSync(USER_SETTINGS_FILE, 'utf8')) || {}; } catch (_) { /* 首次运行 */ }
 
 /**
- * GPU 加速：开发机强制关（WorkBuddy 沙箱里开 GPU 会让原生层访问违例直接崩），
- * 打包态默认开 —— 关掉后 Paint 和图层合成全落 CPU，动画必然掉帧。
- * 用户可以在「设置 → 性能」里关掉它换取更快的冷启动（老旧显卡驱动场景）。
+ * GPU 加速：默认开（打包态和源码态都开）。
+ *
+ * 为什么改：源码态以前一律 disableHardwareAcceleration，加上启动脚本里的
+ * --disable-gpu，Paint 和图层合成全落 CPU —— 动画、滚动、Canvas 必然掉帧，
+ * 这就是「界面特别卡」的根因（见 AGENTS §13）。
+ *
+ * 仍然保留关掉的入口，但要显式给：
+ *   · 命令行带 --disable-gpu（app\启动-兼容模式.bat、restart-app.ps1 -Compat）
+ *   · 设置里把 disableGpu 置 true（设置 → 性能）
+ * 显卡驱动老旧的机器用兼容模式启动即可。
  */
-if (!app.isPackaged || userSettings.disableGpu === true) {
+const gpuDisabledByFlag = process.argv.some((x) => x === '--disable-gpu');
+if (gpuDisabledByFlag || userSettings.disableGpu === true) {
   app.disableHardwareAcceleration();
-  trace('hardware acceleration: OFF');
+  trace('hardware acceleration: OFF' + (gpuDisabledByFlag ? ' (--disable-gpu)' : ' (settings)'));
 } else {
   trace('hardware acceleration: ON');
 }
@@ -746,6 +754,11 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    // 胶囊是独立窗口：不关掉的话主窗没了进程还活着，只剩一个看不见的音乐窗。
+    if (capsuleWin && !capsuleWin.isDestroyed()) {
+      try { capsuleWin.close(); } catch (_) { /* ignore */ }
+    }
+    capsuleWin = null;
     for (const m of malls.values()) {
       try { m.view.webContents.close(); } catch (_) { /* ignore */ }
     }
@@ -3014,13 +3027,55 @@ async function runInMall(build) {
 // 用独立无边框置顶小窗，而不是在 #pane-print 里做 HTML 浮层 ——
 // 打单页是原生 WebContentsView，任何 HTML 浮层都会被它盖住。
 let capsuleWin = null;
+const CAPSULE_POS_FILE = path.join(DATA_DIR, 'music-window.json');
+const CAPSULE_W = 400;
+const CAPSULE_H = 76;
+let capsuleSaveTimer = 0;
+
+function readCapsulePos() {
+  try {
+    const o = JSON.parse(fs.readFileSync(CAPSULE_POS_FILE, 'utf8'));
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.y)) return o;
+  } catch (_) { /* 第一次打开 */ }
+  return null;
+}
+
+/** 位置只在拖动/缩放停下后写盘，避免每帧 IO */
+function saveCapsulePos() {
+  if (!capsuleWin || capsuleWin.isDestroyed()) return;
+  clearTimeout(capsuleSaveTimer);
+  capsuleSaveTimer = setTimeout(() => {
+    try {
+      const b = capsuleWin.getBounds();
+      writeJsonAtomic(CAPSULE_POS_FILE, { x: b.x, y: b.y });
+    } catch (_) { /* ignore */ }
+  }, 400);
+}
+
+/** 夹到当前显示器工作区内，防止换分辨率后胶囊跑到屏幕外 */
+function clampToWorkArea(x, y, w, h) {
+  let wa = { x: 0, y: 0, width: 1920, height: 1080 };
+  try {
+    const d = screen.getDisplayNearestPoint({ x: Math.round(x + w / 2), y: Math.round(y + h / 2) });
+    wa = d.workArea;
+  } catch (_) { /* ignore */ }
+  return {
+    x: Math.max(wa.x + 4, Math.min(Math.round(x), wa.x + wa.width - w - 4)),
+    y: Math.max(wa.y + 4, Math.min(Math.round(y), wa.y + wa.height - h - 4)),
+  };
+}
+
 function createCapsuleWindow() {
   if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.show(); capsuleWin.focus(); return { ok: true, visible: true }; }
   const b = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 200, y: 200, width: 1280, height: 860 };
+  const pos = readCapsulePos();
+  const init = pos
+    ? { x: pos.x, y: pos.y }
+    : { x: b.x + b.width - CAPSULE_W - 24, y: b.y + b.height - CAPSULE_H - 24 };
+  const at = clampToWorkArea(init.x, init.y, CAPSULE_W, CAPSULE_H);
   capsuleWin = new BrowserWindow({
-    width: 380, height: 72,
-    x: Math.round(b.x + b.width / 2 - 190),
-    y: b.y + b.height - 120,
+    width: CAPSULE_W, height: CAPSULE_H,
+    x: at.x, y: at.y,
     frame: false, transparent: true, resizable: false, movable: true,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false,
     webPreferences: {
@@ -3031,9 +3086,23 @@ function createCapsuleWindow() {
   capsuleWin.setAlwaysOnTop(true, 'screen-saver');
   capsuleWin.loadFile(path.join(__dirname, 'renderer', 'music.html'));
   capsuleWin.once('ready-to-show', () => { try { capsuleWin.showInactive(); } catch (_) { /* ignore */ } });
-  capsuleWin.on('closed', () => { capsuleWin = null; });
+  capsuleWin.on('moved', saveCapsulePos);
+  capsuleWin.on('resized', saveCapsulePos);
+  capsuleWin.on('closed', () => { clearTimeout(capsuleSaveTimer); capsuleWin = null; });
   return { ok: true, visible: true };
 }
+
+/** 展开/收起面板：只改窗口尺寸，底边保持不动（视觉上是从胶囊向上长出来） */
+function resizeCapsule(w, h) {
+  if (!capsuleWin || capsuleWin.isDestroyed()) return { ok: false };
+  const W = Math.max(300, Math.min(620, Math.round(w || CAPSULE_W)));
+  const H = Math.max(72, Math.min(1000, Math.round(h || CAPSULE_H)));
+  const b = capsuleWin.getBounds();
+  const at = clampToWorkArea(b.x + (b.width - W) / 2, b.y + b.height - H, W, H);
+  capsuleWin.setBounds({ x: at.x, y: at.y, width: W, height: H });
+  return { ok: true, width: W, height: H };
+}
+
 function toggleCapsuleWindow() {
   if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.close(); capsuleWin = null; return { ok: true, visible: false }; }
   return createCapsuleWindow();
@@ -3086,11 +3155,11 @@ require('./ipc/update')({
   getMainWindow: () => mainWindow,
   trace,
   dataDir: DATA_DIR,
-});
+});
 
 require('./ipc/music')({
   ipcMain, fs, path, DATA_DIR, dialog, writeJsonAtomic, trace,
-  toggleCapsule: () => toggleCapsuleWindow(),
+  capsule: { toggle: () => toggleCapsuleWindow(), resize: (w, h) => resizeCapsule(w, h) },
 });
 
 app.whenReady().then(() => {

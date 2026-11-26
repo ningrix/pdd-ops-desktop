@@ -3,7 +3,7 @@
 > 本工作区的工程约定。**任何 agent 在动代码前必须读完。**
 > 与用户当次明示冲突时，以用户为准，事后回写本文档。
 >
-> 最后更新：2026-11-21 ｜ 对应应用版本：v0.4（采集箱 + 跨店上架 + 资金复盘数据中心 + 平台锁）
+> 最后更新：2026-11-26 ｜ 对应应用版本：v0.5.3（V2 玻璃主题 + 资金指标展开 + 音乐胶囊）
 
 **关于定位方式**：本文档一律用**函数名 / 选择器**指位置，不写行号。`main.js` 曾在六小时内从 635 行涨到 1096 行，行号第二天就会失效。
 
@@ -31,6 +31,7 @@
 1. **禁止 `type="module"` / `import` / `export`。** 页面由 `loadFile()` 以 `file://` 加载，ES module 会被 CORS 阻止；`main.js` 里 `Menu.setApplicationMenu(null)` 清空了应用菜单，DevTools 进不去。**加载失败是静默白屏，没有任何报错。**
 2. 多文件时每个文件整体包 IIFE，只向 `window.UI` 挂一个对象。经典 script 共享同一全局词法环境，**重名 `const` 是解析期 SyntaxError，整个文件不执行**。末尾断言命名空间齐全。
 3. **`#pane-browser` 的任何祖先元素不得使用** `transform` / `filter` / `perspective` / `will-change` / `contain:paint` / `backdrop-filter`。这些会建立新的 containing block，`getBoundingClientRect()` 返回值随之变化，`setBounds()` 会把原生浏览器视图贴到错误位置。
+   **允许用真 `backdrop-filter` 的位置只有** `.topbar` / `.side` / `.modal-mask` / `.log-panel` —— 它们是 `#pane-browser` 的兄弟节点。判断方法：从 `#pane-browser` 往上到 body 是 `.panes → .main → .layout → body`，这四层一律禁止；V2 玻璃主题的模糊也只加在上述四个兄弟节点上。
    另：`main.js` 顶部已 `disableHardwareAcceleration()`，毛玻璃在软件渲染下又慢又脏。
 4. **原生视图可见性唯一由 `syncBounds()` 决定。** 目标是引入 `state.suspendDepth` 计数器，`>0` 时强制隐藏。当前实现靠 `withViewHidden()` 布尔挂起，`resize` 时会被绕过（见 §8）。
 5. **任何浮层不得覆盖 `#pane-browser` 的矩形**（toast / 下拉 / tooltip 都会被原生层遮住）。全局提示放顶栏。
@@ -100,8 +101,13 @@
 | `app/renderer/index.html` | 界面结构（左侧导航：商品列表 / 采集箱 / 采集会话 / 资金复盘 / 店铺后台；左下日志/原始结果抽屉） | 可改，守 §1.1 |
 | `app/renderer/style.css` | 样式（无框架、无预处理器） | 可改，守 §1.1 |
 | `app/renderer/app.js` | 界面逻辑（单文件，全局 `$` / `state`） | 可改，守 §1.1 |
+| `app/renderer/music.html` | 悬浮胶囊音乐播放器界面（独立无边框置顶窗口）。**不能改成 `#pane-print` 里的 HTML 浮层**：打单页是原生 `WebContentsView`，浮层必被盖住 | 可改 |
+| `app/ipc/music.js` | 音乐数据层：文件夹扫描 / 单文件添加 / 播放状态落盘 / 胶囊尺寸。**只读本地音频，不联网、不解析 `.ncm`** | 可改 |
+| `app/lib/tonetrack.js` | 内置曲合成器：纯 Node 生成 22050Hz PCM16 WAV（两首 72 秒氛围/lofi）。原创、零依赖、不占 git（运行时写 `userdata/music/builtin/`） | 可改 |
 | `app/data/size-templates.json` | 尺码表模板库（6 套） | 可改 |
 | `app/build/` | 打包资源：`icon.ico`、`start-compat.bat`（兼容启动器，见 §10） | 可改 |
+| `app/启动.bat` / `app/launch.ps1` | 源码态启动：先清 `ELECTRON_RUN_AS_NODE` / `NODE_OPTIONS`，**GPU 优先**；9 秒内进程消失就自动降级 `--disable-gpu` 重试 | 可改，见 §13 |
+| `app/启动-兼容模式.bat` | 强制软件渲染（`--disable-gpu`），驱动老旧的机器用 | 可改 |
 | `app/package.json` 的 `build` 字段 | electron-builder 配置（NSIS + zip、files 排除 userdata、extraResources） | 可改，见 §10 |
 | `app/dist/` | 打包产物（安装包 / zip / win-unpacked），不入库 | 可删 |
 | `app/userdata/` | `malls.json`、`pool.json`、`Partitions/` 登录态；`finance\` 资金快照与账本；`risk\` 商品检测分包；`appeal\templates.json` 申诉文案库 | **不得删除**，删了要重新扫码 |
@@ -230,6 +236,9 @@
 | 改 UA 会踢登录 | 实测（2026-11-22） | 把内嵌视图 UA 写死成干净 Chrome（去掉 `Electron/` 与 `pdd-ops-desktop/`）后，**阿泽made 当场掉登录**，回滚 UA 也不会自动恢复——会话已被服务端作废。**UA 参与平台会话指纹，不要为了「看起来像真浏览器」去改它** |
 | 退货导出用 xlsx 不用 CSV | 实现约定（2026-11-22） | 订单号是 18 位长数字，CSV 用 Excel 打开会被转成科学计数法（2.61111E+20），对账就没法用。xlsx 里按 inlineStr 存才能保住原样。生成器零依赖（`app/lib/xlsx.js`），不引入原生编译库。**「是否完成」列已完成写「是」，未完成必须留空**，不写「未完成」 |
 | 导出不弹系统「另存为」 | 实测（2026-11-22） | 这台机器上文件对话框会在 Documents 报「你没有权限在此位置中保存文件」，但同一目录用 Python 写是成功的 —— 是对话框/系统保护在挡，不是文件系统。Electron 进程对 `~/Downloads`、`~/Documents` 的写探针也都失败。所以 `returns:export` **不弹对话框**：`pickExportDir()` 依次探测 `app.getPath('downloads')` → `~/Downloads` → `app/userdata/exports`，取第一个真能写的；写完后 `shell.showItemInFolder()` 打开文件夹 |
+| 本机 GPU 可用 | 实测（2026-11-26） | 源码态开 GPU 后应用正常启动。渲染层 `WEBGL_debug_renderer_info` 返回 `ANGLE (AMD, AMD Radeon 780M Graphics (0x00001900) Direct3D11 vs_5_0 ps_5_0, D3D11)`；`#metricBig` 展开时连续采样 `transform` 得到 `matrix(0.372…) → matrix(0.697…) → none`，证明走的是合成层过渡。**不要再按「开发关 GPU」的旧结论改回去**（见 §13） |
+| 内置音乐曲目必须可离线生成 | 实测（2026-11-26） | `app/lib/tonetrack.js` 用 22050Hz / 单声道 / PCM16 合成两首 72 秒曲目，单首生成 0.4–1.0s、3.1MB，峰值 0.66/0.70、无削波。**不要改成下载 CC0 音频打包进仓库**：会引入第三方授权核对与离线缺文件问题 |
+| 网易云下载的是 `.ncm`（DRM 容器） | 公开资料（2026-11-26 检索） | 魔数 `CTENFDAM`，音频数据用 RC4 变体加密、密钥/元数据用 AES-128-ECB + XOR。**只有网易云客户端能解；本项目不做解密**（属破解 DRM），播放器遇到 `.ncm` 只计数并提示换标准格式。抖音收藏也没有可用的官方导出（**未确认**） |
 
 ---
 
@@ -252,6 +261,7 @@
 | 处罚申诉统一时限 | 处罚申诉倒计时 | 以站内信处罚通知为准，实测累积 |
 | 「申诉优赔」覆盖范围（平台主动赔付哪些异常退款） | 异常退款场景是否还需要商家写申诉文案 | 观察自己店的异常退款单是否被平台主动赔付（2025 新服务，见 research/申诉文案管理_调研_2026-11-21.md） |
 | 跨店上架后平台是否判「搬运」 | 路径 B 的长期可行性 | 小批量试，观察是否限流 |
+| 网易云是否有「标准格式（mp3/flac）下载」选项 | 能否直接把 VIP 已下载歌曲喂给胶囊播放器 | 网上说法不一（有文章称部分会员等级可选 MP3），**未确认**。以客户端「设置 → 下载」实际选项为准；没有就只能换标准格式文件 |
 
 **降级路径**：端点抓不到就走「页面导出 Excel/CSV → 本地解析」。逻辑不变，只损失自动化，不损失分析能力。
 
@@ -418,6 +428,15 @@ TriageRow {
 - **账单平台费（2026-11-21）**：按日期分段 —— 账单覆盖的日期用账单均值，其余日期回退费率估算，不再把 1 天的每单均值外推到 90 天
 - **DOM 预算（2026-11-21）**：商品贡献表的折叠区改为懒渲染（收起时不建 DOM），资金页满数据从 2803 节点降到 1612
 - **CSS 变量（2026-11-21）**：补上 `--panel2` / `--income` / `--loss`；浅色主题绿/红/小字/琥珀对比度从 2.00/3.32/3.48 提升到 5.37/5.44/5.73/5.27，全部过 WCAG AA
+- **指标卡展开（2026-11-26）**：四张卡可点开（鼠标 / Enter / Space），原地长成大胶囊，显示每店明细与计算公式。`#metricBig` / `#metricVeil` 之前只有 HTML+CSS、没有一行 JS，点了只会 `display:none` 不动
+- **设置页接线（2026-11-26）**：GPU、动效、重启、版本、数据目录、检查更新全部接上；之前整页按钮都是死的。顺带修掉 `app:relaunch` 用 `app.exit(0)` 的隐患 —— 它不触发 `before-quit`，点一次「重启应用」就会跳过 `flushStorageData()`，两个店铺 + 采集会话全掉登录；已改成 `app.relaunch(); app.quit()`
+- **CSS 悬空选择器（2026-11-26）**：补齐两处半截选择器；`mask-in` 关键帧曾被吞，弹层淡入变成瞬间出现
+- **减线与圆角（2026-11-26）**：去掉顶栏/侧栏/页签/资金工具条/指标卡的描边（卡片改透明边 + 阴影），表格不再画行线；卡片圆角 14→18px，大胶囊 14→22px
+- **音乐胶囊（2026-11-26）**：内置两首原创合成曲（7MB 运行时生成，不占 git）+ 文件夹/单文件播放列表 + 音量/随机/循环 + 记住音量·曲目·进度·窗口位置。展开时按面板实测高度改窗口（固定高度会在上方留透明区，透明区照样吃鼠标）；关主窗会一并关胶囊，避免进程只剩一个看不见的音乐窗
+- **V2 玻璃主题（2026-11-26）**：深色从蓝黑改成中性近黑（`#08090c`）+ 玻璃卡，浅色改用苹果 `#f5f5f7` 家族；主色统一 `#0a84ff`（浅色 `#0071e3`）。玻璃感 = 渐变 + 内侧高光 + 柔和投影；真 `backdrop-filter` 只给 `.topbar` / `.side` / `.modal-mask` / `.log-panel`（见 §1.1.3）
+- **设置页重做（2026-11-26）**：改卡片网格 + 自绘开关（`.set-card` / `.set-switch`）；顶栏切主题时 `applyTheme()` 同步「当前主题」，不再停在旧值
+- **商品检测重做（2026-11-26）**：去掉「原因」列，统一显示「初步判定为假货」徽标（`.risk-badge`）；分组、缩略图、表头重排。`g.reason` 仍保留在数据里，只是不再展示
+- **按钮精简（2026-11-26）**：删除顶栏「刷新页面」（`#btnReload`）与日志抽屉「清空」（`#btnClearLog`），对应 JS 监听一并移除；批量记录里的「清空记录」是另一个功能，保留
 
 **仍在**：
 
@@ -484,6 +503,7 @@ env -u NODE_OPTIONS -u ELECTRON_RUN_AS_NODE "PDD Ops Desktop.exe" --no-sandbox -
 
 安装目录里的 `start-compat.bat` 就是做这件事的。**判据：`boot.log` 里有没有 `module start`。**
 `boot.log` 只在打包态写，落在 exe 同级；源码态仍写 `%TEMP%\pdd-trace.log`，不污染 `app/`。
+源码态的 `app/launch.ps1` 也会先清掉这两个变量，正常双击 `启动.bat` 即可。
 
 **构建会被文件锁打断**：`emptyDir` 删除旧 `win-unpacked` 时报 EBUSY/EPERM，多半是杀软在扫 344MB 的产物。
 换输出目录（`-c.directories.output=dist2`）或等扫描结束，不要以为是配置错。
@@ -540,16 +560,33 @@ Promise 既不 resolve 也不 reject，错误也不会抛出来。
 
 ---
 
-## 13. 动画与 GPU（2026-11-26 立）
+## 13. 动画与 GPU（2026-11-26 立，同日修订）
 
-**`app.disableHardwareAcceleration()` 只在非打包态调用。** 关掉 GPU 后 Paint 和图层合成全部落到
-CPU，动画、滚动、Canvas 都会明显掉帧 —— 这就是"界面特别卡"的根因（PCL 之类丝滑是因为走 GPU 合成）。
-开发机（WorkBuddy 沙箱）开 GPU 会让 Electron 原生层访问违例直接崩，所以按 `app.isPackaged` 分流：
-**开发关、打包开**。某台机器显卡驱动有问题时，用安装目录里的 `start-compat.bat`（带 `--disable-gpu`）。
+**GPU 默认开，源码态也开。** 以前源码态强制 `disableHardwareAcceleration()`，启动脚本又带
+`--disable-gpu`，Paint 和图层合成全落 CPU —— 这就是「界面特别卡」的根因（PCL 之类丝滑是因为走 GPU 合成）。
+2026-11-26 实测本机 GPU 可用：`WEBGL_debug_renderer_info` 返回
+`ANGLE (AMD, AMD Radeon 780M Graphics (0x00001900) Direct3D11 vs_5_0 ps_5_0, D3D11)`，
+源码态开 GPU 正常启动、未复现沙箱里的访问违例。当前规则：
 
-**指标卡是"就地长成大胶囊"，不是弹窗。** 做法：把浮层先摆到被点卡片的 `getBoundingClientRect()`，
-`void big.offsetWidth` 强制一帧 reflow（**不加这行起止两帧会被合并，看起来像直接弹出**），
-再过渡到居中的目标尺寸；内容 `opacity` 延迟 250ms 淡入，避免文字在拉伸过程中重排闪烁。
+- `main.js` 只在**显式给了** `--disable-gpu`，或 `settings.json` 里 `disableGpu: true` 时才关。
+- 启动一律走 `app/启动.bat` → `app/launch.ps1`：先开 GPU 起，9 秒内进程消失就自动降级
+  `--disable-gpu` 再试一次。驱动老旧的机器直接双击 `app/启动-兼容模式.bat`（软件渲染，慢但稳）。
+- 设置 → 性能已接线：「启用硬件加速」写 `settings.json`，**重启生效**；
+  「启用界面动效」写 `html[data-motion="reduced"]`，CSS 把过渡压到 1ms。
+- 打包态的 `start-compat.bat` 仍然保留（见 §10）。
+
+**指标卡是「就地长成大胶囊」，不是弹窗。** 实现只用 **transform**：先按最终尺寸摆好，
+再反向 `translate + scale` 到卡片的 `getBoundingClientRect()`，`void big.offsetWidth` 强制一帧 reflow
+（**不加这行起止两帧会被合并，看起来像直接弹出**），下一帧过渡回 `transform: none`；
+内容 `opacity` 延迟 200ms 浮现，避免文字在拉伸过程中重排闪烁。收起是反向动画（280ms）。
+**不要改成动画 `width/height/left/top`**：每帧都会重新布局整个页面，GPU 开着也照样卡。
+
+**指标卡的数字只能有一处计算。** `computeFinanceMetrics()` 同时返回汇总与 `byStore`，
+卡片和展开面板都读它；面板不重算，只读 `state.finLast`（§14 ⑤ 的延伸）。
+
+**CSS 里不要留悬空选择器。** 曾有两行只剩半截选择器（`html[data-theme="light"] html[data-theme="light"]`），
+CSS 解析器会把紧跟的 `@keyframes` 当成它的前奏一起吞掉 —— 实测 `mask-in` 关键帧直接不存在，
+弹层淡入变成瞬间出现。改完要扫一遍：花括号配平，且没有「有选择器、没花括号」的行。
 
 **新增动画的三条底线：**
 

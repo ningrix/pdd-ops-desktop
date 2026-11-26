@@ -36,8 +36,10 @@ if not exist "%ELECTRON_EXE%" (
 if not exist "%ELECTRON_EXE%" goto :fail
 
 echo     launching %ELECTRON_EXE% >> "%LOG%"
-start "" "%ELECTRON_EXE%" --no-sandbox --disable-gpu .
-echo     start returned errorlevel=%ERRORLEVEL% >> "%LOG%"
+rem GPU first; launch.ps1 falls back to --disable-gpu if the process dies at once.
+rem Do NOT add --disable-gpu here: it overrides the setting and forces CPU rendering.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1"
+echo     launch.ps1 returned errorlevel=%ERRORLEVEL% >> "%LOG%"
 endlocal
 exit /b 0
 

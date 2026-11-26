@@ -120,12 +120,6 @@ $$('.drawer-tab').forEach((t) => t.addEventListener('click', () => switchDrawer(
 $('#btnLogClose').addEventListener('click', () => setDrawer('log', false));
 
 window.pdd.onLog((l) => addLog(l));
-$('#btnClearLog').addEventListener('click', () => {
-  $('#log').innerHTML = '';
-  const badge = $('#logBadge');
-  if (badge) { badge.style.display = 'none'; badge.textContent = '0'; }
-  updateLogMeta();
-});
 
 const money = (fen) => (fen === undefined || fen === null ? '-' : (Number(fen) / 100).toFixed(2));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
@@ -211,6 +205,8 @@ function setTab(name) {
   if (name === 'result') { setDrawer('result', true); return; }
   const prev = state.tab;
   state.tab = name;
+  // 离开资金页时收起指标胶囊，别让它挂在别的页签上
+  if (prev === 'finance' && name !== 'finance' && metricOpen) closeMetric(true);
   $$('[data-tab]').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $$('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   const pb = $('#pane-browser');
@@ -555,11 +551,6 @@ async function addMall() {
   }
 }
 $('#btnAddMall').addEventListener('click', addMall);
-
-$('#btnReload').addEventListener('click', async () => {
-  await window.pdd.reload();
-  logInfo('已刷新页面');
-});
 
 // ------------------------------------------------------------------ 商品列表
 function renderGoods(items) {
@@ -1387,37 +1378,65 @@ function computeFinanceMetrics(data, cur) {
     monthRevenue: 0, monthCost: 0, monthGross: null, grossOk: false,
     pendingRefund: 0, pendingRefundCount: 0,
     costTotal: 0, costCount: 0,
+    // 每店明细：卡片与展开面板共用同一份，避免两处各算各的
+    byStore: [],
   };
 
-  // ① 未结算：只认「已发货」且「待收货」
-  for (const s of ((state.orderData && state.orderData.stores) || [])) {
+  const od = state.orderData || {};
+  buildOrderThumbIndex(od);
+  const asMap = buildAfterSaleIndex(od);
+  // 已移除的店铺不参与汇总，也不再出现在明细里（与页面表格一致）
+  const stores = keepActiveStores(od.stores || []);
+
+  for (const s of stores) {
+    const row = {
+      mallId: s.mallId || '',
+      mallName: s.mallName || '未命名店铺',
+      pending: 0, pendingOrders: 0, pendingOk: false,
+      revenue: 0, cost: 0, gross: null, grossOk: false,
+      refund: 0, refundCount: 0,
+    };
+
     for (const o of (s.orders || [])) {
+      const amount = Number(o.orderAmount) || 0;
+
+      // ① 未结算：只认「已发货」且「待收货」
       const st = String(o.status || '');
-      if (/退款|取消/.test(st)) continue;
-      if (!/已发货/.test(st) || !/待收货/.test(st)) continue;
-      out.pending += Number(o.orderAmount) || 0;
-      out.pendingOrders += 1;
-      out.pendingOk = true;
+      if (!/退款|取消/.test(st) && /已发货/.test(st) && /待收货/.test(st)) {
+        row.pending += amount;
+        row.pendingOrders += 1;
+        row.pendingOk = true;
+      }
+
+      // ②③ 从订单明细算，和商品贡献表同一套口径
+      const f = classifyOrder(o, asMap);
+      if (f.excluded) {
+        if (f.pendingReturn) {
+          row.refund += amount;
+          row.refundCount += 1;
+        }
+        continue;
+      }
+      if (!o.orderTime) continue;
+      if (localDateStr(new Date(Number(o.orderTime) * 1000)).slice(0, 7) !== cur) continue;
+      row.revenue += amount;
+      const unit = productCostUnit(o.goodsId, o.goodsName);
+      if (unit != null) row.cost += Math.round(unit * (Number(o.quantity) || 0));
+      row.grossOk = true;
     }
+
+    row.gross = row.grossOk ? row.revenue - row.cost : null;
+    out.byStore.push(row);
+    out.pending += row.pending;
+    out.pendingOrders += row.pendingOrders;
+    if (row.pendingOk) out.pendingOk = true;
+    out.monthRevenue += row.revenue;
+    out.monthCost += row.cost;
+    if (row.grossOk) out.grossOk = true;
+    out.pendingRefund += row.refund;
+    out.pendingRefundCount += row.refundCount;
   }
 
-  // ②③ 从订单明细算，和商品贡献表同一套口径
-  buildOrderThumbIndex(state.orderData);
-  const contrib = computeContribution(state.orderData);
-  for (const r of contrib.rows) {
-    if (r.excluded) {
-      if (r.pendingReturn) {
-        out.pendingRefund += r.orderAmount;
-        out.pendingRefundCount += 1;
-      }
-      continue;
-    }
-    if (!r.orderTime) continue;
-    if (localDateStr(new Date(Number(r.orderTime) * 1000)).slice(0, 7) !== cur) continue;
-    out.monthRevenue += r.orderAmount;
-    if (r.unit != null) out.monthCost += Math.round(r.unit * r.quantity);
-    out.grossOk = true;
-  }
   out.monthGross = out.grossOk ? out.monthRevenue - out.monthCost : null;
 
   // ④ 拿货成本
@@ -1439,6 +1458,7 @@ function renderFinance(data, month) {
   if (!data || !data.stores || !data.stores.length) {
     empty.style.display = 'flex';
     content.style.display = 'none';
+    state.finLast = null;
     return;
   }
   empty.style.display = 'none';
@@ -1469,6 +1489,8 @@ function renderFinance(data, month) {
 
   // 四张卡统一从 computeFinanceMetrics 取数（唯一计算入口）
   const M = computeFinanceMetrics(data, cur);
+  // 展开面板（点卡片看每店明细）复用同一份结果，不重新计算
+  state.finLast = { data, cur, M };
 
   setMoney($('#fcPending'), M.pendingOk ? M.pending : null);
   $('#fcPendingSub').textContent = M.pendingOk
@@ -1680,6 +1702,268 @@ function renderFinance(data, month) {
 }
 
 let financeBusy = false;
+
+// ------------------------------------------------------------------ 指标卡展开
+// 点卡片 → 原地长成大胶囊。只动画 transform（合成层，不触发 reflow），
+// 内容等尺寸动画结束再浮现，避免文字在拉伸过程中重排闪烁。
+// 数据只用 renderFinance 存下的 state.finLast，和卡片是同一份计算结果。
+
+const METRIC_TITLE = {
+  pending: '未结算金额',
+  gross: '本月毛利',
+  refund: '待退货金额',
+  cost: '拿货成本（累计）',
+};
+
+let metricOpen = null;        // { key, card }
+let metricCloseTimer = 0;
+let metricSettleTimer = 0;
+
+/** 每店明细表：卡片与展开面板共用 computeFinanceMetrics 的 byStore */
+function metricTableHtml(key, src) {
+  const rows = (src && src.M && src.M.byStore) || [];
+  const M = (src && src.M) || null;
+
+  if (key === 'cost') {
+    const list = (state.costs || [])
+      .slice()
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.createdAt || 0) - Number(a.createdAt || 0))
+      .slice(0, 40);
+    if (!list.length) return '<div class="metric-empty">还没有进货记录。在下方「拿货成本」里按日期记一笔。</div>';
+    let body = '';
+    let total = 0;
+    for (const c of list) {
+      const amount = Number(c.amount) || 0;
+      total += amount;
+      body += '<tr><td>' + esc(c.date || '—') + '</td>'
+        + '<td class="r expense">' + fmtYuan(amount) + '</td>'
+        + '<td class="metric-note">' + esc(c.note || '') + '</td></tr>';
+    }
+    if (M) {
+      body += '<tr class="metric-total"><td>累计</td>'
+        + '<td class="r">' + fmtYuan(M.costTotal) + '</td>'
+        + '<td class="metric-note">' + M.costCount + ' 笔</td></tr>';
+    }
+    return '<table class="fin-table metric-table"><thead><tr><th>日期</th><th class="r">金额</th><th>备注</th></tr></thead>'
+      + '<tbody>' + body + '</tbody></table>';
+  }
+
+  if (!rows.length) {
+    return '<div class="metric-empty">还没有订单数据。先点右上「商品贡献」读取近 90 天订单。</div>';
+  }
+
+  let head = '';
+  let body = '';
+  if (key === 'pending') {
+    head = '<tr><th>店铺</th><th class="r">未结算</th><th class="r">在途单数</th></tr>';
+    for (const r of rows) {
+      body += '<tr><td>' + esc(r.mallName) + '</td>'
+        + '<td class="r">' + (r.pendingOk ? fmtYuan(r.pending) : '—') + '</td>'
+        + '<td class="r">' + (r.pendingOk ? r.pendingOrders + ' 单' : '—') + '</td></tr>';
+    }
+    if (M) {
+      body += '<tr class="metric-total"><td>合计</td>'
+        + '<td class="r">' + (M.pendingOk ? fmtYuan(M.pending) : '—') + '</td>'
+        + '<td class="r">' + (M.pendingOk ? M.pendingOrders + ' 单' : '—') + '</td></tr>';
+    }
+  } else if (key === 'gross') {
+    head = '<tr><th>店铺</th><th class="r">实收</th><th class="r">拿货成本</th><th class="r">毛利</th></tr>';
+    for (const r of rows) {
+      body += '<tr><td>' + esc(r.mallName) + '</td>'
+        + '<td class="r">' + (r.grossOk ? fmtYuan(r.revenue) : '—') + '</td>'
+        + '<td class="r">' + (r.grossOk ? fmtYuan(r.cost) : '—') + '</td>'
+        + '<td class="r ' + (r.gross != null && r.gross < 0 ? 'expense' : 'income') + '">'
+        + (r.grossOk ? fmtYuan(r.gross) : '—') + '</td></tr>';
+    }
+    if (M) {
+      body += '<tr class="metric-total"><td>合计</td>'
+        + '<td class="r">' + (M.grossOk ? fmtYuan(M.monthRevenue) : '—') + '</td>'
+        + '<td class="r">' + (M.grossOk ? fmtYuan(M.monthCost) : '—') + '</td>'
+        + '<td class="r ' + (M.monthGross != null && M.monthGross < 0 ? 'expense' : 'income') + '">'
+        + (M.grossOk ? fmtYuan(M.monthGross) : '—') + '</td></tr>';
+    }
+  } else if (key === 'refund') {
+    head = '<tr><th>店铺</th><th class="r">待退货金额</th><th class="r">单数</th></tr>';
+    for (const r of rows) {
+      body += '<tr><td>' + esc(r.mallName) + '</td>'
+        + '<td class="r expense">' + (r.refundCount ? fmtYuan(r.refund) : '—') + '</td>'
+        + '<td class="r">' + (r.refundCount ? r.refundCount + ' 单' : '—') + '</td></tr>';
+    }
+    if (M) {
+      body += '<tr class="metric-total"><td>合计</td>'
+        + '<td class="r">' + (M.pendingRefundCount ? fmtYuan(M.pendingRefund) : '—') + '</td>'
+        + '<td class="r">' + (M.pendingRefundCount ? M.pendingRefundCount + ' 单' : '—') + '</td></tr>';
+    }
+  }
+
+  return '<table class="fin-table metric-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+}
+
+/** 面板文案：公式里带上当前数字，一眼能对上卡片的数 */
+function metricPanelParts(key, src) {
+  const M = src && src.M;
+  if (!M) {
+    return {
+      formula: '还没有资金数据。先采集一次，再点开看每个店的明细。',
+      body: '<div class="metric-empty">点右上「采集全部店铺」拉取资金数据。</div>',
+      hint: '',
+    };
+  }
+  const cur = src.cur || '';
+  if (key === 'pending') {
+    return {
+      formula: '未结算 = 状态同时含「<b>已发货</b>」「<b>待收货</b>」的订单实付合计。'
+        + '当前 <b>' + M.pendingOrders + '</b> 单，合计 <b>¥' + fmtYuan(M.pending) + '</b>。'
+        + '已确认收货的单平台已结算、钱进可提现余额，<b>不再算未结算</b>。',
+      body: metricTableHtml(key, src),
+      hint: '含「退款」「取消」的单不计。',
+    };
+  }
+  if (key === 'gross') {
+    return {
+      formula: cur + ' 月毛利 = 本月实收 <b>¥' + fmtYuan(M.monthRevenue) + '</b> − 拿货成本 <b>¥' + fmtYuan(M.monthCost) + '</b>'
+        + ' = <b>¥' + fmtYuan(M.monthGross) + '</b>。实收取「买家实付」；成本按商品单位成本 × 件数。',
+      body: metricTableHtml(key, src),
+      hint: '退款 / 取消 / 退货的单不计入；实收未扣平台服务费。',
+    };
+  }
+  if (key === 'refund') {
+    return {
+      formula: '待退货 = 在途退货退款的订单实付合计：<b>' + M.pendingRefundCount + '</b> 单 / <b>¥' + fmtYuan(M.pendingRefund) + '</b>。'
+        + '这些单已从实收和毛利里剔除，货退回前钱还没退给买家。',
+      body: metricTableHtml(key, src),
+      hint: '判据：售后类型含「退货」且订单状态还不是「退款成功」。',
+    };
+  }
+  return {
+    formula: '拿货成本 = 日总额账本累计：<b>' + M.costCount + '</b> 笔 / <b>¥' + fmtYuan(M.costTotal) + '</b>。'
+      + '按「一天一笔总额」记账，不摊到商品；单件成本只用于上面的毛利。',
+    body: metricTableHtml(key, src),
+    hint: '账本不分店铺，所以按日期列。',
+  };
+}
+
+function openMetric(key, card) {
+  const big = $('#metricBig');
+  const veil = $('#metricVeil');
+  if (!big || !veil || !card) return;
+  clearTimeout(metricCloseTimer);
+  clearTimeout(metricSettleTimer);
+  if (metricOpen && metricOpen.key === key) { closeMetric(); return; }
+  if (metricOpen) closeMetric(true);
+
+  const src = state.finLast;
+  const parts = metricPanelParts(key, src);
+  $('#metricTitle').textContent = METRIC_TITLE[key] || '指标详情';
+  $('#metricFormula').innerHTML = parts.formula;
+  $('#metricBody').innerHTML = parts.body;
+  $('#metricHint').textContent = parts.hint;
+
+  // 先按最终尺寸摆好，再反向变换回卡片位置；下一帧过渡回原位 = 从卡片长出来。
+  big.classList.remove('settled');
+  big.classList.add('on');
+  big.setAttribute('aria-hidden', 'false');
+  big.style.transition = 'none';
+  big.style.transform = 'none';
+  big.style.left = '0px';
+  big.style.top = '0px';
+  big.style.height = 'auto';
+  const maxW = Math.min(760, window.innerWidth - 96);
+  big.style.width = maxW + 'px';
+
+  const naturalH = Math.ceil(big.getBoundingClientRect().height);
+  const h = Math.max(180, Math.min(naturalH, Math.round(window.innerHeight * 0.82)));
+  const w = Math.round(big.getBoundingClientRect().width) || maxW;
+  const x = Math.round((window.innerWidth - w) / 2);
+  const y = Math.round((window.innerHeight - h) / 2);
+  big.style.left = x + 'px';
+  big.style.top = y + 'px';
+  big.style.height = h + 'px';
+
+  const r = card.getBoundingClientRect();
+  const sx = Math.max(0.02, r.width / w);
+  const sy = Math.max(0.02, r.height / h);
+  big.style.transform = 'translate(' + (r.left - x) + 'px,' + (r.top - y) + 'px) scale(' + sx + ',' + sy + ')';
+  // 强制一帧 reflow：不加这行起止两帧会被合并，看起来像直接弹出
+  void big.offsetWidth;
+
+  veil.classList.add('on');
+  requestAnimationFrame(() => {
+    big.style.transition = '';
+    big.style.transform = 'none';
+    metricSettleTimer = setTimeout(() => big.classList.add('settled'), 200);
+  });
+
+  metricOpen = { key, card };
+  card.setAttribute('aria-expanded', 'true');
+}
+
+function closeMetric(instant) {
+  const big = $('#metricBig');
+  const veil = $('#metricVeil');
+  if (!big) return;
+  clearTimeout(metricSettleTimer);
+  const rec = metricOpen;
+  metricOpen = null;
+
+  if (rec && rec.card) {
+    rec.card.setAttribute('aria-expanded', 'false');
+    try { rec.card.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+  }
+  if (veil) veil.classList.remove('on');
+
+  if (instant || !rec) {
+    clearTimeout(metricCloseTimer);
+    big.classList.remove('settled');
+    big.classList.remove('on');
+    big.style.transition = 'none';
+    big.style.transform = 'none';
+    big.setAttribute('aria-hidden', 'true');
+    return;
+  }
+
+  const r = rec.card.getBoundingClientRect();
+  const x = parseFloat(big.style.left) || 0;
+  const y = parseFloat(big.style.top) || 0;
+  const w = parseFloat(big.style.width) || 1;
+  const h = parseFloat(big.style.height) || 1;
+  big.classList.remove('settled');
+  big.style.transition = '';
+  big.style.transform = 'translate(' + (r.left - x) + 'px,' + (r.top - y) + 'px)'
+    + ' scale(' + (r.width / w) + ',' + (r.height / h) + ')';
+
+  clearTimeout(metricCloseTimer);
+  metricCloseTimer = setTimeout(() => {
+    big.classList.remove('on');
+    big.style.transition = 'none';
+    big.style.transform = 'none';
+    big.setAttribute('aria-hidden', 'true');
+  }, 300);
+}
+
+function initMetricCards() {
+  const cards = $$('#pane-finance .fin-card[data-metric]');
+  for (const card of cards) {
+    card.setAttribute('aria-expanded', 'false');
+    card.addEventListener('click', () => openMetric(card.dataset.metric, card));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openMetric(card.dataset.metric, card);
+      }
+    });
+  }
+  const veil = $('#metricVeil');
+  if (veil) veil.addEventListener('click', () => closeMetric());
+  const close = $('#metricClose');
+  if (close) close.addEventListener('click', () => closeMetric());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && metricOpen) closeMetric();
+  });
+  window.addEventListener('resize', () => { if (metricOpen) closeMetric(true); });
+}
+initMetricCards();
+
 
 function financeStamp(ts) {
   if (!ts) return '—';
@@ -3141,7 +3425,7 @@ function renderRiskTable(r) {
   const note = $('#riskNote');
   if (note) {
     const when = (r.fromCache ? '上次检测 ' : '检测于 ') + financeStamp(r.at);
-    note.textContent = (r.flagged ? (r.flagged + ' / ' + r.total + ' 个商品被判定') : '全部正常') + ' · ' + when;
+    note.textContent = (r.flagged ? (r.flagged + ' / ' + r.total + ' 个商品初步判定为假货') : '全部正常') + ' · ' + when;
   }
   if (!hasAny) {
     empty.style.display = 'flex';
@@ -3155,13 +3439,13 @@ function renderRiskTable(r) {
   for (const s of stores) {
     const head = document.createElement('tr');
     head.className = 'risk-group';
-    const cnt = s.error ? '读取失败' : ((s.flagged || []).length + ' / ' + (s.total || 0) + ' 个被判定');
-    head.innerHTML = '<td colspan="4">' + esc(s.mallName) +
+    const cnt = s.error ? '读取失败' : ((s.flagged || []).length + ' / ' + (s.total || 0) + ' 个初步判定为假货');
+    head.innerHTML = '<td colspan="4"><span class="risk-store">' + esc(s.mallName) + '</span>' +
       '<span class="cnt">' + esc(cnt) + (s.stale ? ' · 旧数据' : '') + '</span></td>';
     body.appendChild(head);
     if (s.error) {
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td colspan="4" style="color:#f5a623">' + esc(s.error) + '</td>';
+      tr.innerHTML = '<td colspan="4" class="risk-error">' + esc(s.error) + '</td>';
       body.appendChild(tr);
       continue;
     }
@@ -3170,12 +3454,11 @@ function renderRiskTable(r) {
       const img = g.thumb
         ? '<img class="risk-thumb" loading="lazy" src="' + esc(g.thumb) + '" alt="" />'
         : '<span class="risk-thumb"></span>';
-      const shortReason = String(g.reason || '').split('。')[0];
       tr.innerHTML =
         '<td>' + img + '</td>' +
         '<td class="risk-id">' + esc(g.goodsId || '—') + '</td>' +
         '<td><div class="risk-name" title="' + esc(g.goodsName) + '">' + esc(g.goodsName || '—') + '</div></td>' +
-        '<td><div class="risk-reason" title="' + esc(g.reason) + '">' + esc(shortReason) + '</div></td>';
+        '<td class="r"><span class="risk-badge">初步判定为假货</span></td>';
       body.appendChild(tr);
     }
   }
@@ -3246,6 +3529,9 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
   try { localStorage.setItem(THEME_KEY, theme); } catch (_) { /* ignore */ }
   updateThemeButton();
+  // 设置页里的「当前主题」也要跟着变（顶栏切换时不会走 initSettings 的 sync）
+  const now = $('#setThemeNow');
+  if (now) now.textContent = theme === 'light' ? '浅色' : '深色';
 }
 function switchTheme(theme, originEl) {
   if (theme === currentTheme()) return;
@@ -3264,6 +3550,97 @@ $('#btnTheme') && $('#btnTheme').addEventListener('click', (e) => {
   switchTheme(currentTheme() === 'light' ? 'dark' : 'light', e.currentTarget);
 });
 
+// ------------------------------------------------------------------ 设置页
+// 之前这一页只有 HTML，没有任何 JS 绑定：GPU / 动效开关点了不生效。
+// 显卡加速的开关必须写 settings.json 并在重启后由 main.js 读取（运行中改不了）。
+function applyMotion(on) {
+  document.documentElement.dataset.motion = on ? 'on' : 'reduced';
+}
+
+async function initSettings() {
+  const api = window.pdd || {};
+  try {
+    const [ver, dir, st] = await Promise.all([
+      api.updateVersion ? api.updateVersion() : Promise.resolve(null),
+      api.dataDir ? api.dataDir() : Promise.resolve(''),
+      api.settingsGet ? api.settingsGet() : Promise.resolve({}),
+    ]);
+    if ($('#setVersion') && ver) {
+      $('#setVersion').textContent = 'v' + ver.version + (ver.packaged ? '' : ' · 源码态');
+      // 顶栏版本号从 package.json 读，避免源码里写死一个过期版本
+      const brandVer = $('#brandVer');
+      if (brandVer) brandVer.textContent = 'v' + ver.version;
+    }
+    if ($('#setDataDir') && dir) $('#setDataDir').textContent = dir;
+
+    const s = st || {};
+    const gpu = $('#setGpu');
+    if (gpu) {
+      gpu.checked = s.disableGpu !== true;
+      gpu.addEventListener('change', () => {
+        if (api.settingsSet) api.settingsSet({ disableGpu: !gpu.checked });
+        logInfo('显卡加速已' + (gpu.checked ? '开启' : '关闭') + '，重启应用后生效');
+      });
+    }
+    const motion = $('#setMotion');
+    if (motion) {
+      motion.checked = s.motion !== 'reduced';
+      applyMotion(motion.checked);
+      motion.addEventListener('change', () => {
+        applyMotion(motion.checked);
+        if (api.settingsSet) api.settingsSet({ motion: motion.checked ? 'on' : 'reduced' });
+      });
+    }
+  } catch (_) { /* 设置页读不到不影响主流程 */ }
+
+  const syncThemeText = () => {
+    if ($('#setThemeNow')) $('#setThemeNow').textContent = currentTheme() === 'light' ? '浅色' : '深色';
+  };
+  syncThemeText();
+  $('#btnSetTheme') && $('#btnSetTheme').addEventListener('click', (e) => {
+    switchTheme(currentTheme() === 'light' ? 'dark' : 'light', e.currentTarget);
+    syncThemeText();
+  });
+  $('#btnSetOpenData') && $('#btnSetOpenData').addEventListener('click', () => {
+    if (api.openDataDir) api.openDataDir();
+  });
+  $('#btnSetRelaunch') && $('#btnSetRelaunch').addEventListener('click', () => {
+    if (!api.relaunch) return;
+    logInfo('正在重启应用…');
+    api.relaunch();
+  });
+  $('#btnSetCheck') && $('#btnSetCheck').addEventListener('click', async () => {
+    const el = $('#setUpdateState');
+    if (el) el.textContent = '检查中…';
+    try {
+      const r = api.updateCheck ? await api.updateCheck() : null;
+      if (el) el.textContent = (r && r.ok) ? ('当前 v' + (r.current || '') + '，最新 v' + (r.latest || '')) : '检查失败：' + ((r && r.error) || '未知');
+    } catch (e) {
+      if (el) el.textContent = '检查失败';
+    }
+  });
+  $('#btnSetInstall') && $('#btnSetInstall').addEventListener('click', () => {
+    if (api.updateInstall) api.updateInstall();
+  });
+  if (api.onUpdateEvent) {
+    api.onUpdateEvent((evt) => {
+      const el = $('#setUpdateState');
+      if (!el || !evt) return;
+      const map = {
+        checking: '检查中…',
+        available: '发现新版本，正在下载',
+        none: '已是最新版本',
+        progress: '下载中 ' + (evt.percent || 0) + '%',
+        downloaded: '已下载，可重启安装',
+        error: '更新失败：' + (evt.message || '未知'),
+      };
+      el.textContent = map[evt.type] || evt.type || '—';
+      const inst = $('#btnSetInstall');
+      if (inst) inst.hidden = evt.type !== 'downloaded';
+    });
+  }
+}
+
 // 自绘窗口按钮
 function winAction(action) {
   if (window.pdd && typeof window.pdd.windowAction === 'function') {
@@ -3277,6 +3654,7 @@ $('#btnWinClose') && $('#btnWinClose').addEventListener('click', () => winAction
 // ------------------------------------------------------------------ 启动
 (async () => {
   initCollector();
+  await initSettings();
   logInfo('界面已就绪');
   await refreshMalls();
   await refreshPool();

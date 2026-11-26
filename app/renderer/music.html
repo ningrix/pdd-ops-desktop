@@ -11,30 +11,128 @@
     -webkit-user-select: none; user-select: none; cursor: default;
   }
 
+  .wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+
+  /* ---------- 展开面板 ---------- */
+  .panel {
+    margin: 0 6px 4px;
+    max-height: 386px;
+    flex: 0 0 auto;
+    display: flex; flex-direction: column;
+    background: rgba(20, 22, 26, .97);
+    color: #eef2f8;
+    border-radius: 22px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .46), inset 0 0 0 1px rgba(255, 255, 255, .06);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1);
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .wrap.open .panel { opacity: 1; transform: none; pointer-events: auto; }
+
+  .p-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px 8px;
+  }
+  .p-title { font-size: 12.5px; font-weight: 600; flex: 1 1 auto; }
+  .p-title span { color: #8b98ae; font-weight: 400; margin-left: 6px; }
+  .p-head button {
+    height: 26px; padding: 0 10px; border: 0; border-radius: 9px;
+    background: rgba(255, 255, 255, .08); color: #cfd8e8;
+    font: inherit; font-size: 11.5px; cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  }
+  .p-head button:hover { background: rgba(255, 255, 255, .15); color: #fff; }
+  .p-head button:active { transform: scale(.95); }
+
+  .notice {
+    margin: 0 14px 6px; padding: 8px 10px;
+    border-radius: 10px; background: rgba(255, 184, 84, .12);
+    color: #ffc279; font-size: 11px; line-height: 1.55;
+  }
+  .notice[hidden] { display: none; }
+
+  .p-list { flex: 1 1 auto; overflow: auto; padding: 0 8px 6px; }
+  .p-list::-webkit-scrollbar { width: 8px; }
+  .p-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 4px; }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border-radius: 10px; cursor: pointer;
+    font-size: 12px; color: #d8e0ee;
+  }
+  .row:hover { background: rgba(255, 255, 255, .07); }
+  .row.on { background: rgba(10, 132, 255, .18); color: #fff; }
+  .row.missing { opacity: .38; cursor: default; }
+  .row .n { width: 20px; text-align: right; color: #7b879c; font-variant-numeric: tabular-nums; flex: 0 0 20px; }
+  .row .t { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .a { flex: 0 0 auto; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: #7b879c; }
+  .row .tag {
+    flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: rgba(10, 132, 255, .16); color: #8fbcff;
+  }
+  .row.on .n { color: #9dc4ff; }
+
+  .p-foot { padding: 8px 14px 12px; border-top: 1px solid rgba(255,255,255,.06); }
+  .seek-row { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: #8b98ae; }
+  .seek {
+    position: relative; flex: 1 1 auto; height: 14px; cursor: pointer;
+  }
+  .seek::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 3px;
+    border-radius: 3px; background: rgba(255,255,255,.14);
+  }
+  .seek i {
+    position: absolute; left: 0; top: 6px; height: 3px; width: 0;
+    border-radius: 3px; background: #0a84ff;
+  }
+  .seek .dot {
+    position: absolute; top: 3px; width: 9px; height: 9px; margin-left: -4.5px;
+    border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(10,132,255,.55);
+  }
+  .p-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .p-row .grow { flex: 1 1 auto; }
+  .mini {
+    height: 26px; min-width: 26px; padding: 0 8px; border: 0; border-radius: 8px;
+    background: rgba(255,255,255,.08); color: #cfd8e8; font: inherit; font-size: 11px;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .mini:hover { background: rgba(255,255,255,.16); color: #fff; }
+  .mini.on { background: rgba(10,132,255,.28); color: #fff; }
+  .vol { display: flex; align-items: center; gap: 6px; }
+  .vol svg { width: 13px; height: 13px; color: #8b98ae; }
+  .vol input { width: 86px; accent-color: #0a84ff; }
+
+  /* ---------- 胶囊 ---------- */
   .cap {
     position: relative;
-    height: 64px; margin: 2px;
+    flex: 0 0 68px;
+    height: 68px; margin: 4px 6px 4px;
     display: flex; align-items: center; gap: 10px;
-    padding: 0 10px 0 8px;
-    border-radius: 32px;
-    background: rgba(22, 26, 34, .94);
+    padding: 0 8px 0 8px;
+    border-radius: 34px;
+    background: rgba(22, 24, 28, .96);
     color: #eef2f8;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .38), inset 0 0 0 1px rgba(255, 255, 255, .07);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .42), inset 0 0 0 1px rgba(255, 255, 255, .07);
     -webkit-app-region: drag;
     overflow: hidden;
   }
 
   .cover {
-    width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%;
-    background: radial-gradient(circle at 32% 30%, #5a82ff, #2b3550 70%);
+    width: 46px; height: 46px; flex: 0 0 46px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #4da3ff, #16324f 70%);
     display: flex; align-items: center; justify-content: center;
-    color: #c9d6ff; font-size: 18px;
-    transition: transform 300ms cubic-bezier(.23,1,.32,1);
+    color: #e6f1ff; font-size: 17px; font-weight: 600;
+    -webkit-app-region: no-drag; cursor: pointer;
   }
-  .cap.playing .cover { animation: spin 6s linear infinite; }
+  .cap.playing .cover { animation: spin 7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .meta { flex: 1 1 auto; min-width: 0; -webkit-app-region: drag; }
+  .meta { flex: 1 1 auto; min-width: 0; cursor: pointer; }
   .title {
     font-size: 12.5px; font-weight: 600; line-height: 17px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -42,43 +140,77 @@
   .sub { font-size: 10.5px; color: #93a0b8; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .btns { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
-  button {
-    width: 26px; height: 26px; border: 0; border-radius: 50%;
+  .btns button {
+    width: 28px; height: 28px; border: 0; border-radius: 50%;
     background: transparent; color: #cfd8e8; cursor: pointer;
     display: flex; align-items: center; justify-content: center; padding: 0;
     transition: background 120ms ease, color 120ms ease, transform 120ms ease;
   }
-  button:hover { background: rgba(255,255,255,.10); color: #fff; }
-  button:active { transform: scale(.92); }
-  .play { width: 32px; height: 32px; background: rgba(90,130,255,.92); color: #fff; }
-  .play:hover { background: #5a82ff; }
-  svg { width: 13px; height: 13px; }
-  .play svg { width: 14px; height: 14px; }
+  .btns button:hover { background: rgba(255,255,255,.10); color: #fff; }
+  .btns button:active { transform: scale(.92); }
+  .btns .play { width: 34px; height: 34px; background: rgba(10,132,255,.92); color: #fff; }
+  .btns .play:hover { background: #0a84ff; }
+  svg { width: 13px; height: 13px; display: block; }
+  .btns .play svg { width: 15px; height: 15px; }
+  .btns .chev svg { transition: transform 160ms ease; }
+  .wrap.open .btns .chev svg { transform: rotate(180deg); }
 
   .bar {
-    position: absolute; left: 14px; right: 14px; bottom: 5px; height: 2px;
-    border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden;
+    position: absolute; left: 16px; right: 16px; bottom: 5px; height: 8px;
+    cursor: pointer;
   }
-  .bar i { display: block; height: 100%; width: 0; background: #5a82ff; border-radius: 2px; }
+  .bar::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 3px; height: 2px;
+    border-radius: 2px; background: rgba(255,255,255,.12);
+  }
+  .bar i { position: absolute; left: 0; top: 3px; height: 2px; width: 0; background: #0a84ff; border-radius: 2px; }
 
   .empty { font-size: 11.5px; color: #93a0b8; line-height: 16px; }
-  .empty b { color: #cfd8e8; font-weight: 600; cursor: pointer; }
 </style>
 </head>
 <body>
-<div class="cap" id="cap">
-  <div class="cover" id="cover">♪</div>
-  <div class="meta">
-    <div class="title" id="title">未选择音乐</div>
-    <div class="sub" id="sub">点这里选文件夹</div>
+<div class="wrap" id="wrap">
+  <section class="panel" id="panel" aria-hidden="true">
+    <div class="p-head">
+      <div class="p-title">播放列表<span id="pCount"></span></div>
+      <button id="pickDir" title="扫描整个文件夹">选文件夹</button>
+      <button id="addFiles" title="添加单个或多个音频文件">添加文件</button>
+    </div>
+    <div class="notice" id="notice" hidden></div>
+    <div class="p-list" id="list"></div>
+    <div class="p-foot">
+      <div class="seek-row">
+        <span id="cur">0:00</span>
+        <div class="seek" id="seek" title="点击跳转"><i id="seekFill"></i><b class="dot" id="seekDot"></b></div>
+        <span id="dur">0:00</span>
+      </div>
+      <div class="p-row">
+        <button class="mini" id="shuffle" title="随机播放">随机</button>
+        <button class="mini" id="repeat" title="循环模式">列表循环</button>
+        <span class="grow"></span>
+        <div class="vol">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 8.5a4.5 4.5 0 0 1 0 7"/></svg>
+          <input id="vol" type="range" min="0" max="100" step="1" value="80" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="cap" id="cap">
+    <div class="cover" id="cover" title="选择文件夹">♪</div>
+    <div class="meta" id="meta">
+      <div class="title" id="title">未选择音乐</div>
+      <div class="sub" id="sub">点封面选文件夹</div>
+    </div>
+    <div class="btns">
+      <button id="prev" title="上一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button id="play" class="play" title="播放 / 暂停"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+      <button id="next" title="下一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      <button id="expand" class="chev" title="播放列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></button>
+      <button id="close" title="关闭播放器"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="bar" id="bar" title="点击跳转"><i id="barFill"></i></div>
   </div>
-  <div class="btns">
-    <button id="prev" title="上一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
-    <button id="play" class="play" title="播放 / 暂停"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-    <button id="next" title="下一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
-    <button id="close" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-  </div>
-  <div class="bar"><i id="bar"></i></div>
 </div>
 <audio id="au" preload="metadata"></audio>
 <script>
@@ -87,112 +219,347 @@
   const $ = (s) => document.querySelector(s);
   const au = $('#au');
   const cap = $('#cap');
+  const wrap = $('#wrap');
   const elTitle = $('#title');
   const elSub = $('#sub');
-  const elBar = $('#bar');
+  const elBar = $('#barFill');
+  const elSeek = $('#seekFill');
+  const elDot = $('#seekDot');
   const elCover = $('#cover');
+  const elList = $('#list');
+  const elNotice = $('#notice');
   const btnPlay = $('#play');
-
-  let tracks = [];
-  let idx = -1;
-  let dir = '';
+  const btnShuffle = $('#shuffle');
+  const btnRepeat = $('#repeat');
+  const vol = $('#vol');
 
   const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
   const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
 
-  function fmt(s) {
-    if (!isFinite(s) || s < 0) return '0:00';
-    const m = Math.floor(s / 60);
-    const x = Math.floor(s % 60);
-    return m + ':' + (x < 10 ? '0' : '') + x;
+  const S = {
+    tracks: [],
+    idx: -1,
+    shuffle: false,
+    repeat: 'all',     // all | one | off
+    volume: 0.8,
+    open: false,
+    lastTime: 0,
+  };
+
+  const REPEAT_TEXT = { all: '列表循环', one: '单曲循环', off: '不循环' };
+
+  function fmt(sec) {
+    if (!isFinite(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function notice(text, sticky) {
+    elNotice.textContent = text;
+    elNotice.hidden = false;
+    clearTimeout(notice._t);
+    if (!sticky) notice._t = setTimeout(() => { elNotice.hidden = true; }, 9000);
+  }
+
+  let saveTimer = 0;
+  function save(now) {
+    const cur = S.tracks[S.idx];
+    const patch = {
+      volume: S.volume,
+      shuffle: S.shuffle,
+      repeat: S.repeat,
+      lastFile: cur ? cur.file : '',
+      lastTime: au.currentTime || 0,
+    };
+    clearTimeout(saveTimer);
+    const fire = () => { try { window.pdd.musicSave(patch); } catch (_) { /* ignore */ } };
+    if (now) fire(); else saveTimer = setTimeout(fire, 1200);
   }
 
   function paint() {
-    const t = tracks[idx];
+    const t = S.tracks[S.idx];
     if (!t) {
       elTitle.textContent = '未选择音乐';
-      elSub.textContent = '点这里选文件夹';
-      cap.classList.remove('playing');
+      elSub.textContent = '点封面选文件夹';
       return;
     }
     elTitle.textContent = t.title || '未知曲目';
     const bits = [];
     if (t.album) bits.push(t.album);
-    bits.push((idx + 1) + ' / ' + tracks.length);
+    bits.push((S.idx + 1) + ' / ' + S.tracks.length);
     elSub.textContent = bits.join(' · ');
     elCover.textContent = (t.title || '♪').slice(0, 1).toUpperCase();
+    elShufflePaint();
   }
 
-  function playAt(i) {
-    if (!tracks.length) return;
-    idx = (i + tracks.length) % tracks.length;
-    const t = tracks[idx];
-    au.src = 'file:///' + encodeURI(t.file.replace(/\\/g, '/'));
-    au.play().then(() => {
-      cap.classList.add('playing');
-      btnPlay.innerHTML = ICON_PAUSE;
-    }).catch((e) => {
-      elSub.textContent = '打不开这个文件：' + (e && e.message ? e.message : '未知');
+  function elShufflePaint() {
+    btnShuffle.classList.toggle('on', S.shuffle);
+    btnRepeat.textContent = REPEAT_TEXT[S.repeat] || '列表循环';
+    btnRepeat.classList.toggle('on', S.repeat !== 'off');
+  }
+
+  function renderList() {
+    elList.innerHTML = '';
+    if (!S.tracks.length) {
+      const d = document.createElement('div');
+      d.className = 'empty';
+      d.style.padding = '10px 8px';
+      d.textContent = '还没有音乐。点「选文件夹」或「添加文件」。';
+      elList.appendChild(d);
+      return;
+    }
+    S.tracks.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'row' + (i === S.idx ? ' on' : '') + (t.missing ? ' missing' : '');
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = String(i + 1);
+      const title = document.createElement('span');
+      title.className = 't';
+      title.textContent = t.title || '未知曲目';
+      row.appendChild(n);
+      row.appendChild(title);
+      if (t.builtin) {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = '内置';
+        row.appendChild(tag);
+      } else if (t.album) {
+        const a = document.createElement('span');
+        a.className = 'a';
+        a.textContent = t.album;
+        row.appendChild(a);
+      }
+      if (t.missing) row.title = '文件不存在：' + t.file;
+      if (!t.missing) row.addEventListener('click', () => playAt(i));
+      elList.appendChild(row);
     });
+    $('#pCount').textContent = S.tracks.length ? '（' + S.tracks.length + ' 首）' : '';
+  }
+
+  function playAt(i, autoplay) {
+    if (!S.tracks.length) return;
+    let next = i;
+    if (S.shuffle && S.tracks.length > 1) {
+      let guard = 0;
+      do { next = Math.floor(Math.random() * S.tracks.length); } while (next === S.idx && guard++ < 20);
+    }
+    S.idx = ((next % S.tracks.length) + S.tracks.length) % S.tracks.length;
+    const t = S.tracks[S.idx];
+    if (!t) return;
+    if (t.missing) { notice('文件不存在：' + t.file); return; }
+    S.lastTime = 0;
+    au.src = t.url;
+    au.load();
+    if (autoplay !== false) {
+      au.play().catch((e) => notice('打不开这个文件：' + ((e && e.message) || '格式不支持')));
+    }
     paint();
+    renderList();
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: t.title || '未知曲目',
+          artist: t.album || '本地音乐',
+        });
+      } catch (_) { /* ignore */ }
+    }
   }
 
   function toggle() {
-    if (!tracks.length) { pick(); return; }
-    if (au.paused) { au.play().catch(() => {}); } else { au.pause(); }
+    if (!S.tracks.length) { pickDir(); return; }
+    if (S.idx < 0) { playAt(0); return; }
+    if (au.paused) au.play().catch(() => {}); else au.pause();
   }
 
-  async function pick() {
+  function seekTo(ratio) {
+    const d = au.duration;
+    if (!isFinite(d) || d <= 0) return;
+    au.currentTime = Math.max(0, Math.min(d, d * ratio));
+  }
+
+  /* ---------------- 展开 / 收起 ---------------- */
+  // 窗口高度按面板实际高度来算：固定高度会在面板上方留一块透明区域，
+  // 透明区域照样吃鼠标事件，会挡住后面的应用。
+  const CAP_H = 76;
+  let resizeBusy = false;
+  async function expand() {
+    if (S.open || resizeBusy) return;
+    resizeBusy = true;
+    S.open = true;
+    wrap.classList.add('open');
+    $('#panel').setAttribute('aria-hidden', 'false');
+    renderList();
+    const on = elList.querySelector('.row.on');
+    if (on) on.scrollIntoView({ block: 'nearest' });
+    // 面板是 flex:0 0 auto，即使当前窗口只有 76 高也能量到内容高度
+    const panelH = Math.ceil($('#panel').getBoundingClientRect().height);
+    const h = Math.max(140, Math.min(470, panelH + CAP_H + 4));
+    try { await window.pdd.musicResize(400, h); } catch (_) { /* ignore */ }
+    resizeBusy = false;
+  }
+  async function collapse() {
+    if (!S.open || resizeBusy) return;
+    S.open = false;
+    wrap.classList.remove('open');
+    $('#panel').setAttribute('aria-hidden', 'true');
+    resizeBusy = true;
+    await new Promise((r) => setTimeout(r, 190));
+    try { await window.pdd.musicResize(400, CAP_H); } catch (_) { /* ignore */ }
+    resizeBusy = false;
+  }
+  function togglePanel() { if (S.open) collapse(); else expand(); }
+
+  /* ---------------- 数据 ---------------- */
+  async function applyList(r) {
+    if (!r || !r.ok) return;
+    S.tracks = r.tracks || [];
+    renderList();
+    const p = r.player || {};
+    if (typeof p.volume === 'number') {
+      S.volume = Math.max(0, Math.min(1, p.volume));
+      vol.value = String(Math.round(S.volume * 100));
+      au.volume = S.volume;
+    }
+    if (typeof p.shuffle === 'boolean') S.shuffle = p.shuffle;
+    if (p.repeat === 'all' || p.repeat === 'one' || p.repeat === 'off') S.repeat = p.repeat;
+    elShufflePaint();
+    if (p.lastFile) {
+      const i = S.tracks.findIndex((t) => t.file === p.lastFile);
+      if (i >= 0) {
+        S.idx = i;
+        S.lastTime = Number(p.lastTime) || 0;
+        const t = S.tracks[i];
+        if (t && !t.missing) { au.src = t.url; au.load(); }
+        paint();
+        renderList();
+      }
+    }
+  }
+
+  async function pickDir() {
     try {
       const r = await window.pdd.musicPick();
       if (!r || !r.ok) return;
-      tracks = r.tracks || [];
-      dir = r.dir || '';
-      if (!tracks.length) {
-        elTitle.textContent = '这个文件夹里没有音频';
-        elSub.textContent = '支持 mp3 / flac / m4a / wav / ogg';
-        return;
+      await applyList(r);
+      if (r.skippedNcm > 0) {
+        notice('跳过了 ' + r.skippedNcm + ' 个 .ncm：这是网易云音乐的加密格式，本播放器不解析（不做 DRM 破解）。'
+          + '要在这里播，需要 mp3 / flac / m4a 等标准格式的文件。', true);
+      } else if (!r.tracks || !r.tracks.length) {
+        notice('这个文件夹里没有可播放的音频（支持 mp3 / flac / m4a / aac / wav / ogg / opus）。', true);
       }
-      playAt(0);
     } catch (e) {
-      elSub.textContent = '选择失败：' + ((e && e.message) || e);
+      notice('选择失败：' + ((e && e.message) || e));
     }
   }
 
-  // 首次打开：读上次列表，不自动播（避免一开就响）
+  async function addFiles() {
+    try {
+      const r = await window.pdd.musicAddFiles();
+      if (!r || !r.ok) return;
+      await applyList(r);
+      if (r.added === 0) notice('这些文件已经在列表里了。');
+    } catch (e) {
+      notice('添加失败：' + ((e && e.message) || e));
+    }
+  }
+
+  /* ---------------- 事件 ---------------- */
+  btnPlay.addEventListener('click', toggle);
+  $('#prev').addEventListener('click', () => { if (S.tracks.length) playAt(S.idx <= 0 ? S.tracks.length - 1 : S.idx - 1); });
+  $('#next').addEventListener('click', () => { if (S.tracks.length) playAt(S.idx + 1); });
+  $('#close').addEventListener('click', () => { save(true); window.close(); });
+  $('#expand').addEventListener('click', togglePanel);
+  $('#meta').addEventListener('click', togglePanel);
+  elCover.addEventListener('click', pickDir);
+  $('#pickDir').addEventListener('click', pickDir);
+  $('#addFiles').addEventListener('click', addFiles);
+
+  btnShuffle.addEventListener('click', () => { S.shuffle = !S.shuffle; elShufflePaint(); save(); });
+  btnRepeat.addEventListener('click', () => {
+    S.repeat = S.repeat === 'all' ? 'one' : S.repeat === 'one' ? 'off' : 'all';
+    elShufflePaint();
+    save();
+  });
+  vol.addEventListener('input', () => {
+    S.volume = Number(vol.value) / 100;
+    au.volume = S.volume;
+    save();
+  });
+
+  $('#bar').addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    seekTo((e.clientX - r.left) / r.width);
+  });
+  $('#seek').addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    seekTo((e.clientX - r.left) / r.width);
+  });
+
+  au.addEventListener('playing', () => { cap.classList.add('playing'); btnPlay.innerHTML = ICON_PAUSE; });
+  au.addEventListener('pause', () => { cap.classList.remove('playing'); btnPlay.innerHTML = ICON_PLAY; save(); });
+  au.addEventListener('ended', () => {
+    if (!S.tracks.length) return;
+    if (S.repeat === 'one') { au.currentTime = 0; au.play().catch(() => {}); return; }
+    if (S.repeat === 'off' && S.idx === S.tracks.length - 1 && !S.shuffle) { paint(); return; }
+    playAt(S.idx + 1);
+  });
+  au.addEventListener('loadedmetadata', () => {
+    if (S.lastTime > 0 && S.lastTime < (au.duration || 0) - 1) {
+      au.currentTime = S.lastTime;
+      S.lastTime = 0;
+    }
+    $('#dur').textContent = fmt(au.duration);
+  });
+  au.addEventListener('timeupdate', () => {
+    const d = au.duration || 0;
+    const pct = d ? ((au.currentTime / d) * 100).toFixed(2) + '%' : '0%';
+    elBar.style.width = pct;
+    elSeek.style.width = pct;
+    if (d) elDot.style.left = pct;
+    $('#cur').textContent = fmt(au.currentTime);
+    if (d) $('#dur').textContent = fmt(d);
+    const t = S.tracks[S.idx];
+    if (t && !elSub.dataset.lock) {
+      elSub.textContent = fmt(au.currentTime) + ' / ' + fmt(d) + (t.album ? ' · ' + t.album : '');
+    }
+  });
+  au.addEventListener('error', () => { notice('这个格式播不了，换一首试试。'); });
+
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', () => au.play().catch(() => {}));
+      navigator.mediaSession.setActionHandler('pause', () => au.pause());
+      navigator.mediaSession.setActionHandler('previoustrack', () => playAt(S.idx - 1));
+      navigator.mediaSession.setActionHandler('nexttrack', () => playAt(S.idx + 1));
+    } catch (_) { /* ignore */ }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); toggle(); return; }
+    if (e.key === 'Escape') { if (S.open) collapse(); else { save(true); window.close(); } return; }
+    if (e.key === 'ArrowLeft') { au.currentTime = Math.max(0, au.currentTime - 5); return; }
+    if (e.key === 'ArrowRight') { au.currentTime = Math.min(au.duration || 0, au.currentTime + 5); return; }
+    if (e.key === 'ArrowUp') { S.volume = Math.min(1, S.volume + 0.05); vol.value = String(Math.round(S.volume * 100)); au.volume = S.volume; save(); return; }
+    if (e.key === 'ArrowDown') { S.volume = Math.max(0, S.volume - 0.05); vol.value = String(Math.round(S.volume * 100)); au.volume = S.volume; save(); return; }
+  });
+
+  window.addEventListener('beforeunload', () => { try { window.pdd.musicSave({ volume: S.volume, lastTime: au.currentTime || 0 }); } catch (_) { /* ignore */ } });
+
+  /* ---------------- 启动 ---------------- */
   (async function boot() {
     try {
       const r = await window.pdd.musicList();
-      tracks = (r && r.tracks) || [];
-      dir = (r && r.dir) || '';
-      if (tracks.length) {
-        idx = 0;
-        paint();
-        elSub.textContent = dir.split(/[\\/]/).pop() + ' · ' + tracks.length + ' 首 · 点▶开始';
+      await applyList(r);
+      if (!S.tracks.length) {
+        elTitle.textContent = '没有音乐';
+        elSub.textContent = '点封面选文件夹';
+      } else if (S.idx < 0) {
+        elSub.textContent = '共 ' + S.tracks.length + ' 首 · 点 ▶ 开始';
       }
     } catch (_) { /* ignore */ }
   })();
-
-  btnPlay.addEventListener('click', toggle);
-  $('#prev').addEventListener('click', () => { if (tracks.length) playAt(idx - 1); });
-  $('#next').addEventListener('click', () => { if (tracks.length) playAt(idx + 1); });
-  $('#close').addEventListener('click', () => window.close());
-  elSub.addEventListener('click', pick);
-  $('#cover').addEventListener('click', pick);
-
-  au.addEventListener('playing', () => { cap.classList.add('playing'); btnPlay.innerHTML = ICON_PAUSE; });
-  au.addEventListener('pause', () => { cap.classList.remove('playing'); btnPlay.innerHTML = ICON_PLAY; });
-  au.addEventListener('ended', () => { if (tracks.length) playAt(idx + 1); });
-  au.addEventListener('timeupdate', () => {
-    const d = au.duration || 0;
-    elBar.style.width = d ? ((au.currentTime / d) * 100).toFixed(1) + '%' : '0%';
-    const t = tracks[idx];
-    if (t) {
-      elSub.textContent = fmt(au.currentTime) + ' / ' + fmt(d) +
-        (t.album ? ' · ' + t.album : '') + ' · ' + (idx + 1) + '/' + tracks.length;
-    }
-  });
-  au.addEventListener('error', () => { elSub.textContent = '这个格式播不了，换一首试试'; });
 })();
 </script>
 </body>

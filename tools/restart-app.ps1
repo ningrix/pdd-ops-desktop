@@ -16,10 +16,12 @@
 #   Restart (with debug port):  .\tools\restart-app.ps1
 #   Restart (no debug port):    .\tools\restart-app.ps1 -NoDebug
 #   Stop only:                  .\tools\restart-app.ps1 -StopOnly
+#   Compat mode (no GPU):       .\tools\restart-app.ps1 -Compat
 
 param(
     [switch]$StopOnly,
     [switch]$NoDebug,
+    [switch]$Compat,
     [int]$GraceSeconds = 25,
     [int]$DebugPort = 9333
 )
@@ -86,7 +88,10 @@ if (-not (Test-Path $exe)) {
 # plain Node (ipcMain undefined). Must be removed explicitly.
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 
-$argList = @('--no-sandbox', '--disable-gpu')
+$argList = @('--no-sandbox')
+# GPU is ON by default. --disable-gpu is only for machines with broken drivers;
+# it forces software rendering and makes every animation noticeably laggy.
+if ($Compat) { $argList += '--disable-gpu' }
 if (-not $NoDebug) { $argList += "--remote-debugging-port=$DebugPort" }
 $argList += '.'
 
