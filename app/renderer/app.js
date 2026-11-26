@@ -2181,6 +2181,23 @@ function renderOrderContribution(data) {
   }
 }
 
+
+// 售后状态分类标签。instant = 未发货极速退款（含普通未发货退款，同属"钱退了、货没发"）
+const RT_TAGS = [
+  { k: '', t: '全部' },
+  { k: 'pending_ship', t: '待寄回' },
+  { k: 'in_transit', t: '在途待收' },
+  { k: 'done', t: '已完成' },
+  { k: 'instant', t: '未发货退款' },
+  { k: 'noreturn', t: '无退货包裹' },
+];
+function rtMatchTag(r, tag) {
+  if (!tag) return true;
+  if (tag === 'instant') return r.refundKind === 'instant' || r.refundKind === 'unshipped';
+  if (tag === 'noreturn') return r.signedText === '无退货包裹';
+  return r.stage === tag;
+}
+
 function renderReturns(data) {
   const sec = $('#finReturnSec');
   const body = $('#finReturnBody');
@@ -2203,7 +2220,9 @@ function renderReturns(data) {
   }
   const byMall = state.returnsMall ? all.filter((r) => r.mallName === state.returnsMall) : all;
   const onlyRecent = $('#rtWithin21') ? $('#rtWithin21').checked : true;
-  const filtered = onlyRecent ? byMall.filter((r) => r.within21) : byMall;
+  const preTag = onlyRecent ? byMall.filter((r) => r.within21) : byMall;
+  const curTag = state.returnsTag || '';
+  const filtered = preTag.filter((r) => rtMatchTag(r, curTag));
   // 导出用「过滤后的全集」，不是分页渲染出来的那一截
   state.returnsFiltered = filtered;
   // 懒渲染：110 行 × 18 节点 ≈ 1980，占满整页 DOM 预算。
@@ -2224,7 +2243,7 @@ function renderReturns(data) {
   sec.style.display = 'block';
   // 统计按「过滤后的全集」算，不能按分页渲染出来的那一截算。
   // 口径按可操作性排：已签收（货回来了）→ 风险（钱退了、货没确认回）→ 无需退货。
-  const hidden = all.length - filtered.length;
+  const hidden = all.length - preTag.length;
   const rest = filtered.length - rows.length;
   const signedCount = filtered.filter((r) => r.signed === true).length;
   const noReturn = filtered.filter((r) => r.signedText === '无退货包裹').length;
@@ -2239,6 +2258,15 @@ function renderReturns(data) {
   if (noReturn) parts.push('无退货包裹 ' + noReturn);
   if (hidden) parts.push('已隐藏 ' + hidden + ' 单');
   if (note) note.textContent = parts.join(' · ');
+  // 状态分类标签：数字按"标签过滤前"的集合算，切换标签时数字不跳
+  const tagHost = $('#rtTags');
+  if (tagHost) {
+    tagHost.innerHTML = RT_TAGS.map((t) => {
+      const n = preTag.filter((r) => rtMatchTag(r, t.k)).length;
+      return '<button class="rt-tag' + (t.k === curTag ? ' on' : '') + '" data-tag="' + t.k + '">'
+        + t.t + '<span class="n">' + n + '</span></button>';
+    }).join('');
+  }
   const more = $('#finReturnMore');
   if (more) {
     if (rest > 0) {
@@ -2269,6 +2297,7 @@ function renderReturns(data) {
           '<div class="fin-sub">' + esc(r.orderSn) + ' · ' + (r.days == null ? '—' : r.days + ' 天前') + '</div></div></div></td>' +
       '<td class="fin-store" title="' + esc(r.mallName || '') + '">' + esc(r.mallName || '—') + '</td>' +
       '<td><span class="rt-stage rt-stage-' + esc(r.stage || 'pending') + '">' + esc(r.stageText || '—') + '</span>' +
+        (r.refundKindText ? '<span class="rt-kind rt-kind-' + esc(r.refundKind) + '" title="未发货就退款，没有退货包裹可等">' + esc(r.refundKindText) + '</span>' : '') +
         '<div class="rt-sign rt-sign-' + signCls + '"' +
           (r.traceNode ? ' title="' + esc((r.traceNode || '') + (r.traceTime ? ' · ' + r.traceTime : '')) + '"' : '') + '>' +
           esc(r.signedText || '未知') +
@@ -2930,6 +2959,21 @@ $('#finReturnBody') && $('#finReturnBody').addEventListener('click', async (e) =
 
 $('#btnFinOrders') && $('#btnFinOrders').addEventListener('click', () => collectOrderContribution());
 $('#btnReturnRefresh') && $('#btnReturnRefresh').addEventListener('click', () => loadReturns());
+  // 顶栏音符：开关悬浮胶囊播放器
+  $('#btnMusic') && $('#btnMusic').addEventListener('click', () => {
+    if (window.pdd.musicCapsule) window.pdd.musicCapsule().catch(() => {});
+  });
+  // 售后状态标签：事件委托绑一次，标签行每次重渲染不用重新绑
+  const rtTagsEl = $('#rtTags');
+  if (rtTagsEl) {
+    rtTagsEl.addEventListener('click', (e) => {
+      const b = e.target.closest('.rt-tag');
+      if (!b) return;
+      state.returnsTag = b.dataset.tag || '';
+      state.returnsLimit = 30;
+      if (state.returns) renderReturns(state.returns);
+    });
+  }
 
 // 导出当前筛选结果（不是只导当前渲染的 30 行）
 $('#btnReturnExport') && $('#btnReturnExport').addEventListener('click', async () => {

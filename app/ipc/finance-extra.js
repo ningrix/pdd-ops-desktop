@@ -83,6 +83,12 @@ ipcMain.handle('finance:returns', () => {
 
   if (snap.ok && snap.data) {
     for (const s of (snap.data.stores || [])) {
+      // 订单状态索引：售后单不带「发没发货」，从同店订单里按 orderSn 取
+      const orderStatusOf = new Map();
+      for (const o of (s.orders || [])) {
+        if (o && o.orderSn) orderStatusOf.set(o.orderSn, String(o.status || ''));
+      }
+
       // ① 平台售后单（现在含已完成 status=5）
       for (const a of (s.afterSales || [])) {
         const m = manual[a.orderSn] || {};
@@ -91,6 +97,10 @@ ipcMain.handle('finance:returns', () => {
         const tr = traces[a.orderSn] || null;
         // 售后类型决定「需不需要退货」：未发货退款/仅退款不用退货，谈不上签收
         const needReturn = /退货/.test(String(a.typeName || ''));
+        // 未发货 / 极速退款标注：售后类型优先，其次看订单状态
+        const kindRaw = String(a.typeName || '') + ' ' + String(a.title || '') + ' ' + (orderStatusOf.get(a.orderSn) || '');
+        const refundKind = /极速/.test(kindRaw) ? 'instant'
+          : (/未发货/.test(kindRaw) ? 'unshipped' : '');
         // status 5 = 已完成，10 = 待消费者寄货，11 = 待商家确认收货
         const stage = a.status === 5 ? 'done'
           : (a.status === 10 ? 'pending_ship' : (a.status === 11 ? 'in_transit' : 'pending'));
@@ -130,6 +140,9 @@ ipcMain.handle('finance:returns', () => {
           manual: !!m.returnSn || !!m.carrier || !!m.done,
           source: 'platform',
           stage,
+          refundKind,
+          refundKindText: refundKind === 'instant' ? '未发货 · 极速退款'
+            : (refundKind === 'unshipped' ? '未发货退款' : ''),
           stageText: stage === 'done' ? '已完成'
             : (stage === 'pending_ship' ? '待寄回' : (stage === 'in_transit' ? '在途待收' : '待处理')),
           signed,
@@ -168,6 +181,8 @@ ipcMain.handle('finance:returns', () => {
           manual: !!m.returnSn || !!m.carrier || !!m.done,
           source: 'refunded',
           stage: 'refunded',
+          refundKind: /未发货/.test(String(o.status || '')) ? 'unshipped' : '',
+          refundKindText: /未发货/.test(String(o.status || '')) ? '未发货退款' : '',
           stageText: '已退款',
           // 退款已完成但货有没有退回来，平台接口拿不到 —— 未知用 null，不用 false
           signed: m.done ? true : null,

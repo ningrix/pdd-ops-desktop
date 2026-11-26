@@ -1378,3 +1378,249 @@ html[data-theme="light"] .rt-tab.active { color: #17233a; border-bottom-color: #
 /* UI-H1 源店铺已删除的标注（采集箱「店铺」列） */
 .src-gone { color: var(--muted); }
 .src-gone::after { content: ''; }
+
+/* ============ 顶栏更新徽标 ============ */
+/* 常态不占位：只有在检查/有新版本/下载中/待安装/失败时才出现 */
+.update-btn[hidden] { display: none !important; }
+.update-btn[data-state="checking"] { color: var(--muted); }
+.update-btn[data-state="available"] { color: var(--brand); border-color: var(--brand); }
+.update-btn[data-state="progress"] { color: var(--brand); }
+.update-btn[data-state="downloaded"] { color: var(--ok); border-color: var(--ok); font-weight: 600; }
+.update-btn[data-state="error"] { color: var(--err); border-color: var(--err); }
+.update-btn:disabled { opacity: .7; cursor: default; }
+.update-btn svg { width: 14px; height: 14px; }
+/* 有待安装更新时给一点轻微脉动，避免被忽略（尊重系统的减少动效设置） */
+@media (prefers-reduced-motion: no-preference) {
+  .update-btn[data-state="downloaded"] { animation: updPulse 2.4s var(--ease-std) infinite; }
+  @keyframes updPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
+    50% { box-shadow: 0 0 0 3px rgba(52, 199, 89, .18); }
+  }
+}
+
+/* ============ 资金指标卡：圆角 + 可点开看明细 ============ */
+/* 覆盖前面 9px 的定义，统一到 14px，和弹层的 10px 形成层次 */
+#pane-finance .fin-card {
+  border-radius: 14px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color var(--m-fast) var(--ease-std),
+              transform var(--m-fast) var(--ease-std),
+              box-shadow var(--m-fast) var(--ease-std);
+}
+#pane-finance .fin-card:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+}
+#pane-finance .fin-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ============ 资金指标：从卡片就地长成大胶囊 ============ */
+.metric-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, .46);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms var(--ease-std);
+}
+.metric-veil.on { opacity: 1; pointer-events: auto; }
+
+.metric-big {
+  position: fixed;
+  z-index: 901;
+  display: none;
+  background: var(--bg2);
+  border: 1px solid var(--brand);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .46);
+  overflow: hidden;
+  /* 只动画 transform：走合成层，不触发 reflow。
+     之前动画 left/top/width/height，每帧都要重新布局整个页面，GPU 开着也照样卡。 */
+  transition: transform 280ms var(--ease-std);
+  will-change: transform;
+  transform-origin: top left;
+}
+.metric-big.on { display: block; }
+
+.metric-big .mb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 8px 18px;
+  opacity: 0;
+  transition: opacity 150ms var(--ease-std);
+}
+.metric-big .mb-title { font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.metric-big .mb-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--m-fast) var(--ease-std), border-color var(--m-fast) var(--ease-std);
+}
+.metric-big .mb-close:hover { color: var(--fg); border-color: var(--brand); }
+.metric-big .mb-close svg { width: 14px; height: 14px; }
+
+.metric-big .mb-body {
+  padding: 0 18px 16px;
+  max-height: calc(100% - 56px);
+  overflow: auto;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 180ms var(--ease-std), transform 180ms var(--ease-std);
+}
+/* 尺寸动画走完再让内容浮现，避免文字在拉伸过程中重排闪烁 */
+.metric-big.settled .mb-head { opacity: 1; }
+.metric-big.settled .mb-body { opacity: 1; transform: none; }
+
+.metric-formula {
+  font-size: 12px;
+  color: var(--fg2);
+  background: rgba(255, 255, 255, .03);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+.metric-formula b { color: var(--brand); font-weight: 600; }
+.metric-body { border-radius: 8px; }
+.metric-body .fin-table { font-size: 12px; }
+.metric-empty { font-size: 12px; color: var(--muted); padding: 14px 2px; }
+
+html[data-theme="light"] .metric-formula { background: rgba(0, 0, 0, .025); }
+
+/* ============ 设置页 ============ */
+.set-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 26px 26px 40px;
+}
+.set-sec { margin-bottom: 26px; }
+.set-sec h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0 0 8px;
+}
+.set-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 7px 0;
+}
+.set-k { font-size: 12.5px; color: var(--muted); flex: 0 0 auto; }
+.set-v { font-size: 12.5px; color: var(--fg2); text-align: right; word-break: break-all; }
+.set-v.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+.set-note {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 6px 0 0;
+}
+.set-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+/* ============ 减线：用留白替代分隔线 ============ */
+/* 左栏各段之间不再画线，靠间距区分 */
+.sec { border-bottom: none; padding: 11px 13px; }
+.sec + .sec { margin-top: 2px; }
+/* 表格只保留表头下的那条线，行与行靠行高和 hover 区分 */
+tbody td { border-bottom: none; }
+.fin-table td { border-bottom: none; }
+.batch-table td { border-bottom: none; }
+#finOrderBody tr:hover,
+#finReturnBody tr:hover,
+#triageBody tr:hover,
+#poolBody tr:hover,
+.fin-table tbody tr:hover { background: rgba(255, 255, 255, .028); }
+/* 采集会话的页头也不画线 */
+.cc-wrap { border-bottom: none; }
+/* 分区标题不再描边，只留字重和间距 */
+.fin-sec-h { margin-bottom: 10px; }
+
+/* ============ 左下角设置小图标 ============ */
+/* 只留一个齿轮，塞进日志栏最左侧，不占额外一行 */
+.log-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--m-fast) var(--ease-std), color var(--m-fast) var(--ease-std);
+}
+.log-icon:hover { background: rgba(255, 255, 255, .07); color: var(--fg2); }
+.log-icon.active { color: var(--brand); background: rgba(75, 123, 236, .14); }
+.log-icon svg { width: 14px; height: 14px; }
+html[data-theme="light"] .log-icon:hover { background: rgba(0, 0, 0, .05); }
+
+/* ============ 设置页开关 ============ */
+.set-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0 2px;
+  font-size: 12.5px;
+  color: var(--fg2);
+  cursor: pointer;
+  user-select: none;
+}
+.set-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* 关闭动效：全局把过渡和动画压到近零，让交互变成瞬时切换 */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* UI-RT-TAGS 售后状态分类标签 + 未发货退款徽标 */
+.rt-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.rt-tag {
+  height: 24px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel);
+  font: inherit; font-size: 12px; color: var(--muted); cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.rt-tag:hover { color: var(--text); border-color: var(--brand); }
+.rt-tag.on { background: var(--accent-weak, #e7efff); color: #17233a; border-color: transparent; font-weight: 600; }
+.rt-tag .n { margin-left: 5px; opacity: .55; font-variant-numeric: tabular-nums; }
+.rt-kind {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+  font-size: 10.5px; line-height: 16px; vertical-align: 1px;
+}
+.rt-kind-instant { background: #fdecec; color: #b3261e; }
+.rt-kind-unshipped { background: #fff3e0; color: #8a5a00; }
+html[data-theme="dark"] .rt-kind-instant { background: rgba(255,120,110,.16); color: #ff9d95; }
+html[data-theme="dark"] .rt-kind-unshipped { background: rgba(255,180,84,.16); color: #ffc279; }
+
+/* UI-MUSIC-BTN 顶栏音符按钮（必须 no-drag，否则点击被当成拖窗） */
+#btnMusic { -webkit-app-region: no-drag; width: 30px; padding: 0; justify-content: center; }
+#btnMusic svg { width: 15px; height: 15px; }

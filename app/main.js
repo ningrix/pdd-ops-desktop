@@ -6,21 +6,47 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 const TRACE_FILE = path.join(os.tmpdir(), 'pdd-trace.log');
+// 打包态额外落一份到 exe 同级：目标机的 %TEMP% 有时写不进去，启动问题就完全看不到。
+// 源码态不写，避免污染 app/ 目录。
+const BOOT_FILE = (!process.defaultApp && process.resourcesPath)
+  ? path.join(path.dirname(process.execPath), 'boot.log')
+  : null;
 const MALL_ZOOM = 0.7; // 店铺后台视图默认缩放：页面内容更紧凑，一屏看更多
 function trace(m) {
+  const line = new Date().toISOString().slice(11, 23) + ' ' + m + '\n';
   try {
-    fs.appendFileSync(TRACE_FILE, new Date().toISOString().slice(11, 23) + ' ' + m + '\n');
+    fs.appendFileSync(TRACE_FILE, line);
   } catch (_) { /* ignore */ }
+  if (BOOT_FILE) {
+    try { fs.appendFileSync(BOOT_FILE, line); } catch (_) { /* ignore */ }
+  }
 }
 try { fs.writeFileSync(TRACE_FILE, ''); } catch (_) { /* ignore */ }
 trace('module start');
 
-const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, screen } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, screen, dialog } = require('electron');
 trace('electron required');
 
-// 本环境必须关闭 Chromium 沙箱与 GPU，否则 Electron 原生层会访问违例
+// 本环境（WorkBuddy 沙箱）必须关闭 Chromium 沙箱，否则 Electron 原生层会访问违例
 app.commandLine.appendSwitch('no-sandbox');
-app.disableHardwareAcceleration();
+
+// GPU 加速的开关要等 DATA_DIR 确定、读到用户配置后再决定（见下方 DATA_DIR 之后）。
+// 注意：disableHardwareAcceleration 必须在 app ready 之前调用，运行中改不了，所以只能走"重启生效"。
+
+/**
+ * 打包态默认开 CDP 调试端口。
+ *
+ * 为什么需要：空白新建的图片上传走 CDP 的 DOM.setFileInputFiles（页面 JS 做不到这件事），
+ * 而下面的 debugPort() 只从 argv 读 --remote-debugging-port。源码态由 restart-app.ps1
+ * 显式传参；安装版从桌面快捷方式启动没有这个参数，会直接报「应用启动时没开调试端口」，
+ * 表现为本地上传按钮点了没反应。
+ *
+ * 只在 app.isPackaged 时兜底，源码态行为完全不变。端口被占时 Chromium 会静默失败，
+ * 不崩主进程。
+ */
+if (app.isPackaged && !process.argv.some((x) => /^--remote-debugging-port=/.test(x))) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9333');
+}
 trace('switches applied');
 
 // ---------------------------------------------------------------- 数据目录
@@ -39,7 +65,67 @@ function applyDirectProxy(sess) {
   try { sess.setProxy({ mode: 'direct' }); } catch (e) { trace('setProxy fail: ' + ((e && e.message) || e)); }
 }
 
-const DATA_DIR = path.join(__dirname, 'userdata');
+/**
+ * 数据目录。
+ *
+ * 源码态：`app/userdata` —— 保持原行为，登录态、采集箱、资金快照都在这，不要动。
+ * 打包态：`__dirname` 落在 `resources/app.asar` 内部，asar 是只读的。
+ *   继续用它会静默失败：malls.json 写不进去、Partitions 建不了，
+ *   症状就是「添加店铺没反应」「每次重启都要重新扫码」。
+ *   因此改为逐个候选做写入探针，第一个成功的就用：
+ *     ① %APPDATA%\pdd-ops-desktop  —— 卸载/升级不删数据
+ *     ② %LOCALAPPDATA%\pdd-ops-desktop
+ *     ③ exe 同级 userdata          —— 便携/兜底
+ *
+ * 选 %APPDATA% 而不是安装目录，是为了配合 NSIS 的 deleteAppDataOnUninstall=false：
+ * 重装应用不会把店铺与采集箱带走。
+ */
+function pickDataDir() {
+  if (!app.isPackaged) return path.join(__dirname, 'userdata');
+  const cands = [];
+  try { cands.push(path.join(app.getPath('appData'), 'pdd-ops-desktop')); } catch (_) { /* ignore */ }
+  if (process.env.LOCALAPPDATA) cands.push(path.join(process.env.LOCALAPPDATA, 'pdd-ops-desktop'));
+  cands.push(path.join(path.dirname(process.execPath), 'userdata'));
+  trace('pickDataDir cands=' + JSON.stringify(cands));
+  for (const d of cands) {
+    try {
+      trace('try dir ' + d);
+      fs.mkdirSync(d, { recursive: true });
+      const probe = path.join(d, '.wtest');
+      fs.writeFileSync(probe, 'ok');
+      trace('probe written ' + probe);
+      fs.unlinkSync(probe);
+      trace('probe removed, using ' + d);
+      return d;
+    } catch (e) {
+      trace('dir fail ' + d + ' :: ' + ((e && e.message) || e));
+    }
+  }
+  trace('all candidates failed, fallback ' + cands[0]);
+  return cands[0];
+}
+const DATA_DIR = pickDataDir();
+
+/**
+ * 用户设置（性能开关等）。必须在创建任何窗口之前读出来 —— GPU 开关一旦错过
+ * ready 前这个时机就再也改不了了，只能重启。
+ */
+const USER_SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+let userSettings = {};
+try { userSettings = JSON.parse(fs.readFileSync(USER_SETTINGS_FILE, 'utf8')) || {}; } catch (_) { /* 首次运行 */ }
+
+/**
+ * GPU 加速：开发机强制关（WorkBuddy 沙箱里开 GPU 会让原生层访问违例直接崩），
+ * 打包态默认开 —— 关掉后 Paint 和图层合成全落 CPU，动画必然掉帧。
+ * 用户可以在「设置 → 性能」里关掉它换取更快的冷启动（老旧显卡驱动场景）。
+ */
+if (!app.isPackaged || userSettings.disableGpu === true) {
+  app.disableHardwareAcceleration();
+  trace('hardware acceleration: OFF');
+} else {
+  trace('hardware acceleration: ON');
+}
+trace('user settings: ' + JSON.stringify(userSettings));
 const FINANCE_DIR = path.join(DATA_DIR, 'finance');
 const FINANCE_SNAPSHOT_DIR = path.join(FINANCE_DIR, 'snapshots');
 // 商品检测：每个店铺一个「商品包」文件，另有一份索引记录上次检测时间
@@ -1832,7 +1918,17 @@ async function runInWebContents(wc, js, timeoutMs) {
     const deadline = Date.now() + (timeoutMs || 30000);
     while (Date.now() < deadline) {
       try {
-        const r = await wc.executeJavaScript(js, true);
+        // executeJavaScript 在页面导航/客户端路由跳转期间可能永不 settle（Promise 既不
+        // resolve 也不 reject）。资金中心与售后详情页都是 SPA，goto 返回后路由还在变，
+        // 一旦撞上就会把整条采集拖到 withPlatform 的 30 秒超时，表现为「平台操作超时」。
+        // 单次调用加 8 秒上限，超时按失败重试，下一次通常就落在稳定页面上。
+        const r = await Promise.race([
+          wc.executeJavaScript(js, true),
+          new Promise((_, rej) => {
+            const t = setTimeout(() => rej(new Error('eval timeout')), 8000);
+            if (t.unref) t.unref();
+          }),
+        ]);
         if (r && r.__blocked) { await sleep(800); continue; }
         return r;
       } catch (e) {
@@ -2914,6 +3010,35 @@ async function runInMall(build) {
 }
 
 // ---------------------------------------------------------------- 启动
+// ---------------------------------------------------------------- 悬浮胶囊音乐播放器
+// 用独立无边框置顶小窗，而不是在 #pane-print 里做 HTML 浮层 ——
+// 打单页是原生 WebContentsView，任何 HTML 浮层都会被它盖住。
+let capsuleWin = null;
+function createCapsuleWindow() {
+  if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.show(); capsuleWin.focus(); return { ok: true, visible: true }; }
+  const b = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 200, y: 200, width: 1280, height: 860 };
+  capsuleWin = new BrowserWindow({
+    width: 380, height: 72,
+    x: Math.round(b.x + b.width / 2 - 190),
+    y: b.y + b.height - 120,
+    frame: false, transparent: true, resizable: false, movable: true,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, sandbox: false,
+    },
+  });
+  capsuleWin.setAlwaysOnTop(true, 'screen-saver');
+  capsuleWin.loadFile(path.join(__dirname, 'renderer', 'music.html'));
+  capsuleWin.once('ready-to-show', () => { try { capsuleWin.showInactive(); } catch (_) { /* ignore */ } });
+  capsuleWin.on('closed', () => { capsuleWin = null; });
+  return { ok: true, visible: true };
+}
+function toggleCapsuleWindow() {
+  if (capsuleWin && !capsuleWin.isDestroyed()) { capsuleWin.close(); capsuleWin = null; return { ok: true, visible: false }; }
+  return createCapsuleWindow();
+}
+
 trace('registering whenReady');
 // ---------------------------------------------------------------- IPC 注册
 // 按域拆到 app/ipc/*.js，这里只做装配。新增域时加一行 require，不要往本文件堆 handler。
@@ -2954,6 +3079,18 @@ require('./ipc/collect')({
   sleep, log, trace, pool, currentMall,
   detachView, attachView, setFileInputFiles, errText, withPlatform,
   COLLECTOR_PARTITION, COLLECTOR_HOME, getViewKind, setViewKind,
+});
+
+require('./ipc/update')({
+  ipcMain, app,
+  getMainWindow: () => mainWindow,
+  trace,
+  dataDir: DATA_DIR,
+});
+
+require('./ipc/music')({
+  ipcMain, fs, path, DATA_DIR, dialog, writeJsonAtomic, trace,
+  toggleCapsule: () => toggleCapsuleWindow(),
 });
 
 app.whenReady().then(() => {

@@ -5,6 +5,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pdd', {
   // 店铺
   listMalls: () => ipcRenderer.invoke('malls:list'),
+  musicList: () => ipcRenderer.invoke('music:list'),
+  musicPick: () => ipcRenderer.invoke('music:pick'),
+  musicCapsule: () => ipcRenderer.invoke('music:capsule'),
   addMall: (name) => ipcRenderer.invoke('malls:add', name),
   removeMall: (id) => ipcRenderer.invoke('malls:remove', id),
   activateMall: (id) => ipcRenderer.invoke('malls:activate', id),
@@ -132,4 +135,22 @@ contextBridge.exposeInMainWorld('pdd', {
     ipcRenderer.on('log', h);
     return () => ipcRenderer.removeListener('log', h);
   },
+
+  // 自动更新（electron-updater）
+  updateVersion: () => ipcRenderer.invoke('update:version'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateState: () => ipcRenderer.invoke('update:state'),
+  onUpdateEvent: (cb) => {
+    const h = (_e, evt) => cb(evt);
+    ipcRenderer.on('update:event', h);
+    return () => ipcRenderer.removeListener('update:event', h);
+  },
+
+  // 设置页：数据目录
+  dataDir: () => ipcRenderer.invoke('app:dataDir'),
+  openDataDir: () => ipcRenderer.invoke('app:openDataDir'),
+  settingsGet: () => ipcRenderer.invoke('app:settingsGet'),
+  settingsSet: (patch) => ipcRenderer.invoke('app:settingsSet', patch),
+  relaunch: () => ipcRenderer.invoke('app:relaunch'),
 });

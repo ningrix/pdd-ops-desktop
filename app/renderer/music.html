@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>音乐</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body {
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; cursor: default;
+  }
+
+  .cap {
+    position: relative;
+    height: 64px; margin: 2px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 10px 0 8px;
+    border-radius: 32px;
+    background: rgba(22, 26, 34, .94);
+    color: #eef2f8;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .38), inset 0 0 0 1px rgba(255, 255, 255, .07);
+    -webkit-app-region: drag;
+    overflow: hidden;
+  }
+
+  .cover {
+    width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #5a82ff, #2b3550 70%);
+    display: flex; align-items: center; justify-content: center;
+    color: #c9d6ff; font-size: 18px;
+    transition: transform 300ms cubic-bezier(.23,1,.32,1);
+  }
+  .cap.playing .cover { animation: spin 6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .meta { flex: 1 1 auto; min-width: 0; -webkit-app-region: drag; }
+  .title {
+    font-size: 12.5px; font-weight: 600; line-height: 17px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sub { font-size: 10.5px; color: #93a0b8; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .btns { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+  button {
+    width: 26px; height: 26px; border: 0; border-radius: 50%;
+    background: transparent; color: #cfd8e8; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+    transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  }
+  button:hover { background: rgba(255,255,255,.10); color: #fff; }
+  button:active { transform: scale(.92); }
+  .play { width: 32px; height: 32px; background: rgba(90,130,255,.92); color: #fff; }
+  .play:hover { background: #5a82ff; }
+  svg { width: 13px; height: 13px; }
+  .play svg { width: 14px; height: 14px; }
+
+  .bar {
+    position: absolute; left: 14px; right: 14px; bottom: 5px; height: 2px;
+    border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden;
+  }
+  .bar i { display: block; height: 100%; width: 0; background: #5a82ff; border-radius: 2px; }
+
+  .empty { font-size: 11.5px; color: #93a0b8; line-height: 16px; }
+  .empty b { color: #cfd8e8; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="cap" id="cap">
+  <div class="cover" id="cover">♪</div>
+  <div class="meta">
+    <div class="title" id="title">未选择音乐</div>
+    <div class="sub" id="sub">点这里选文件夹</div>
+  </div>
+  <div class="btns">
+    <button id="prev" title="上一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button id="play" class="play" title="播放 / 暂停"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+    <button id="next" title="下一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    <button id="close" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+</div>
+<audio id="au" preload="metadata"></audio>
+<script>
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const au = $('#au');
+  const cap = $('#cap');
+  const elTitle = $('#title');
+  const elSub = $('#sub');
+  const elBar = $('#bar');
+  const elCover = $('#cover');
+  const btnPlay = $('#play');
+
+  let tracks = [];
+  let idx = -1;
+  let dir = '';
+
+  const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+
+  function fmt(s) {
+    if (!isFinite(s) || s < 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const x = Math.floor(s % 60);
+    return m + ':' + (x < 10 ? '0' : '') + x;
+  }
+
+  function paint() {
+    const t = tracks[idx];
+    if (!t) {
+      elTitle.textContent = '未选择音乐';
+      elSub.textContent = '点这里选文件夹';
+      cap.classList.remove('playing');
+      return;
+    }
+    elTitle.textContent = t.title || '未知曲目';
+    const bits = [];
+    if (t.album) bits.push(t.album);
+    bits.push((idx + 1) + ' / ' + tracks.length);
+    elSub.textContent = bits.join(' · ');
+    elCover.textContent = (t.title || '♪').slice(0, 1).toUpperCase();
+  }
+
+  function playAt(i) {
+    if (!tracks.length) return;
+    idx = (i + tracks.length) % tracks.length;
+    const t = tracks[idx];
+    au.src = 'file:///' + encodeURI(t.file.replace(/\\/g, '/'));
+    au.play().then(() => {
+      cap.classList.add('playing');
+      btnPlay.innerHTML = ICON_PAUSE;
+    }).catch((e) => {
+      elSub.textContent = '打不开这个文件：' + (e && e.message ? e.message : '未知');
+    });
+    paint();
+  }
+
+  function toggle() {
+    if (!tracks.length) { pick(); return; }
+    if (au.paused) { au.play().catch(() => {}); } else { au.pause(); }
+  }
+
+  async function pick() {
+    try {
+      const r = await window.pdd.musicPick();
+      if (!r || !r.ok) return;
+      tracks = r.tracks || [];
+      dir = r.dir || '';
+      if (!tracks.length) {
+        elTitle.textContent = '这个文件夹里没有音频';
+        elSub.textContent = '支持 mp3 / flac / m4a / wav / ogg';
+        return;
+      }
+      playAt(0);
+    } catch (e) {
+      elSub.textContent = '选择失败：' + ((e && e.message) || e);
+    }
+  }
+
+  // 首次打开：读上次列表，不自动播（避免一开就响）
+  (async function boot() {
+    try {
+      const r = await window.pdd.musicList();
+      tracks = (r && r.tracks) || [];
+      dir = (r && r.dir) || '';
+      if (tracks.length) {
+        idx = 0;
+        paint();
+        elSub.textContent = dir.split(/[\\/]/).pop() + ' · ' + tracks.length + ' 首 · 点▶开始';
+      }
+    } catch (_) { /* ignore */ }
+  })();
+
+  btnPlay.addEventListener('click', toggle);
+  $('#prev').addEventListener('click', () => { if (tracks.length) playAt(idx - 1); });
+  $('#next').addEventListener('click', () => { if (tracks.length) playAt(idx + 1); });
+  $('#close').addEventListener('click', () => window.close());
+  elSub.addEventListener('click', pick);
+  $('#cover').addEventListener('click', pick);
+
+  au.addEventListener('playing', () => { cap.classList.add('playing'); btnPlay.innerHTML = ICON_PAUSE; });
+  au.addEventListener('pause', () => { cap.classList.remove('playing'); btnPlay.innerHTML = ICON_PLAY; });
+  au.addEventListener('ended', () => { if (tracks.length) playAt(idx + 1); });
+  au.addEventListener('timeupdate', () => {
+    const d = au.duration || 0;
+    elBar.style.width = d ? ((au.currentTime / d) * 100).toFixed(1) + '%' : '0%';
+    const t = tracks[idx];
+    if (t) {
+      elSub.textContent = fmt(au.currentTime) + ' / ' + fmt(d) +
+        (t.album ? ' · ' + t.album : '') + ' · ' + (idx + 1) + '/' + tracks.length;
+    }
+  });
+  au.addEventListener('error', () => { elSub.textContent = '这个格式播不了，换一首试试'; });
+})();
+</script>
+</body>
+</html>
