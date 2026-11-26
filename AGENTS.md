@@ -101,6 +101,9 @@
 | `app/renderer/style.css` | 样式（无框架、无预处理器） | 可改，守 §1.1 |
 | `app/renderer/app.js` | 界面逻辑（单文件，全局 `$` / `state`） | 可改，守 §1.1 |
 | `app/data/size-templates.json` | 尺码表模板库（6 套） | 可改 |
+| `app/build/` | 打包资源：`icon.ico`、`start-compat.bat`（兼容启动器，见 §10） | 可改 |
+| `app/package.json` 的 `build` 字段 | electron-builder 配置（NSIS + zip、files 排除 userdata、extraResources） | 可改，见 §10 |
+| `app/dist/` | 打包产物（安装包 / zip / win-unpacked），不入库 | 可删 |
 | `app/userdata/` | `malls.json`、`pool.json`、`Partitions/` 登录态；`finance\` 资金快照与账本；`risk\` 商品检测分包；`appeal\templates.json` 申诉文案库 | **不得删除**，删了要重新扫码 |
 | `tools/` | CDP 抓包与调试脚本（`cdp_capture.py`、`pdd.py`、`pdd_price.py`） | 可改 |
 | `work/` | 实验脚本与中间产物 | 任意，可丢弃 |
@@ -439,3 +442,142 @@ TriageRow {
 - 本文档只写**约束与事实**，不写计划、路线图、待办。计划放 `C:\Users\56587\.workbuddy\plans\`。
 - 新增约束时写清楚「为什么」，否则下一个人会当成教条绕过它。
 - **不要写行号。** 用函数名、选择器、IPC 通道名定位。
+
+---
+
+## 10. 打包与分发（2026-11-25 立）
+
+**命令**：`cd app && npm run dist`（NSIS + zip）；只出目录不压缩用 `npm run dist:dir`。
+产物在 `app/dist/`：`pdd-ops-<version>-beta-setup.exe`、`pdd-ops-<version>-beta-x64.zip`。
+
+**版本号必须是纯数字**（当前 `0.5.0`）。写成 `0.5.0-beta.1` 会让 exe 的 VERSIONINFO 变成非法串，
+Windows 加载器直接拒绝执行 —— **零报错、零输出、退出码 3，main.js 一行都不执行**。
+beta 字样只放在 `artifactName` 里。
+
+**三个打包态阻塞项，已在代码里处理，不要改回去**：
+
+1. **数据目录**：asar 只读。打包态走 `pickDataDir()` 探针 —— `%APPDATA%` → `%LOCALAPPDATA%` → exe 同级，
+   第一个"能建目录 + 能写探针文件"的胜出。本机实测前两个都是 EPERM，最终落在 exe 同级 `userdata`；
+   正常机器会用 `%APPDATA%\pdd-ops-desktop`（卸载不删数据，配合 `deleteAppDataOnUninstall: false`）。
+2. **CDP 端口**：`setFileInputFiles` 依赖 `--remote-debugging-port`。打包态在 `appendSwitch` 里默认开 9333，
+   否则空白新建点「本地上传」必然报「应用启动时没开调试端口」。
+3. **imgtool 的 ROOT**：打包态取 `process.resourcesPath`，配合 `extraResources` 把 `tools/imgtool`
+   放到 `resources/tools/`。**只修路径，不带 Python 运行时** —— 目标机没装 Python + pillow 时水印不可用，
+   但会返回可读的 `failed_known`，不崩界面。
+
+**必须排除 `userdata`**：`app/userdata` 约 1.4G（全是登录态 Partitions）。
+`files` 里漏掉 `!userdata/**`，安装包会变成 1.5G，且把店铺 cookie 打出去。
+
+**未签名 = 静默安装被拦**：`setup.exe /S` 在未签名时会被 SmartScreen / Defender 静默拒绝，
+进程返回 0 但什么都不装（本机实测：快捷方式建了，文件没落地，注册表也没写）。
+手动双击会正常弹「更多信息 → 仍要运行」。
+**所以不要用 `/S` 判断安装包好坏**；判据是手动安装，或 7za 能列出 85 个文件。
+
+**本机启动必须带参数**：这台开发机的 shell 注入了 `ELECTRON_RUN_AS_NODE=1` 与
+`NODE_OPTIONS=--require=…shim`，两者都会让 Electron 起不来（前者退化成纯 Node，`require('electron')`
+返回路径字符串；后者与 asar 的 fs 补丁冲突，`fs.writeFileSync` 会把文件写成 0 字节然后崩）。
+启动打包版：
+
+```
+env -u NODE_OPTIONS -u ELECTRON_RUN_AS_NODE "PDD Ops Desktop.exe" --no-sandbox --disable-gpu
+```
+
+安装目录里的 `start-compat.bat` 就是做这件事的。**判据：`boot.log` 里有没有 `module start`。**
+`boot.log` 只在打包态写，落在 exe 同级；源码态仍写 `%TEMP%\pdd-trace.log`，不污染 `app/`。
+
+**构建会被文件锁打断**：`emptyDir` 删除旧 `win-unpacked` 时报 EBUSY/EPERM，多半是杀软在扫 344MB 的产物。
+换输出目录（`-c.directories.output=dist2`）或等扫描结束，不要以为是配置错。
+
+---
+
+## 11. 采集链路的超时纪律（2026-11-26 立）
+
+`webContents.executeJavaScript()` 在页面导航 / SPA 客户端路由跳转期间**可能永不 settle** ——
+Promise 既不 resolve 也不 reject，错误也不会抛出来。
+
+资金中心和对账中心都是 SPA。`gotoCashierFinance()` 一看到 URL 变成 `cashier.pinduoduo.com`
+就返回，此时客户端路由往往还在跳。撞上这个窗口调用 `executeJavaScript`，整条采集就卡在
+`withPlatform` 的 guard 上，30 秒后报「平台操作超时（30000ms）：cashier」。
+
+**表现为「资金复盘 / 售后退货数据不更新」，源码态、安装态、任何电脑上都一样**
+（因为这是代码缺陷，不是环境问题）。已经踩过一次，排查成本极高。
+
+**规矩：任何 `executeJavaScript` 调用都必须自带超时，不得裸 `await`。**
+
+- `runInWebContents()`：单次 8 秒上限，超时按失败重试（下一轮通常就落在稳定页面上）。
+- 订单 / 售后列表：本来就有 `Promise.race` 的 20–30 秒兜底。
+- 新增调用点照此办理。判据：如果这段代码失败会让用户看到「超时」而不是具体错误，就缺超时。
+
+---
+
+## 12. 自动更新（2026-11-26 立）
+
+**方案**：`electron-updater` + GitHub Releases（`provider: github`）。
+代码在 `app/ipc/update.js`，界面是顶栏 `#btnUpdate`（5 态：检查中 / 有新版本 / 下载中 / 待安装 / 失败）。
+
+**发布一次新版本只用三步**：
+
+1. `app/package.json` 的 `version` 加一（**必须纯数字**，别写 `1.0.0-beta.1`，见 §10）。
+2. 在 `app/` 下设 `GH_TOKEN`（Personal Access Token，勾 `repo` 权限）。
+3. `npm run release`（=`electron-builder --publish always`），自动打包 + 上传 Release + latest.yml。
+
+**首次接入有个 bootstrap 限制**：旧版本里没有更新代码，**必须手动装一次**带 updater 的版本；
+之后才进入自动更新。所以 0.5.0 → 0.5.1 这次仍要手动分发。
+
+**未签名所以不用静默安装**：`quitAndInstall(false, true)` —— 第一个参数是 `isSilent=false`，
+让安装向导弹出来。实测未签名包走 `/S` 静默安装会被 SmartScreen 拦（返回 0、文件不落地）。
+**买了代码签名证书之后，把它改成 `true` 即可恢复完全静默。**
+
+**排错顺序**（按命中率）：
+
+1. **版本号没变** —— 最常见。`package.json` 的 version 必须严格递增，否则永远"已是最新"。
+2. **`latest.yml` 没上传 / 路径不对** —— 浏览器直接访问 `.../releases/latest.yml`，能下到才算通。
+3. **`owner` / `repo` 还是占位** —— 打包产物 `resources/app-update.yml` 里能直接看到实际值。
+4. **`app-update.yml` 没进包** —— 检查 `dist/win-unpacked/resources/app-update.yml` 是否存在。
+
+**别踩的坑**：`send()` 里判断窗口存活时，`win.isDestroyed` 是**函数**，写 `!win.isDestroyed`
+恒为 false，事件一个都发不出去（已踩过一次，症状是"检查更新完全没反应"）。
+
+---
+
+## 13. 动画与 GPU（2026-11-26 立）
+
+**`app.disableHardwareAcceleration()` 只在非打包态调用。** 关掉 GPU 后 Paint 和图层合成全部落到
+CPU，动画、滚动、Canvas 都会明显掉帧 —— 这就是"界面特别卡"的根因（PCL 之类丝滑是因为走 GPU 合成）。
+开发机（WorkBuddy 沙箱）开 GPU 会让 Electron 原生层访问违例直接崩，所以按 `app.isPackaged` 分流：
+**开发关、打包开**。某台机器显卡驱动有问题时，用安装目录里的 `start-compat.bat`（带 `--disable-gpu`）。
+
+**指标卡是"就地长成大胶囊"，不是弹窗。** 做法：把浮层先摆到被点卡片的 `getBoundingClientRect()`，
+`void big.offsetWidth` 强制一帧 reflow（**不加这行起止两帧会被合并，看起来像直接弹出**），
+再过渡到居中的目标尺寸；内容 `opacity` 延迟 250ms 淡入，避免文字在拉伸过程中重排闪烁。
+
+**新增动画的三条底线：**
+
+1. 能用 `transform` / `opacity` 就不要动画 `width/height/left/top`；只对**单个**元素做布局动画可以接受。
+2. 列表级动画必须用 `transform` + `will-change`，否则每帧都要重排。
+3. 时长 200–300ms，缓动用 `var(--ease-std)`；超过 400ms 会显得拖沓，低于 120ms 会显得生硬。
+
+---
+
+## 14. 资金指标的四个口径陷阱（2026-11-26 立）
+
+**① 未结算 ≠ 订单总额，只算「已发货、待收货」。**
+已收货的订单平台已结算（钱进了可提现），算进来会把数字放大近一倍。
+实测对照：仅「已发货待收货」才与后台「订单管理 → 已发货」的未到账金额一致。
+**判据：阿泽高端made 那张卡应该是 0**（该店没有在途单），如果算出非零就是口径错了。
+
+**② 货款账户页没有「待结算金额」这一项。**
+PC 版实测只有：货款账户（含可用余额）、营销账户、店铺保证金、活动保证金、资金限制中。
+网上文章说的「待结算金额」是 App 端或旧版，不要照着写选择器。
+
+**③ `orderAmount` 是买家实付，不是商家实收。**
+字段关系：`orderAmount = goodsPrice − merchantDiscount − platformDiscount`（单位：分）。
+平台服务费、支付手续费还要再扣，所以「待到账」永远小于 `orderAmount` 合计。
+
+**④ 按店铺聚合的行必须带店铺标识。**
+`computeContribution` 原来没往 row 里放 `mallName/mallId`，明细弹层只能显示「未知店铺」。
+凡是聚合到店铺维度的行，push 时都要带上这两个字段。
+
+**⑤ 指标只能有一处计算。**
+四张卡和明细弹层必须共用 `computeFinanceMetrics()`。分开算过一次，卡片 72 单 / 弹层 87 单，
+差 15 单，用户一眼就看出来了。

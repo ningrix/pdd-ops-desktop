@@ -1,16 +1,107 @@
 {
   "name": "pdd-ops-desktop",
-  "version": "0.2.0",
+  "version": "0.5.2",
   "description": "拼多多自有店铺上货中台 —— 桌面版",
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win nsis zip",
+    "dist:dir": "electron-builder --dir",
+    "release": "electron-builder --win nsis zip --publish always",
+    "release:local": "electron-builder --win nsis zip --publish never"
   },
   "devDependencies": {
-    "electron": "40.10.2"
+    "electron": "40.10.2",
+    "electron-builder": "^26.18.1"
   },
   "dependencies": {
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.11",
     "playwright-core": "^1.65.1"
+  },
+  "build": {
+    "appId": "com.azhe.pddops",
+    "productName": "PDD Ops Desktop",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ningrix",
+        "repo": "pdd-ops-desktop",
+        "releaseType": "release"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "ipc/**/*",
+      "lib/**/*",
+      "renderer/**/*",
+      "data/**/*",
+      "assets/**/*",
+      "!userdata/**",
+      "!.bak-v0/**",
+      "!build/**",
+      "!release/**",
+      "!launch.log",
+      "!package-lock.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../tools/imgtool",
+        "to": "tools/imgtool",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
+        ]
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "build/start-compat.bat",
+        "to": "start-compat.bat"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "pdd-ops-${version}-beta-${arch}.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "上货中台",
+      "language": "2052",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "installerIcon": "build/icon.ico",
+      "uninstallDisplayName": "上货中台 ${version}",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "pdd-ops-${version}-beta-setup.${ext}"
+    }
   }
 }

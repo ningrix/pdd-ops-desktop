@@ -16,8 +16,23 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-/** 工作区根目录 = app 的上一级 */
-const ROOT = path.resolve(__dirname, '..', '..');
+/**
+ * `python -m tools.imgtool` 的工作目录。
+ *
+ * 源码态：工作区根（app 的上一级），tools/imgtool 在那里。
+ * 打包态：__dirname 在 app.asar 内，`..` 指向无意义位置；imgtool 源码由
+ *   extraResources 复制到 resources/tools/imgtool，所以 cwd 取 process.resourcesPath。
+ *
+ * 判断用 `!process.defaultApp && !!process.resourcesPath`：
+ *   - 打包应用里 process.defaultApp 是 undefined（不是 false）；
+ *   - 纯 Node 下跑测试时 process.resourcesPath 也是 undefined，会回落到源码路径。
+ *
+ * 注意：这里只解决路径，不提供 Python 运行时。目标机没装 Python/pillow 时，
+ * runImgTool 仍会以 failed_known 返回可读错误，不会崩界面。
+ */
+const ROOT = (!process.defaultApp && process.resourcesPath)
+  ? process.resourcesPath
+  : path.resolve(__dirname, '..', '..');
 
 function pythonExe() {
   return process.env.PDD_PYTHON || 'python';
