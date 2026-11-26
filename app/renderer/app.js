@@ -3535,15 +3535,30 @@ function applyTheme(theme) {
 }
 function switchTheme(theme, originEl) {
   if (theme === currentTheme()) return;
-  applyTheme(theme);
   const btn = originEl || $('#btnTheme') || document.body;
   const reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  if (!reduce && btn && btn.classList) {
-    btn.classList.remove('ripple');
-    void btn.offsetWidth;
-    btn.classList.add('ripple');
-    setTimeout(() => btn.classList.remove('ripple'), 480);
+  // 没有 View Transitions 或用户关了动效 → 直接切
+  if (!document.startViewTransition || reduce) {
+    applyTheme(theme);
+    return;
   }
+  const r = btn.getBoundingClientRect();
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  // 新主题以图标中心为圆心向外铺开：整页快照裁一个扩散的圆
+  const vt = document.startViewTransition(() => applyTheme(theme));
+  vt.ready.then(() => {
+    document.documentElement.animate(
+      {
+        clipPath: [
+          'circle(0px at ' + x + 'px ' + y + 'px)',
+          'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)',
+        ],
+      },
+      { duration: 460, easing: 'cubic-bezier(.23, 1, .32, 1)', pseudoElement: '::view-transition-new(root)' }
+    );
+  }).catch(() => { /* 快照失败不影响主题已切换 */ });
 }
 updateThemeButton();
 $('#btnTheme') && $('#btnTheme').addEventListener('click', (e) => {

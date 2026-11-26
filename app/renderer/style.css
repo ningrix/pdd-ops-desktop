@@ -122,17 +122,8 @@ html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-sun { display: bl
 html[data-theme="light"] .topbar-actions .btn.theme-toggle .ic-moon { display: none; }
 .theme-toggle svg { transition: transform .45s cubic-bezier(.34, 1.56, .64, 1); }
 .theme-toggle:active svg { transform: scale(.8) rotate(-18deg); }
-.theme-toggle { position: relative; overflow: hidden; }
-.theme-toggle::after {
-  content: ''; position: absolute; left: 50%; top: 50%;
-  width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
-  background: rgba(122, 162, 255, .55); transform: scale(.6); opacity: 0; pointer-events: none;
-}
-.theme-toggle.ripple::after { animation: theme-btn-ripple .28s var(--ease-decel); }
-@keyframes theme-btn-ripple {
-  0% { transform: scale(.6); opacity: .55; }
-  100% { transform: scale(16); opacity: 0; }
-}
+.theme-toggle { position: relative; }
+/* 旧版按钮内小圆圈波纹已移除：现在整页用 View Transitions 从图标中心展开（见 V3） */
 
 /* ---------------- 布局 ---------------- */.layout { display: flex; height: calc(100% - var(--topbar-h)); }
 
@@ -2021,3 +2012,58 @@ html[data-theme="light"] .risk-badge {
   .set-grid { grid-template-columns: 1fr; }
   .set-card.wide { grid-column: auto; }
 }
+
+/* ============================================================================
+   V3 · 顶栏一体化（2026-11-26）
+   ----------------------------------------------------------------------------
+   参考 Liquid Glass 的「去掉工具栏与画布之间的硬分割」：
+   顶栏和侧栏都退回页面画布，不再单独上底色 / 描边 / 模糊；
+   顶栏控件只留图标，hover 才浮出一层浅底。真正的内容从下面开始。
+   ========================================================================== */
+.topbar {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+html[data-theme="light"] .topbar { background: transparent; box-shadow: none; }
+.brand { color: var(--text); }
+.brand .ver { color: var(--muted); opacity: .85; }
+
+.topbar-actions { gap: 2px; }
+.topbar-actions .btn,
+html[data-theme="light"] .topbar-actions .btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+.topbar-actions .btn:hover,
+html[data-theme="light"] .topbar-actions .btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+html[data-theme="light"] .topbar-actions .btn:hover {
+  background: rgba(0, 0, 0, .055);
+  color: #1d1d1f;
+}
+/* 主题按钮收成纯图标，和音乐按钮同尺寸 */
+.topbar-actions .btn.theme-toggle { width: 30px; padding: 0; justify-content: center; }
+.theme-toggle .theme-label { display: none; }
+
+/* 侧栏也退回画布：去掉右边线和玻璃底 */
+.side {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+html[data-theme="light"] .side { background: transparent; box-shadow: none; }
+
+/* 主题切换：新主题从图标中心画圆铺开（View Transitions，旧页快照直接裁掉） */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) { z-index: 2147483647; }
