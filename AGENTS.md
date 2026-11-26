@@ -555,6 +555,11 @@ Promise 既不 resolve 也不 reject，错误也不会抛出来。
 3. **`owner` / `repo` 还是占位** —— 打包产物 `resources/app-update.yml` 里能直接看到实际值。
 4. **`app-update.yml` 没进包** —— 检查 `dist/win-unpacked/resources/app-update.yml` 是否存在。
 
+**0.5.3 打包态实测（2026-11-26）**：`latest.yml` 生成 version 0.5.3 + sha512；`resources/app-update.yml`
+为 `owner: ningrix / repo: pdd-ops-desktop`；`app.asar` 15MB（未混入 `app/userdata` 的 1.2G）；
+启动后 `boot.log` 出现 `update event: checking → update event: none v0.5.3`，说明更新源可达且版本比较正常。
+首次启动曾因 `pool.json` 不存在记一条 `reconcilePoolSourceMalls FAIL`，已加 `existsSync` 守卫。
+
 **别踩的坑**：`send()` 里判断窗口存活时，`win.isDestroyed` 是**函数**，写 `!win.isDestroyed`
 恒为 false，事件一个都发不出去（已踩过一次，症状是"检查更新完全没反应"）。
 

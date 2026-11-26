@@ -259,6 +259,8 @@ function reconcilePoolSourceMalls() {
     let changed = 0;
     // 注意：pool.list() 返回的是脱敏形状，不含 sourceMallId，必须读原始文件。
     const rawFile = path.join(DATA_DIR, 'pool.json');
+    // 首次启动（新装的机器）还没有采集箱，这不是错误，直接跳过
+    if (!fs.existsSync(rawFile)) return 0;
     const rawList = JSON.parse(fs.readFileSync(rawFile, 'utf8'));
     for (const it of (Array.isArray(rawList) ? rawList : [])) {
       const srcId = it.sourceMallId;
