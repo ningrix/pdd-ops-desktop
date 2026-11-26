@@ -1370,6 +1370,64 @@ function setMoney(el, value) {
   }, DUR + 80);
 }
 
+/**
+ * 资金四张卡的唯一计算入口。卡片与明细弹层都必须调这里，不许各算各的
+ * （分开算过一次：卡片 72 单 / 弹层 87 单，差 15 单，用户一眼就看出来了）。
+ *
+ * 口径（AGENTS §14）：
+ *   未结算   只算「已发货、待收货」。已收货的订单平台已结算，算进来会放大近一倍。
+ *            判据：阿泽高端made 没有在途单，那张卡应该是 0。
+ *   本月毛利 当月实收 − 当月拿货成本（单位：分）
+ *   待退货   在途退货退款的订单实付合计
+ *   拿货成本 日总额账本累计
+ */
+function computeFinanceMetrics(data, cur) {
+  const out = {
+    pending: 0, pendingOrders: 0, pendingOk: false,
+    monthRevenue: 0, monthCost: 0, monthGross: null, grossOk: false,
+    pendingRefund: 0, pendingRefundCount: 0,
+    costTotal: 0, costCount: 0,
+  };
+
+  // ① 未结算：只认「已发货」且「待收货」
+  for (const s of ((state.orderData && state.orderData.stores) || [])) {
+    for (const o of (s.orders || [])) {
+      const st = String(o.status || '');
+      if (/退款|取消/.test(st)) continue;
+      if (!/已发货/.test(st) || !/待收货/.test(st)) continue;
+      out.pending += Number(o.orderAmount) || 0;
+      out.pendingOrders += 1;
+      out.pendingOk = true;
+    }
+  }
+
+  // ②③ 从订单明细算，和商品贡献表同一套口径
+  buildOrderThumbIndex(state.orderData);
+  const contrib = computeContribution(state.orderData);
+  for (const r of contrib.rows) {
+    if (r.excluded) {
+      if (r.pendingReturn) {
+        out.pendingRefund += r.orderAmount;
+        out.pendingRefundCount += 1;
+      }
+      continue;
+    }
+    if (!r.orderTime) continue;
+    if (localDateStr(new Date(Number(r.orderTime) * 1000)).slice(0, 7) !== cur) continue;
+    out.monthRevenue += r.orderAmount;
+    if (r.unit != null) out.monthCost += Math.round(r.unit * r.quantity);
+    out.grossOk = true;
+  }
+  out.monthGross = out.grossOk ? out.monthRevenue - out.monthCost : null;
+
+  // ④ 拿货成本
+  out.costTotal = Number.isFinite(Number(state.costTotal))
+    ? Number(state.costTotal)
+    : (state.costs || []).reduce((n, c) => n + (Number(c.amount) || 0), 0);
+  out.costCount = (state.costs || []).length;
+  return out;
+}
+
 function renderFinance(data, month) {
   const body = $('#finBody');
   const empty = $('#finEmpty');
@@ -1409,62 +1467,27 @@ function renderFinance(data, month) {
   cashDailyRows.sort((a, b) => b.date.localeCompare(a.date));
   const lastCashDaily = cashDailyRows[0] || null;
 
-  // ① 未结算金额 = 已发货待收货 + 已收货（且未退款/未取消）的订单金额合计。
-  //    口径说明：平台没有在货款账户页给「待结算」这一个数（实测页面只有
-  //    「资金限制中」），精确值只在「对账中心」按单列出。这里按订单状态估算，
-  //    卡片副行会写明「按订单估算」，不冒充平台口径。
-  let pending = 0, pendingOk = false, pendingOrders = 0;
-  for (const s of ((state.orderData && state.orderData.stores) || [])) {
-    for (const o of (s.orders || [])) {
-      const st = String(o.status || '');
-      if (/退款|取消/.test(st)) continue;
-      if (/已发货|已收货|待收货/.test(st)) {
-        pending += Number(o.orderAmount) || 0;
-        pendingOrders += 1;
-        pendingOk = true;
-      }
-    }
-  }
-  setMoney($('#fcPending'), pendingOk ? pending : null);
-  $('#fcPendingSub').textContent = pendingOk ? (pendingOrders + ' 单在途 · 按订单估算') : '读取订单后显示';
+  // 四张卡统一从 computeFinanceMetrics 取数（唯一计算入口）
+  const M = computeFinanceMetrics(data, cur);
 
-  // ②③ 本月毛利 / 待退货金额：都从订单明细算，和商品贡献表同一套口径
-  buildOrderThumbIndex(state.orderData);
-  const contrib = computeContribution(state.orderData);
-  const monthPrefix = cur + '-';
-  let monthRevenue = 0, monthCost = 0, grossOk = false;
-  let pendingRefund = 0, pendingRefundCount = 0;
-  for (const r of contrib.rows) {
-    if (r.excluded) {
-      if (r.pendingReturn) {
-        pendingRefund += r.orderAmount;
-        pendingRefundCount += 1;
-      }
-      continue;
-    }
-    if (!r.orderTime) continue;
-    if (localDateStr(new Date(Number(r.orderTime) * 1000)).slice(0, 7) !== cur) continue;
-    monthRevenue += r.orderAmount;
-    if (r.unit != null) monthCost += Math.round(r.unit * r.quantity);
-    grossOk = true;
-  }
-  const monthGross = grossOk ? monthRevenue - monthCost : null;
-  setMoney($('#fcMonthGross'), monthGross);
-  $('#fcMonthGross').className = 'fc-value ' + (monthGross !== null && monthGross < 0 ? 'expense' : 'income');
-  $('#fcMonthGrossSub').textContent = grossOk
-    ? ('实收 ' + fmtYuan(monthRevenue) + ' − 成本 ' + fmtYuan(monthCost))
+  setMoney($('#fcPending'), M.pendingOk ? M.pending : null);
+  $('#fcPendingSub').textContent = M.pendingOk
+    ? (M.pendingOrders + ' 单在途 · 按订单估算')
+    : '读取订单后显示';
+
+  setMoney($('#fcMonthGross'), M.monthGross);
+  $('#fcMonthGross').className = 'fc-value ' + (M.monthGross !== null && M.monthGross < 0 ? 'expense' : 'income');
+  $('#fcMonthGrossSub').textContent = M.grossOk
+    ? ('实收 ' + fmtYuan(M.monthRevenue) + ' − 成本 ' + fmtYuan(M.monthCost))
     : '需要订单与商品成本';
-  setMoney($('#fcPendingRefund'), pendingRefund);
-  $('#fcPendingRefundSub').textContent = pendingRefundCount
-    ? (pendingRefundCount + ' 单退货退款中')
+
+  setMoney($('#fcPendingRefund'), M.pendingRefund);
+  $('#fcPendingRefundSub').textContent = M.pendingRefundCount
+    ? (M.pendingRefundCount + ' 单退货退款中')
     : '当前没有在途退货';
 
-  // ④ 拿货成本：按日总额账本，卡片显示累计
-  const costTotal = Number.isFinite(Number(state.costTotal))
-    ? Number(state.costTotal)
-    : (state.costs || []).reduce((n, c) => n + (Number(c.amount) || 0), 0);
-  setMoney($('#fcCostTotal'), costTotal);
-  $('#fcCostTotalSub').textContent = (state.costs || []).length + ' 笔 · 累计进货';
+  setMoney($('#fcCostTotal'), M.costTotal);
+  $('#fcCostTotalSub').textContent = M.costCount + ' 笔 · 累计进货';
 
   renderCostBlock();
 
